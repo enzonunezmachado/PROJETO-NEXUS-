@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NEXUS</string>
+    <string name="widget_config_title">Configurar widget NEXUS</string>
+
+    <string name="widget_my_day_name">NEXUS • Meu Dia</string>
+    <string name="widget_my_day_desc">Compromissos de hoje, horários, tarefas do dia e resumo concluídas/pendentes.</string>
+
+    <string name="widget_my_tasks_name">NEXUS • Minhas Tarefas</string>
+    <string name="widget_my_tasks_desc">Tarefas prioritárias com prazo, projeto e conclusão rápida com confirmação.</string>
+
+    <string name="widget_finance_name">NEXUS • Financeiro</string>
+    <string name="widget_finance_desc">Saldo informado, receitas/despesas previstas, contas atrasadas e faturas em aberto.</string>
+
+    <string name="widget_summary_name">NEXUS • Resumo</string>
+    <string name="widget_summary_desc">Visão compacta integrada de tarefas, compromissos, eventos, finanças e metas.</string>
+</resources>

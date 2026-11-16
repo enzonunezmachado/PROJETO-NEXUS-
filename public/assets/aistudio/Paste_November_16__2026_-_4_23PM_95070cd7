@@ -1,0 +1,753 @@
+# NEXUS — Prompt consolidado de refinamentos
+## Agenda, Tarefas, Financeiro, Dashboard, Mercado e experiência mobile
+
+**Documento de referência:** `docs/lista.md`  
+**Repositório:** `enzonunezmachado/PROJECT_NEXUS`  
+**Branch desta documentação:** `main`  
+**Branch de desenvolvimento a preservar para a etapa futura:** `integracao-google`  
+**Finalidade:** consolidar as decisões de produto discutidas nos chats anteriores (incluindo os tópicos financeiros e de integração) e os refinamentos mais recentes de Agenda e navegação mobile.
+
+---
+
+# PARTE A — INSTRUÇÕES PARA QUEM VAI ATUALIZAR A DOCUMENTAÇÃO
+
+## 1. Objetivo deste prompt
+
+Leia integralmente os cinco documentos existentes em `docs/` antes de fazer qualquer alteração:
+
+1. `NEXUS_PRODUCT_SPEC.md`
+2. `NEXUS_DESIGN_SYSTEM.md`
+3. `NEXUS_INTEGRATION_MAP.md`
+4. `NEXUS_IMPLEMENTATION_ROADMAP.md`
+5. `NEXUS_CURRENT_STATE.md`
+
+Use este arquivo como a consolidação mais recente das decisões de produto. Atualize os cinco documentos para que todos descrevam o mesmo comportamento, sem contradições entre especificação, design, integrações, roadmap e estado atual.
+
+**Nesta etapa, atualize somente a documentação. Não implemente código, não altere arquivos Kotlin/Gradle, não gere APK, não crie branch, não faça merge e não abra Pull Request.** A documentação será revisada antes de qualquer autorização de implementação.
+
+## 2. Ordem de prioridade e preservação de informações
+
+Quando houver conflito:
+
+1. As decisões mais recentes registradas neste documento prevalecem sobre descrições antigas de comportamento ou interface.
+2. Preserve as informações técnicas que continuam corretas nos documentos existentes.
+3. Não transforme uma funcionalidade planejada em funcionalidade já implementada.
+4. Não transforme uma lacuna do código atual em requisito de produto sem distinguir as duas coisas.
+5. Em `NEXUS_CURRENT_STATE.md`, mantenha o retrato factual do código da branch que foi efetivamente auditada. Se a branch ou o código não tiverem sido verificados, registre isso como não verificado.
+6. Registre explicitamente no roadmap o que é ajuste visual, regra de negócio, integração e eventual mudança de banco. Não proponha migração Room sem necessidade demonstrada.
+
+O NEXUS continua sendo um centro de controle pessoal e profissional, offline-first, com fonte única de dados e módulos conectados. Não o transforme em uma coleção de telas independentes.
+
+---
+
+# PARTE B — DECISÕES FUNCIONAIS CONSOLIDADAS
+
+## 3. Princípio de experiência: muita informação, pouca confusão
+
+O usuário precisa conseguir enxergar o que está acontecendo sem ter que organizar a interface manualmente o tempo todo.
+
+A interface deve ser:
+
+- Visualmente limpa, elegante, compacta e funcional.
+- Pensada primeiro para celular, sem impedir uma boa adaptação a telas maiores.
+- Econômica no uso do espaço vertical.
+- Organizada mesmo sem nenhum filtro ativo.
+- Modular: filtros permitem reduzir a informação exibida, mas não devem ser necessários para corrigir uma tela desorganizada.
+- Densa o suficiente para reduzir rolagem, mas sem reduzir fontes, alvos de toque ou contraste a ponto de prejudicar a leitura.
+- Consistente entre Agenda, Tarefas, Financeiro, Eventos e Dashboard.
+
+Evite cartões altos sem necessidade, grandes áreas vazias, cabeçalhos repetidos, barras de pesquisa permanentes e fileiras de filtros que empurrem o conteúdo para baixo. Use espaçamento compacto de forma consistente e preserve áreas de toque adequadas.
+
+## 4. Agenda — papel e conteúdo
+
+A Agenda é a visão temporal unificada do NEXUS. Ela responde: **“O que está acontecendo ou exige minha atenção nesta data ou neste período?”**
+
+Ela reúne, sem duplicar registros:
+
+- Tarefas que possuem data.
+- Compromissos.
+- Eventos.
+- Obrigações e vencimentos financeiros relevantes.
+- Faturas com vencimento.
+- Prazos de projetos, caso continuem fazendo parte das ocorrências do produto.
+
+A Agenda não é uma segunda lista de tarefas. Cada item continua pertencendo ao módulo que é sua fonte de verdade. Ao tocar em um item, abrir seu registro ou módulo de origem.
+
+### 4.1 Modos de visualização
+
+Manter os quatro modos:
+
+- **Dia**
+- **Semana**
+- **Mês**
+- **Lista**
+
+O modo **Mês deve ser a visualização inicial** ao abrir a Agenda. Não remover a possibilidade de trocar de modo. O usuário deve conseguir alternar entre Dia, Semana, Mês e Lista sem perder o contexto de navegação.
+
+### 4.2 Mês — calendário como primeira visão
+
+Ao abrir a Agenda:
+
+1. Mostrar o mês atual em uma grade mensal clássica.
+2. Deixar o dia atual selecionado automaticamente.
+3. Mostrar marcadores discretos nos dias que possuem ocorrências.
+4. Ao tocar em outro dia, atualizar a seleção e o conteúdo daquele dia.
+5. Abaixo da grade, apresentar os filtros por meio de um único botão compacto e, em seguida, a lista de ocorrências do dia selecionado.
+6. A lista do dia reúne tarefas, financeiro, eventos e compromissos, sempre distinguindo visualmente o tipo de item.
+
+O calendário mensal é a referência visual principal. Não transformar a primeira tela da Agenda em uma lista cronológica extensa.
+
+### 4.3 Semana — sete dias lado a lado, com navegação horizontal
+
+A visualização semanal precisa ser redesenhada. **Não empilhar segunda, terça, quarta, quinta, sexta, sábado e domingo verticalmente.** Também não basta mostrar um intervalo como “16/11 — 22/11” e colocar todas as ocorrências em uma lista corrida abaixo.
+
+O comportamento desejado é um quadro semanal horizontal:
+
+- Exibir os sete dias da semana, de segunda a domingo, como cartões/colunas lado a lado.
+- Cada cartão representa um dia e possui cabeçalho com o nome abreviado do dia e a data.
+- Dentro de cada cartão, mostrar as ocorrências daquele dia, uma abaixo da outra: tarefas, compromissos, eventos e itens financeiros.
+- A lista interna de cada cartão deve ser compacta, legível e ordenada por horário; itens sem horário seguem uma regra de ordenação consistente.
+- O conjunto dos sete cartões deve ser navegável por arraste/deslize horizontal.
+- Em celulares, mostrar vários cartões simultaneamente, na quantidade que couber sem tornar o texto ilegível. O usuário deve perceber os próximos dias parcialmente ou por completo e poder deslizar para os demais.
+- Não comprimir os sete dias em sete colunas minúsculas simultâneas.
+- Não transformar a semana em sete blocos verticais que exijam rolagem longa para encontrar outro dia.
+- Ao deslizar horizontalmente, revelar os próximos cartões/dias com transição natural. A semana inteira deve estar carregada logicamente, sem exigir uma nova busca manual para cada dia.
+- Tocar no cabeçalho de um dia deve selecioná-lo e permitir abrir/focar aquele dia, sem criar uma segunda cópia dos mesmos itens.
+- Exibir o intervalo da semana no cabeçalho e manter setas para semana anterior e próxima.
+- A semana começa na segunda-feira e termina no domingo.
+
+A largura dos cartões deve ser adaptativa. Priorizar que caibam pelo menos dois dias com leitura confortável em um celular comum; em telas maiores, mostrar mais colunas. Se necessário, permitir que um cartão selecionado ganhe foco sem abandonar o conjunto horizontal. Validar visualmente em tela pequena para evitar cartões estreitos demais.
+
+### 4.4 Dia e Lista
+
+- **Dia:** manter uma visão concentrada nas ocorrências da data selecionada, com horários, itens de dia inteiro e ordenação cronológica.
+- **Lista:** manter uma visão cronológica contínua, respeitando o período/filtro selecionado e sem misturar dados duplicados.
+- A mudança de modo não deve alterar, apagar ou duplicar registros.
+
+### 4.5 Recolher e expandir o calendário
+
+Adicionar um controle compacto com ícone de olho ou chevron para recolher/expandir a parte visual de navegação da Agenda.
+
+- No modo Mês, recolher a grade mensal.
+- No modo Semana, recolher a faixa horizontal de dias.
+- Ao recolher, manter uma faixa mínima com o mês/intervalo e a data selecionada, além de uma forma clara de reabrir a visualização.
+- Preservar o dia e os filtros selecionados.
+- A lista de ocorrências deve subir imediatamente e aproveitar o espaço liberado.
+- O controle não pode ocultar ou apagar ocorrências; ele apenas recolhe o calendário/navegador.
+- Não obrigar o usuário a rolar a tela repetidamente para passar pelo calendário e chegar aos itens do dia.
+
+## 5. Agenda — botão único de filtros
+
+Não deixar duas fileiras permanentes de filtros na tela. Não exibir continuamente uma seção “Filtrar por tipo” e outra “Filtrar por categoria”.
+
+Adicionar **um único botão pequeno de filtro** (ícone de controles deslizantes ou funil) na área de cabeçalho da Agenda. O botão abre um painel compacto, bottom sheet ou popover.
+
+Dentro desse único painel devem existir duas seções:
+
+### 5.1 Filtrar por tipo
+
+Opções iniciais:
+
+- Tudo
+- Tarefas
+- Financeiro
+- Eventos
+- Compromissos
+- Projetos, caso os prazos de projetos continuem disponíveis como ocorrências na Agenda.
+
+A seleção de tipo limita os itens exibidos na visualização atual.
+
+### 5.2 Filtrar por categoria
+
+A lista de categorias deve ser **contextual ao tipo selecionado**.
+
+Exemplo: o usuário escolhe “Tarefas”; em seguida, a seção de categoria apresenta somente as categorias/tags de tarefas. Se escolher “Financeiro”, apresenta categorias financeiras. Não misturar categorias de módulos diferentes numa lista indistinta.
+
+- A categoria deve ser atualizada quando o tipo muda.
+- Se não houver categoria para o tipo selecionado, mostrar uma mensagem neutra ou desabilitar essa parte.
+- “Tudo” não deve produzir uma lista confusa de categorias de vários módulos misturadas.
+- Permitir limpar o filtro de tipo e/ou categoria.
+- Aplicar filtros à visualização ativa: Dia, Semana, Mês e Lista.
+- Na Semana, o filtro deve atuar sobre os sete dias, não somente sobre um dia.
+- No Mês, os marcadores do calendário devem refletir o resultado dos filtros ativos.
+- O botão pode indicar discretamente quando há filtros ativos, mas não adicionar outra fileira de chips à tela.
+
+Controles já existentes e úteis, como “Mostrar já pagos”, devem permanecer acessíveis dentro desse mesmo painel quando fizerem sentido para o tipo Financeiro. Não os deixar permanentemente expostos na tela principal.
+
+## 6. Pesquisa — uma lupa global, sem barras redundantes
+
+O cabeçalho principal do NEXUS já possui uma lupa de pesquisa global. Ela deve continuar sendo o ponto único de pesquisa geral.
+
+- Remover as barras de pesquisa largas e permanentes das telas Agenda, Financeiro e Eventos.
+- Não adicionar outra lupa local ao lado da Agenda se ela duplicar a lupa global.
+- O botão de filtro da Agenda não é uma segunda pesquisa: ele abre filtros de tipo e categoria.
+- A pesquisa global deve continuar localizando registros de todos os módulos.
+- Caso uma pesquisa contextual por módulo seja realmente necessária, ela deve reutilizar a mesma experiência de pesquisa global com o contexto do módulo, sem acrescentar outro ícone permanente ou outra barra fixa.
+
+O objetivo é liberar espaço útil, evitar dois ícones com aparência e função semelhantes e manter a interface visualmente coerente.
+
+## 7. Tarefas — apenas ações executáveis
+
+A aba Tarefas deve conter **somente tarefas**: ações que a pessoa precisa executar, como organizar, preparar, atualizar, pesquisar, resolver, assistir ou criar algo.
+
+Não exibir na lista de Tarefas lançamentos financeiros, pagamentos, eventos ou compromissos como se fossem tarefas.
+
+A tela também não deve abrir com uma lista interminável e desorganizada contendo indiscriminadamente tarefas de hoje até anos futuros.
+
+Organizar a navegação de forma clara, usando filtros/visões compactas, como:
+
+- Hoje
+- Próximas
+- Atrasadas
+- Todas
+- Concluídas
+
+A nomenclatura final pode seguir os componentes já existentes, mas deve permitir chegar rapidamente às tarefas relevantes. “Todas” continua permitindo consultar tarefas futuras distantes, sem obrigar que todo esse conteúdo apareça na primeira visão.
+
+Agrupar tarefas por data quando fizer sentido, manter ordenação previsível e reduzir espaços verticais exagerados entre linhas.
+
+## 8. Regra fundamental: tarefa não é lançamento financeiro
+
+Não criar automaticamente uma tarefa para cada obrigação financeira.
+
+Exemplos:
+
+- “Organizar documentos” é uma tarefa.
+- “Preparar apresentação” é uma tarefa.
+- “Pagar R$ 100 para determinada pessoa” é um lançamento/obrigação do Financeiro.
+- “Pagar a conta de internet” é um lançamento/obrigação do Financeiro.
+- Um compromisso com horário pertence a Compromissos.
+- Um evento pertence a Eventos.
+
+Um pagamento com vencimento aparece na Agenda porque tem uma data relevante, mas sua fonte de verdade continua sendo o Financeiro. Não criar uma tarefa duplicada só porque o pagamento exige atenção.
+
+Se o usuário quiser acompanhar uma ação separada, poderá criar manualmente uma tarefa e vinculá-la ao lançamento quando isso fizer sentido. Esse vínculo opcional não pode gerar duas ocorrências automáticas idênticas na Agenda.
+
+A Agenda reúne essas fontes; a aba Tarefas permanece exclusiva para ações executáveis.
+
+## 9. Tarefas — separar status de condição do prazo
+
+O status da tarefa e a condição do prazo são dimensões diferentes.
+
+### 9.1 Status da tarefa
+
+Manter os estados de execução já definidos:
+
+- Não iniciada/Pendente
+- Em andamento
+- Aguardando
+- Bloqueada
+- Concluída
+- Cancelada
+
+### 9.2 Condição do prazo
+
+O prazo é calculado separadamente:
+
+- No prazo
+- Atrasada
+- Sem prazo
+
+Uma tarefa pode estar “Em andamento” e “Atrasada” ao mesmo tempo. Atraso não deve substituir o status da tarefa e não exige marcação manual: é derivado automaticamente da data/hora de vencimento e do estado de conclusão/cancelamento.
+
+### 9.3 Anel de tarefas no Dashboard
+
+O gráfico de distribuição deve ter três categorias mutuamente exclusivas:
+
+1. Concluídas
+2. Pendentes
+3. Em andamento
+
+**Atrasadas não devem ser uma quarta fatia do mesmo gráfico**, pois são um subconjunto de tarefas que continuam pendentes ou em andamento. Mostrá-las separadamente como contador/indicador discreto, evitando contagem duplicada.
+
+- Tarefas canceladas não entram na distribuição.
+- Tarefas sem prazo não devem ser misturadas silenciosamente na distribuição mensal.
+- Tarefas sem prazo continuam acessíveis na aba Tarefas e podem compor um indicador de backlog separado, se útil.
+
+### 9.4 Aparência de atraso
+
+Não pintar o título inteiro de vermelho.
+
+Para uma tarefa atrasada:
+
+- Mostrar uma bolinha de alerta pequena e uma tag “Atrasada” em vermelho discreto.
+- Manter o título com a cor normal.
+- Mostrar o prazo/data em texto secundário.
+- Usar vermelho somente no marcador/tag ou nos alertas que realmente exigem atenção.
+
+Para tarefas no prazo, usar textos contextuais neutros, como “Hoje, às 18:00”, “Amanhã” ou a data. Não mostrar contagem regressiva em todas as tarefas.
+
+## 10. Recorrência de tarefas — simples para o usuário
+
+A recorrência não deve transformar o cadastro de tarefas em um formulário complexo.
+
+No editor, manter a opção dentro de **“Mais detalhes”**, com o rótulo “Repetir”.
+
+Opções de interface:
+
+- Não repetir
+- Diariamente
+- Dias específicos da semana
+- Semanalmente
+- Quinzenalmente
+- Mensalmente
+- Intervalo personalizado
+
+Permitir data inicial e, opcionalmente, data de término ou limite de ocorrências, sem expor detalhes técnicos desnecessários.
+
+Ao editar ou excluir ocorrência de uma série, oferecer uma escolha clara:
+
+- Só esta ocorrência
+- Toda a série
+
+Ao adiar uma ocorrência, alterar somente a data daquela ocorrência. Não modificar a cadência original da série e não apagar o histórico de atrasos/conclusões.
+
+Regras técnicas:
+
+- Não pré-criar centenas de tarefas futuras.
+- Projetar ocorrências futuras da recorrência na Agenda dentro da janela visual solicitada.
+- Evitar duplicação ao concluir/reabrir uma ocorrência.
+- Preservar histórico, vínculos e lembretes.
+- Implementar e validar primeiro recorrência de **Tarefas**. Não ampliar simultaneamente para compromissos e eventos nesta primeira entrega. A expansão para esses módulos depende de validação posterior e nova decisão.
+
+## 11. Financeiro — visão visual, interativa e sem ambiguidade
+
+O Financeiro deve ser uma área de leitura visual clara, não apenas uma sequência de cartões com números. Preservar as regras financeiras existentes nos documentos, complementadas pelas decisões abaixo.
+
+### 11.1 Seletor de mês
+
+Adicionar/usar um seletor global de mês e ano no topo da visão geral:
+
+- Mês anterior
+- Mês atual
+- Próximo mês
+
+Todos os componentes da visão geral devem respeitar o mês escolhido: indicadores, gráficos, orçamentos e comparações. A tela abre, por padrão, no mês atual.
+
+### 11.2 Gráfico de rosca por categoria
+
+Criar uma rosca interativa de despesas por categoria:
+
+- Exibir até seis categorias e agrupar o restante em “Outros”.
+- Exibir total no centro e legenda ordenada por valor.
+- Permitir alternar entre “Pagas” e “Pagas + previstas”.
+- Ao tocar numa fatia ou item da legenda, selecionar a categoria e filtrar os lançamentos abaixo.
+- Tocar novamente na mesma categoria deve limpar a seleção.
+- A seleção deve ser visível, sem deixar as outras fatias ilegíveis.
+- Estado vazio: mostrar mensagem neutra, sem gráfico enganoso.
+
+### 11.3 Gráfico de barras dos últimos seis meses
+
+Criar gráfico comparativo dos seis meses que terminam no mês selecionado.
+
+- Comparar receitas e despesas.
+- Permitir alternar entre “Realizado” e “Previsto”.
+- Não misturar valores previstos e realizados sem rótulo explícito.
+- Tocar numa coluna/mês deve revelar os valores correspondentes e permitir selecionar aquele mês.
+- Mostrar “Resultado do mês” como receitas realizadas menos despesas realizadas.
+- Não confundir resultado do mês com saldo declarado manualmente.
+
+### 11.4 Previsão dos próximos 30 dias
+
+Criar um bloco compacto com:
+
+- Despesas não liquidadas com vencimento de hoje até os próximos 30 dias.
+- Receitas previstas no mesmo período.
+- Até cinco maiores vencimentos, com data e valor.
+- Rótulo explícito de previsão; não apresentar projeções como dinheiro já recebido ou pago.
+- Estado vazio claro quando não houver vencimentos.
+
+### 11.5 Orçamentos, metas, cartões e faturas
+
+- Orçamentos por categoria com barras de progresso e indicação do limite usado.
+- Mostrar excedente em valor quando ultrapassar 100%.
+- Manter metas financeiras e empréstimos com progresso compreensível e histórico.
+- Cartões devem mostrar limite, utilização, disponibilidade calculada e faturas.
+- Preservar histórico de faturas e ações de fechar/pagar.
+- Parcelamentos devem manter parcelas e vínculos com cartão, evento ou projeto quando aplicável.
+- Recorrências financeiras permanecem independentes do motor de recorrência de tarefas.
+
+### 11.6 Regras financeiras indispensáveis
+
+- Distinguir realizado, previsto, pendente, atrasado e saldo declarado.
+- “Atrasado” é uma condição derivada do vencimento de um lançamento ainda não liquidado, não um pagamento feito.
+- Não somar receitas como despesas em previsões, alertas ou briefings.
+- Não contar uma compra no cartão e o pagamento da fatura como duas despesas.
+- A compra no cartão é registrada na categoria e no período da compra; o pagamento da fatura liquida a obrigação sem gerar uma segunda despesa.
+- Compras vinculadas a fatura não devem aparecer individualmente na Agenda quando a própria fatura é a ocorrência de vencimento.
+- Não inventar juros, multas, tarifas ou taxas.
+- Manter regras de cálculo em `FinanceRules` ou camada pura equivalente, reutilizada por Financeiro, Dashboard, Agenda, notificações e widgets.
+
+### 11.7 Pesquisa e filtros do Financeiro
+
+Remover a barra de pesquisa larga e fixa do Financeiro. Reutilizar a pesquisa global do NEXUS. Filtros de tipo, status, categoria, período e forma de pagamento devem ser acessíveis por controles compactos, sem formar várias fileiras permanentes de chips.
+
+## 12. Eventos e Compromissos
+
+Preservar Eventos e Compromissos como tipos distintos:
+
+- Evento: ocasião com início/fim, local opcional, status e preço real de ingresso.
+- Compromisso: horário reservado, com duração, local/link opcional e vínculo eventual a um evento.
+
+Manter no detalhe do evento a visualização dos compromissos, tarefas e lançamentos vinculados, sem duplicar seus registros.
+
+### 12.1 Preço real e taxas
+
+- O preço do evento/ingresso deve ser o preço real informado.
+- Não sugerir, inventar ou adicionar taxas por padrão.
+- Custos extras só existem quando o usuário os registra de fato.
+- Campos legados de taxas devem permanecer compatíveis quando necessário, mas não dominar o formulário principal.
+- Distinguir preço do ingresso, pagamentos realizados e obrigações futuras.
+
+### 12.2 Local e banner
+
+Manter modo de local “Presencial”, “Online” ou “A definir”. Local não deve ser obrigatório. Banner é opcional e deve continuar armazenado localmente, com comportamento seguro de backup/restauração conforme a especificação de Eventos.
+
+### 12.3 Pesquisa de Eventos
+
+Remover a barra de pesquisa larga e permanente da tela de Eventos. Reutilizar a pesquisa global e manter controles locais compactos para filtros próprios do módulo.
+
+## 13. Mercado — contexto financeiro, não uma corretora
+
+O bloco Mercado é opcional e informativo. Não transformar o NEXUS em aplicativo de investimentos, notícias, corretora ou recomendação de compra/venda.
+
+### 13.1 Indicadores
+
+Priorizar:
+
+- Dólar (USD-BRL)
+- Euro (EUR-BRL)
+- Bitcoin (BTC-BRL)
+
+A proposta técnica é usar uma fonte que permita consulta sem chave pessoal, como a AwesomeAPI, após validar disponibilidade, limites e formato dos dados na etapa técnica.
+
+**Ibovespa só deve ser incluído se houver fonte confiável, gratuita e utilizável sem exigir que o usuário crie/forneça token pessoal.** Não pedir token brapi nem tornar a configuração de chave requisito para usar o NEXUS. Se não houver fonte adequada, deixar o indicador fora da primeira entrega.
+
+Não adicionar ações individuais, carteira, notícias, ordens, corretora, recomendações, alertas de negociação ou indicadores avançados.
+
+### 13.2 Visualização
+
+- Home: cartão compacto, opcional e configurável, com nome, cotação, variação percentual, mini gráfico e horário da última atualização.
+- Financeiro: seção ampliada com os mesmos dados e a mesma fonte de verdade.
+- Ao abrir o indicador, oferecer gráfico com períodos como 7, 30, 90 e 180 dias quando o histórico disponível permitir.
+- Não criar duas implementações divergentes do mesmo indicador na Home e no Financeiro.
+
+### 13.3 Offline, atualização e privacidade
+
+- O NEXUS continua offline-first; somente a consulta de dados de mercado exige internet.
+- Adicionar a permissão normal de internet apenas se e quando essa funcionalidade for aprovada para implementação. Não há popup de permissão de runtime para essa permissão normal.
+- Consultar ao abrir o app/bloco quando estiver habilitado e em uso, respeitando intervalo máximo aproximado de uma atualização automática a cada 30 minutos.
+- Permitir atualização manual com proteção contra chamadas repetidas.
+- Não usar polling contínuo nem trabalho em segundo plano nesta primeira versão.
+- Salvar último valor válido e histórico local em Room.
+- Em falha de rede/API, preservar cache válido e mostrar “Última atualização: dd/MM HH:mm”; nunca bloquear o Dashboard ou exibir erro técnico como estado principal.
+- Não transmitir dados pessoais ou transações financeiras do usuário para consultar cotações.
+- Cache de Mercado não precisa ser obrigatório no backup; pode ser reconstruído quando houver conexão.
+- Não usar chave pessoal, token, servidor próprio, IA ou serviço pago como dependência do recurso.
+
+---
+
+# PARTE C — DASHBOARD E DESIGN SYSTEM
+
+## 14. Dashboard — visão geral, não lista interminável
+
+O Dashboard deve resumir como está o dia, o mês e as áreas importantes da vida, sem reproduzir listas longas dos módulos.
+
+Manter blocos modulares, configuráveis e reordenáveis, com conteúdo compacto:
+
+- Saudação/data contextual.
+- Anel de tarefas com distribuição de três categorias (Concluídas, Pendentes, Em andamento) e indicador separado de atrasadas.
+- Resumo financeiro com rosca e totais do mês.
+- Projetos e objetivos.
+- Próximos compromissos e eventos.
+- Alertas reais, exibidos somente quando existirem.
+- Bloco Mercado opcional.
+
+Tocar em um indicador deve levar à visão completa correspondente, com filtros/contexto adequados.
+
+A rosca financeira da Home deve usar as mesmas regras e componentes do Financeiro. Não criar cálculos paralelos.
+
+## 15. Design System e componentes
+
+Manter a identidade minimalista, com referência de legibilidade e interação inspirada em Apple/iPhone/Apple Watch, sem imitar telas de outros produtos.
+
+- Base neutra; cores têm significado funcional.
+- Contraste equivalente nos temas claro e escuro.
+- Ícones e formas ajudam a identificar o tipo de registro; cor comunica categoria, seleção ou estado.
+- Gráficos interativos e animações sutis, rápidas e úteis.
+- Tipografia e valores numéricos devem permanecer legíveis.
+- Não sacrificar alvos de toque por compactação.
+- A interface semanal horizontal deve ser um componente reutilizável e validado em celular.
+- O recolhimento do calendário deve preservar seleção e contexto.
+- O painel de filtros deve ser único, compacto e reutilizável, com opções dependentes do módulo/tipo.
+- Os gráficos Canvas devem manter estados vazios, acessibilidade semântica e suporte aos dois temas.
+
+Evitar espaçamento vertical exagerado, excesso de cartões aninhados e componentes que repitam a mesma informação.
+
+---
+
+# PARTE D — INTEGRAÇÃO, IMPLEMENTAÇÃO FUTURA E VALIDAÇÃO
+
+## 16. Fonte única e integridade entre módulos
+
+As informações devem ser cadastradas uma vez e apresentadas nos contextos relevantes.
+
+- Agenda usa o motor unificado de ocorrências (`AgendaEngine` ou a abstração que for confirmada na branch de desenvolvimento).
+- Financeiro usa regras únicas (`FinanceRules` ou equivalente).
+- Home, widgets, notificações, Briefing e Revisão Noturna devem consumir regras consistentes.
+- Um pagamento não pode aparecer duplicado como tarefa e lançamento.
+- Um item vinculado deve abrir seu registro de origem.
+- Alterações e exclusões preservam histórico e integridade referencial.
+- Recorrências projetadas na Agenda não podem gerar linhas duplicadas no banco.
+- Mudanças em transações, faturas, tarefas, eventos e compromissos devem atualizar os resumos e ocorrências dependentes.
+
+## 17. Roadmap — ajustar a ordem sem antecipar implementação
+
+Revise o roadmap atual para contemplar os refinamentos visuais e funcionais acima. Não preserve automaticamente a ideia de implementar toda a recorrência de Tarefas, Compromissos e Eventos de uma só vez.
+
+A ordem deve considerar:
+
+1. Confirmar a branch de desenvolvimento e a baseline real antes de alterar código.
+2. Corrigir problemas de estabilidade, testes, integridade e CI já identificados nos documentos.
+3. Implementar/refinar a experiência financeira e seus componentes visuais compartilhados.
+4. Refazer a interface da Agenda: mês inicial, semana horizontal com cartões por dia, recolhimento do calendário, filtros em painel compacto, busca sem redundância e integração unificada.
+5. Organizar a aba Tarefas, estados/prazos e indicador de atraso.
+6. Implementar recorrência somente em Tarefas na primeira fase, preservando histórico e sem pré-geração massiva.
+7. Consolidar Eventos, vínculos e demais melhorias que dependam de decisões/estrutura já documentadas.
+8. Implementar Mercado somente depois de validar a fonte sem chave pessoal e a estratégia offline/cache.
+9. Atualizar Dashboard, widgets, notificações e testes para consumir as mesmas regras.
+
+A ordem pode ser tecnicamente ajustada com justificativa, mas não deve causar regressões nem misturar muitos subsistemas sem critério. Preferir lotes coerentes, cada um com critérios objetivos de aceite e uma validação consolidada.
+
+## 18. Regras para qualquer implementação futura
+
+Quando houver autorização explícita para implementar:
+
+- Trabalhar na branch de desenvolvimento `integracao-google`, depois de confirmar que ela existe e qual é seu commit atual.
+- Não trazer código de outra branch/versão sem aprovação.
+- Não fazer merge, PR, push, trocar branch ou executar ação destrutiva sem autorização explícita.
+- Antes de editar, ler os arquivos reais e comparar a implementação com `NEXUS_CURRENT_STATE.md`.
+- Evitar refatoração massiva sem necessidade.
+- Não adicionar serviços pagos, chaves pessoais, bibliotecas pesadas ou dependência de IA sem aprovação.
+- Preservar compatibilidade de banco e backups; criar migração somente quando a estrutura realmente exigir.
+- Implementar testes de regras puras, integrações, filtros, cálculos, migrações e backup.
+- Verificar build e testes; deixar explícito o que foi validado por CI e o que ainda depende de teste em dispositivo.
+- Entregar relatório de arquivos alterados, comportamento implementado, testes executados, builds e limitações.
+
+**Este documento, por si só, não autoriza nenhuma alteração de código.**
+
+## 19. Critérios de aceite de produto
+
+A revisão documental deve deixar explícito como serão verificados, no mínimo, os seguintes resultados:
+
+### Agenda
+- Abre no mês atual com o dia de hoje selecionado.
+- Mês mostra marcadores e, abaixo, os itens do dia escolhido.
+- Semana mostra os sete dias em cartões/colunas horizontais, com itens dentro de cada dia.
+- O usuário navega lateralmente pela semana e usa setas para ir à semana anterior/próxima.
+- Nenhuma versão da semana empilha os sete dias verticalmente.
+- O calendário pode ser recolhido sem perder a data selecionada.
+- Um único botão abre filtros de tipo e categoria; as categorias mudam conforme o tipo.
+- Os filtros atuam corretamente em Dia, Semana, Mês e Lista.
+- Não há barra de pesquisa larga e fixa na Agenda.
+- Itens financeiros, tarefas, eventos e compromissos aparecem uma vez e abrem o módulo de origem.
+
+### Tarefas
+- A aba Tarefas mostra apenas ações executáveis.
+- Pagamentos e lançamentos financeiros não são criados automaticamente como tarefas.
+- A primeira visão não fica poluída por toda a lista de tarefas de anos futuros.
+- Atraso é derivado do prazo, sem substituir o status.
+- O gráfico do Dashboard usa três categorias exclusivas e mostra atrasadas separadamente.
+- Atrasadas não deixam o título inteiro vermelho.
+- Recorrência é simples na interface e não duplica ocorrências.
+
+### Financeiro
+- Mês selecionado controla todos os componentes do resumo.
+- Rosca filtra lançamentos ao tocar na categoria.
+- Barras dos seis meses permitem alternar Realizado/Previsto.
+- Resultado do mês não é confundido com saldo declarado.
+- Previsão dos próximos 30 dias é explicitamente identificada como prevista.
+- Compras no cartão e pagamento de fatura não são contados duas vezes.
+- Não existem taxas fictícias.
+
+### Busca e experiência mobile
+- A busca global é a única lupa permanente.
+- Agenda, Financeiro e Eventos não mantêm grandes campos de busca fixos.
+- Filtros locais não ocupam fileiras inteiras na tela.
+- A interface reduz rolagem e espaços vazios sem perder legibilidade.
+- A semana horizontal é utilizável em celular comum e também se adapta a telas maiores.
+
+### Mercado e offline
+- Não depende de token pessoal.
+- Ibovespa não é obrigatório se a fonte gratuita adequada não existir.
+- O restante do aplicativo continua útil sem conexão.
+- Falhas de rede preservam o último cache válido.
+- A Home não espera a rede para abrir.
+
+---
+
+# PARTE E — ENTREGÁVEIS DESTA RODADA DOCUMENTAL
+
+Ao usar este prompt no Google AI Studio, entregar:
+
+1. Versão revisada de `NEXUS_PRODUCT_SPEC.md`.
+2. Versão revisada de `NEXUS_DESIGN_SYSTEM.md`.
+3. Versão revisada de `NEXUS_INTEGRATION_MAP.md`.
+4. Versão revisada de `NEXUS_IMPLEMENTATION_ROADMAP.md`.
+5. Versão revisada de `NEXUS_CURRENT_STATE.md`, sem inventar verificações ou funcionalidades.
+6. Um resumo das decisões alteradas, conflitos antigos removidos e pontos que ainda dependem de confirmação técnica.
+
+Antes de concluir, fazer uma verificação cruzada entre os seis documentos (incluindo este `lista.md)):
+
+- A especificação de Agenda deve corresponder ao Design System e ao roadmap.
+- A separação Tarefas/Financeiro deve corresponder ao mapa de integração.
+- O anel de tarefas de três categorias deve estar igual em Produto, Design e Dashboard.
+- A recorrência inicial somente de Tarefas deve estar refletida no Produto, Integração e Roadmap.
+- As regras financeiras e de cartão/fatura devem ser iguais em Produto, Integração e Roadmap.
+- A estratégia de Mercado sem token pessoal deve substituir qualquer texto antigo que peça token brapi.
+- O estado atual do código deve continuar separado do comportamento desejado.
+
+**Não implementar código nesta rodada.** Primeiro consolidar os documentos, revisar as contradições e devolver os arquivos para auditoria. A implementação será planejada depois dessa auditoria e de autorização explícita.
+
+
+---
+
+# PARTE F — REFINAMENTOS ADICIONAIS E CONTROLE DE CADA ATUALIZAÇÃO
+
+## 20. Regra geral de rolagem e densidade de informação
+
+O NEXUS deve minimizar a rolagem vertical necessária para compreender e executar ações.
+
+- Ao abrir uma tela, o usuário deve encontrar as informações mais relevantes e ações principais sem atravessar grandes áreas vazias, cabeçalhos repetidos ou cartões desnecessariamente altos.
+- Rolagem vertical continua permitida quando uma lista real possui muitos itens. Não esconder, cortar ou paginar artificialmente informações necessárias apenas para evitar rolagem.
+- Usar navegação horizontal somente quando houver uma justificativa funcional clara: por exemplo, percorrer os dias de uma semana, comparar cartões relacionados ou visualizar itens de uma mesma seção.
+- Não transformar cada módulo em uma sequência de carrosséis. Evitar carrosséis aninhados e conteúdo essencial escondido fora da primeira visualização.
+- Não exigir vários gestos laterais para acessar indicadores prioritários.
+- Preferir composição compacta, hierarquia visual clara, resumos úteis e expansão sob demanda.
+- Reduzir espaços entre elementos relacionados; manter distância maior somente para separar assuntos diferentes.
+- Densidade não significa texto minúsculo: preservar legibilidade, contraste e áreas de toque.
+
+**Critério:** a interface deve reduzir rolagem vertical sem criar uma quantidade exagerada de navegação horizontal. Cada gesto precisa ter uma finalidade clara.
+
+## 21. Cabeçalho de Início — saudação, data e frase diária integradas
+
+A saudação e a frase diária devem compor um único bloco de cabeçalho, sem transformar a frase em um cartão separado.
+
+- Manter a saudação contextual, por exemplo “Boa tarde, [nome]”.
+- Exibir o dia da semana e a data logo abaixo, com hierarquia visual clara.
+- A frase diária aparece discretamente integrada ao mesmo cabeçalho, preferencialmente abaixo da data.
+- A frase deve usar tipografia secundária, tamanho menor ou peso mais leve, sem caixa, card, fundo elevado, borda ou espaçamento próprio de seção.
+- A frase não deve competir com os gráficos, indicadores, tarefas ou informações financeiras.
+- Se não houver frase disponível, o cabeçalho deve se ajustar sem deixar espaço vazio.
+- Preservar o acesso contextual à frase/biblioteca já definido, sem adicionar um botão fixo que aumente a altura do cabeçalho.
+
+A frase funciona como detalhe humano e estético, não como bloco principal de dados. O objetivo é manter o cabeçalho agradável e discreto, ocupando pouca altura.
+
+## 22. Início/Dashboard — ordem das abas de navegação
+
+A navegação principal inferior deve seguir esta ordem, mantendo cinco destinos:
+
+1. **Tarefas**
+2. **Agenda**
+3. **Início**
+4. **Financeiro**
+5. **Eventos**
+
+Regras:
+
+- **Início fica exatamente na posição central** da barra inferior.
+- **Agenda permanece na posição em que já está atualmente** (segunda posição).
+- **Tarefas passa para a primeira posição**, ocupando a posição anteriormente usada por Início.
+- Financeiro e Eventos permanecem nas posições atuais à direita.
+- Ajustar a navegação e o estado selecionado com segurança, preservando rotas, deep-links, editores e comportamento de retorno.
+- Não recriar telas ou módulos só por causa da troca de ordem.
+
+## 23. Dashboard — gráficos e indicadores prioritários no alto
+
+Os gráficos e indicadores úteis devem aparecer mais perto do início da tela, depois do cabeçalho de saudação/data/frase.
+
+- Não deixar gráficos e indicadores importantes escondidos abaixo de todas as listas de tarefas, vencimentos ou outros conteúdos extensos.
+- Priorizar a leitura dos dados essenciais assim que o usuário abrir o aplicativo.
+- Reposicionar os indicadores visuais de tarefas e Financeiro para a parte superior do Dashboard, próximos ao cabeçalho.
+- Preferir gráficos compactos, integrados e fáceis de interpretar, sem adicionar cartões altos e repetitivos.
+- O anel/resumo de tarefas deve refletir Concluídas, Pendentes e Em andamento; atrasadas aparecem como indicador separado, conforme a seção 9.
+- O resumo financeiro deve apresentar de maneira clara receitas, despesas e resultado, distinguindo realizado de previsto.
+- Projetos, objetivos, próximos compromissos/eventos e alertas permanecem acessíveis, mas a ordem deve priorizar os dados que ajudam a entender a situação geral.
+- Listas como “Prioridades de hoje” e “Tarefas atrasadas” devem ser compactas e limitadas na Home, com acesso ao módulo completo ao tocar em “Ver todas” ou equivalente.
+- Não empurrar conteúdo essencial para uma fileira horizontal escondida. Se uma seção exigir navegação lateral, deve ser claro que existem mais elementos e a primeira visualização precisa continuar útil.
+- A Home é um painel de leitura rápida, não uma cópia longa das abas Tarefas, Agenda ou Financeiro.
+
+## 24. Build e testes — cada atualização deve terminar em estado compilável
+
+Esta regra vale para cada **lote/versão de atualização**, não para cada pequeno arquivo editado individualmente.
+
+- O Google AI Studio deve trabalhar em alterações coerentes e incrementais.
+- Não entregar uma atualização parcialmente integrada que deixe o projeto em estado que não compila, esperando consertar apenas em uma etapa posterior.
+- Ao concluir cada lote, todos os arquivos relacionados devem estar consistentes entre si e o projeto deve continuar compilável.
+- Antes de iniciar o próximo lote, corrigir falhas de compilação e testes introduzidas pelo lote anterior.
+- Preservar uma base funcional entre lotes; não empilhar várias alterações grandes sobre uma versão já quebrada.
+- Mudanças interdependentes podem ser agrupadas num mesmo lote, mas esse lote precisa terminar com código integrado e validado.
+- Não afirmar que o app compila apenas porque os arquivos foram gerados, porque a análise estática não apontou erro ou porque o código parece correto.
+
+### 24.1 GitHub Actions e artefato APK
+
+O fluxo atual observado em `integracao-google` usa GitHub Actions para configurar Java 17, Android SDK e Gradle 8.10.2, executar `gradle :app:assembleDebug` e publicar o APK Debug como artefato.
+
+- O Google AI Studio produz/altera os arquivos do projeto.
+- O GitHub Actions é o processo que efetivamente executa a compilação Android e gera o APK para download.
+- Cada lote deve acionar esse processo depois que os arquivos completos forem sincronizados para a branch correta.
+- A existência do workflow não prova que o build passou; verificar o resultado da execução e o artefato.
+- O workflow atual consultado executa `assembleDebug`, mas **não executa `testDebugUnitTest`**. Avaliar e incorporar testes unitários ao CI após identificar e resolver o estado dos testes existentes.
+- A compilação Debug bem-sucedida é necessária, mas não prova funcionamento de todos os fluxos no aparelho. Registrar separadamente testes automatizados, build e validação manual em dispositivo.
+
+### 24.2 Falhas e bloqueios
+
+Se o build falhar:
+
+1. Não iniciar o próximo lote de funcionalidades.
+2. Registrar a primeira falha real do Gradle, o arquivo/linha e a causa provável.
+3. Corrigir somente o que for necessário, sem refatorar o projeto inteiro.
+4. Reexecutar testes/build afetados.
+5. Prosseguir somente depois de obter um estado estável, ou declarar explicitamente o bloqueio técnico e a evidência disponível.
+
+Se testes já falhavam antes do lote atual, registrar como falha preexistente e separar do que foi introduzido pela atualização. Não ocultar testes quebrados nem desativá-los apenas para obter build verde.
+
+### 24.3 Proteção de dados e versão instalada
+
+- Não alterar `applicationId`, assinatura, banco Room, migrações, versão de backup ou estrutura de dados sem necessidade demonstrada e plano de compatibilidade.
+- Preservar dados de instalações anteriores.
+- Não recomendar desinstalar o app para contornar problemas de atualização sem explicar o risco de perda de dados e exigir backup verificado.
+- Não trocar chaves de assinatura de forma que impeça atualização in-place.
+- Antes de alterações estruturais, verificar migrações e backups reais.
+- Entregar APK como artefato somente quando o workflow efetivamente o tiver produzido.
+
+## 25. Identificação e histórico das atualizações
+
+Cada entrega futura deve ter um nome estável e descritivo, permitindo localizar o escopo sem abrir todos os arquivos.
+
+Convenção sugerida:
+
+`NEXUS_UPDATE_01_CONTROL_CENTER.md`
+
+Nome da primeira atualização: **NEXUS Update 01 — Control Center & Mobile Experience**.
+
+Próximas entregas devem incrementar o número e resumir o escopo, por exemplo:
+
+- `NEXUS_UPDATE_02_TASK_RECURRENCE.md`
+- `NEXUS_UPDATE_03_EVENTS_AND_BACKUP.md`
+
+Não usar nomes vagos como `final.md`, `new.md`, `changes2.md` ou `latest_prompt.md`.
+
+O documento de cada atualização deve registrar:
+
+- Baseline exata da branch/commit usado.
+- Objetivo do lote.
+- Escopo incluído e explicitamente excluído.
+- Arquivos/áreas que podem mudar.
+- Preservações obrigatórias.
+- Critérios de aceite.
+- Testes e build necessários.
+- Resultado real de validação.
+- Limitações conhecidas e itens adiados.
+
+O arquivo `lista.md` permanece como consolidação das decisões de produto. O arquivo `NEXUS_UPDATE_01_CONTROL_CENTER.md` será o prompt operacional da primeira entrega de implementação. Não confundir os papéis dos dois documentos.

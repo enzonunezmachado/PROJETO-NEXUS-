@@ -1,0 +1,690 @@
+# NEXUS Update 01 — Control Center & Mobile Experience
+
+**Arquivo:** `docs/NEXUS_UPDATE_01_CONTROL_CENTER.md`  
+**Tipo:** prompt operacional de continuidade e implementação  
+**Repositório:** `enzonunezmachado/PROJECT_NEXUS`  
+**Branch de desenvolvimento de referência:** `integracao-google`  
+**Commit de referência consultado:** `ea0a1c033891c14304e969cba09d280f2f297077`  
+**Documentação de decisões:** `docs/lista.md`
+
+---
+
+# 1. MISSÃO
+
+Você está continuando o desenvolvimento de um aplicativo Android já existente chamado **NEXUS**. Não crie um projeto novo, não reconstrua o aplicativo do zero e não descarte trabalho anterior.
+
+O objetivo desta atualização é continuar o trabalho que já estava em andamento no Google AI Studio, recuperar o ponto exato em que a execução do prompt de implementação originado no Claude (Anthropic) foi interrompida e incorporar as decisões de produto mais recentes, documentadas em `docs/lista.md`.
+
+O NEXUS já possui uma aplicação Android real, código Kotlin/Jetpack Compose, banco local Room, módulos funcionais e histórico de APK gerado anteriormente. Preserve tudo o que estiver funcionando.
+
+**Não confunda Claude (Anthropic) com serviço de computação em nuvem. Não introduza Cloud, Firebase, backend ou infraestrutura em nuvem.** O NEXUS continua offline-first, com Room/SQLite como fonte local da verdade.
+
+## Resultado esperado
+
+Entregar uma atualização real do aplicativo, integrada ao código existente, incluindo os refinamentos de Dashboard, navegação, Agenda, Tarefas, Financeiro, Eventos, filtros, recorrência e Mercado descritos neste documento e em `docs/lista.md`.
+
+A atualização só estará concluída quando:
+
+1. O trabalho anterior for identificado e preservado.
+2. As mudanças novas estiverem integradas, não apenas desenhadas em telas desconectadas.
+3. A aplicação permanecer compilável após cada lote de trabalho.
+4. Os testes aplicáveis forem executados e seus resultados documentados.
+5. O GitHub Actions produzir um APK Debug válido como artefato.
+6. O estado real do projeto e a documentação forem atualizados sem inventar resultados.
+
+---
+
+# 2. DOCUMENTOS QUE DEVEM SER LIDOS
+
+Antes de alterar qualquer arquivo, leia integralmente:
+
+1. `docs/lista.md` — decisões consolidadas e refinamentos mais recentes. **É a fonte principal das decisões funcionais.**
+2. `docs/NEXUS_PRODUCT_SPEC.md` — especificação dos módulos e regras de produto.
+3. `docs/NEXUS_DESIGN_SYSTEM.md` — identidade visual, tokens, tipografia e componentes.
+4. `docs/NEXUS_INTEGRATION_MAP.md` — relações entre módulos e regras de não duplicação.
+5. `docs/NEXUS_IMPLEMENTATION_ROADMAP.md` — etapas, dependências e riscos.
+6. `docs/NEXUS_CURRENT_STATE.md` — auditoria do estado do código registrada na documentação.
+7. `NEXUS_ARCHITECTURE_AND_PROGRESS.md` na branch de desenvolvimento — documento técnico específico dessa árvore.
+8. Este documento.
+
+Também inspecione o código real e o estado do workspace atual do Google AI Studio. Documentos não substituem o código.
+
+## 2.1 Histórico Claude e artefatos anteriores
+
+O repositório/Library contém um arquivo chamado `NEXUS_relatorio_transferencia_Claude.md`. Ele é um relatório de transferência de contexto e reconstrução do escopo para auditoria pelo Claude; **não é a transcrição literal do prompt de implementação que foi enviado ao Google AI Studio**.
+
+Também existe uma auditoria técnica anterior em `Markdown colado(1).md`, que descreve o estado do código e lacunas. Use esses materiais como contexto, não como prova de que todo item continua igual no workspace atual.
+
+Na conversa/artefatos atuais do Google AI Studio, localize o prompt de implementação que veio do Claude e o ponto exato em que sua execução foi interrompida. Leia também as alterações e arquivos que o Google AI Studio já produziu durante essa execução.
+
+Não execute novamente o prompt antigo de forma cega. Não substitua o trabalho parcial por uma nova geração. Faça uma comparação entre:
+- o conteúdo do prompt anterior;
+- as instruções/etapas que já foram concluídas;
+- os arquivos efetivamente modificados;
+- o conteúdo do repositório GitHub;
+- os artefatos ainda presentes no workspace do Google AI Studio;
+- os itens que permanecem pendentes.
+
+Se o prompt original ou os artefatos intermediários não estiverem acessíveis no workspace, **não invente o ponto de interrupção**. Apresente um relatório objetivo do que foi possível recuperar, indique o arquivo/conversa que falta e peça esse material antes de sobrescrever ou reconstruir trabalho desconhecido.
+
+---
+
+# 3. BASELINE E PROTEÇÃO DO PROJETO
+
+## 3.1 Branch e commit
+
+A branch de desenvolvimento de referência consultada foi:
+
+`integracao-google`  
+Commit consultado: `ea0a1c033891c14304e969cba09d280f2f297077`
+
+Esse commit é uma referência de leitura, não uma autorização para resetar o workspace. Confirme novamente a branch e o commit atuais antes de escrever qualquer arquivo.
+
+Se o workspace do Google AI Studio contiver alterações posteriores ainda não sincronizadas ao GitHub:
+- não as descarte;
+- não faça checkout/reset para o commit de referência por cima delas;
+- compare os arquivos e preserve o trabalho válido;
+- registre quais alterações vieram do trabalho anterior e quais pertencem a esta atualização.
+
+A branch `main` contém os documentos de produto. A implementação Android deve continuar na branch `integracao-google`, salvo instrução posterior explícita do proprietário do projeto.
+
+Não faça merge, não abra Pull Request, não troque de branch e não execute ações destrutivas automaticamente.
+
+## 3.2 Estado técnico de referência observado
+
+A inspeção anterior do código de `integracao-google` encontrou:
+
+- Aplicativo Android nativo, Kotlin, Jetpack Compose e Material 3.
+- `applicationId = com.nexus.app`.
+- `versionCode = 7` e `versionName = 5.2.0`.
+- Módulo Android Gradle `:app`.
+- Room/SQLite com banco versão 5, 25 entidades, DAOs e migrações explícitas.
+- Agenda, Tarefas/Projetos, Eventos, Financeiro, objetivos, notificações, widgets, backup e frases já existem em algum nível.
+- A Agenda possui os modos Dia, Semana, Mês e Lista.
+- O Dashboard utiliza blocos configuráveis e reordenáveis.
+- A base tem gráficos Canvas simples, mas não a experiência financeira completa especificada.
+- O projeto também contém arquivos Web/Node na raiz; eles não devem ser confundidos com o módulo Android.
+
+Esses pontos precisam ser confirmados novamente nos arquivos atuais. Não marque nada como concluído só porque há um arquivo ou uma tela com esse nome.
+
+## 3.3 Divergências documentais já identificadas
+
+A documentação arquitetural em `integracao-google` afirma que não há `BackHandler`, mas a inspeção direta do `MainActivity.kt` encontrou um `BackHandler`. O código encontrado, porém, envia `editorHasUnsavedChanges = false` fixo para a regra de retorno.
+
+Isso é um exemplo de por que o código real prevalece sobre uma frase isolada de documentação. Corrija a documentação para refletir a realidade confirmada, sem inventar uma implementação que não exista.
+
+Antes de qualquer alteração, verifique novamente:
+- navegação e BackHandler;
+- estado de alterações não salvas;
+- abas e ordem visual;
+- conteúdo real do Dashboard;
+- Agenda semanal e mensal;
+- filtros e pesquisa;
+- regras financeiras;
+- recorrência existente;
+- banco, migrações e backup;
+- testes e build.
+
+## 3.4 Preservações obrigatórias
+
+- Não alterar `applicationId`.
+- Não substituir Kotlin, Compose, Material 3, Room ou SQLite.
+- Não remover módulos que já funcionam.
+- Não recriar tabelas ou banco sem necessidade técnica demonstrada.
+- Não introduzir login, Firebase, backend, nuvem ou assinatura paga.
+- Não adicionar dependências pesadas sem justificativa.
+- Não apagar dados, histórico, backups ou preferências do usuário.
+- Não usar `fallbackToDestructiveMigration()`.
+- Não alterar notificações, widgets, deep-links ou navegação sem validar os efeitos indiretos.
+- Não aumentar `versionCode` a cada tentativa interna de build; planejar a versão final da atualização uma única vez.
+- Não trocar assinatura/chave de forma que impeça atualização da instalação existente.
+- Não recomendar desinstalação como solução de erro sem explicar o risco de perda dos dados locais e verificar backup.
+
+Mudanças exclusivamente visuais não devem gerar migração de Room.
+
+---
+
+# 4. REGRA DE EXECUÇÃO: CADA LOTE TERMINA COMPILÁVEL
+
+Esta é uma regra obrigatória da atualização.
+
+**Cada lote coerente de alterações deve terminar em um estado compilável.** Não acumule alterações incompletas em várias partes do projeto para tentar consertar tudo somente no final.
+
+O Google AI Studio é responsável por editar/integrar os arquivos do projeto. O **GitHub Actions é o processo que executa o Gradle, compila o APK e publica o artefato**.
+
+O workflow observado em `integracao-google`:
+- configura Java 17;
+- configura Android SDK;
+- configura Gradle 8.10.2;
+- executa `gradle :app:assembleDebug`;
+- envia `app/build/outputs/apk/debug/*.apk` como artefato.
+
+Esse workflow consultado não executa `testDebugUnitTest`. Avalie adicionar a etapa de testes ao CI, mas primeiro inspecione os testes existentes e resolva as falhas reais; não desative ou enfraqueça testes para obter um resultado verde.
+
+## 4.1 Processo obrigatório por lote
+
+Para cada lote:
+
+1. Identificar os arquivos que serão alterados.
+2. Fazer mudanças completas e consistentes, sem deixar referências, imports, estados ou assinaturas quebradas.
+3. Revisar todos os pontos de chamada afetados.
+4. Executar testes unitários relevantes.
+5. Executar `assembleDebug` pelo GitHub Actions.
+6. Confirmar que o workflow terminou com sucesso.
+7. Confirmar que o APK foi publicado como artefato.
+8. Registrar o commit, o resultado dos testes, o resultado do build e quaisquer limitações.
+9. Só então iniciar o próximo lote.
+
+Mudanças que dependem umas das outras podem ficar no mesmo lote, mas o lote completo precisa terminar em estado estável.
+
+## 4.2 Se o build falhar
+
+- Pare o avanço de funcionalidades.
+- Leia o primeiro erro real do Gradle, não apenas a última mensagem genérica.
+- Identifique se a falha já existia na baseline ou foi introduzida pelo lote atual.
+- Corrija a causa com a menor alteração necessária.
+- Não reescreva o projeto inteiro.
+- Não remova testes, dependências ou recursos apenas para esconder a falha.
+- Execute novamente os testes e o build.
+- Não marque a atualização como concluída enquanto o APK não tiver sido produzido.
+
+A auditoria anterior encontrou possíveis testes incompatíveis com a versão atual de backup. Confirme no código atual antes de decidir a correção.
+
+## 4.3 O que significa “compilável”
+
+“Compilável” significa que o projeto Android real, na branch de trabalho, passa pelo Gradle e gera o APK. Não significa apenas:
+- que o código foi gerado;
+- que o editor não mostra sublinhados vermelhos;
+- que o preview Compose abre;
+- que um inspetor Web/Vite compila;
+- que o Google AI Studio declarou a tarefa concluída.
+
+A compilação e os testes precisam de evidência do GitHub Actions.
+
+---
+
+# 5. ESCOPO DE PRODUTO DESTA ATUALIZAÇÃO
+
+A especificação detalhada está em `docs/lista.md`. Leia e aplique todas as decisões. Abaixo estão os pontos operacionais principais.
+
+## 5.1 Princípio de experiência
+
+O NEXUS deve reduzir a carga mental e a quantidade de rolagem vertical.
+
+- Mostrar primeiro o que ajuda o usuário a entender sua situação.
+- Evitar grandes espaços vazios, cartões desnecessariamente altos, cabeçalhos repetidos e filtros permanentemente expostos.
+- Não transformar o aplicativo em uma sequência de carrosséis horizontais.
+- Navegação horizontal só deve existir quando for realmente útil, como na semana da Agenda.
+- Não esconder indicadores essenciais a vários gestos laterais de distância.
+- Listas realmente extensas podem rolar verticalmente; não cortar informação necessária.
+- Manter fontes legíveis, bom contraste e alvos de toque confortáveis.
+
+**Equilíbrio desejado:** o usuário não deve precisar rolar muito para entender o Dashboard ou alcançar ações principais. Ao mesmo tempo, não deve precisar arrastar lateralmente muitas vezes para encontrar informação essencial.
+
+## 5.2 Ordem da navegação inferior
+
+A nova ordem visual das cinco abas deve ser:
+
+1. Tarefas
+2. Agenda
+3. Início
+4. Financeiro
+5. Eventos
+
+Início fica no centro. Agenda permanece na segunda posição. Tarefas passa para a posição anteriormente ocupada por Início.
+
+No código observado, `MainTab.entries` é usado para montar a barra de navegação. Não reordene cegamente o enum se sua ordem puder afetar lógica, persistência ou deep-links. Revise todos os usos e, se apropriado, defina uma lista explícita de ordem visual da barra sem mudar a identidade/semântica dos valores internos.
+
+Validar:
+- seleção correta das abas;
+- ícones e rótulos;
+- deep-links dos widgets;
+- navegação de retorno;
+- rota inicial;
+- ações que abrem Financeiro, Agenda, Tarefas e Eventos.
+
+## 5.3 Início/Dashboard — cabeçalho compacto
+
+A área superior deve apresentar:
+
+- saudação contextual, como “Boa tarde, [nome]”;
+- dia da semana e data;
+- frase diária de maneira discreta.
+
+A frase diária deve ficar integrada ao cabeçalho, preferencialmente logo abaixo da data. **Não deve existir um card separado para a frase.**
+
+Requisitos:
+- manter a estética bonita e discreta;
+- usar tipografia secundária, tamanho menor ou peso leve;
+- não criar borda, fundo, elevação ou retângulo próprio;
+- não criar uma área vertical grande apenas para a frase;
+- não fazer a frase competir com gráficos e indicadores;
+- quando não houver frase, não deixar espaço vazio;
+- preservar seleção de frase, biblioteca, autoria e preferências existentes;
+- não remover recursos de gerenciamento de frases sem autorização.
+
+No código observado, `GreetingBlock` e `DailyQuoteBlock` são itens separados da `LazyColumn`, e o segundo é renderizado como `NexusCard`. Integre visualmente a frase ao cabeçalho sem duplicar consultas, estado ou conteúdo. Preserve a possibilidade de ocultar/mostrar a frase, se essa preferência já existir.
+
+## 5.4 Início/Dashboard — dados primeiro
+
+Gráficos e indicadores precisam aparecer mais acima, logo após o cabeçalho compacto, e não abaixo de todas as listas.
+
+Ordem conceitual desejada:
+
+1. Cabeçalho: saudação + data + frase discreta.
+2. Resumo visual de tarefas.
+3. Resumo visual financeiro.
+4. Indicadores compactos de projetos/objetivos, se habilitados.
+5. Próximos compromissos/eventos e alertas reais.
+6. Listas curtas de prioridades ou itens que exigem atenção.
+
+Não manter a antiga fileira de números como a principal representação do estado das tarefas, por exemplo “75 pendentes, 5 concluídas, 8 atrasadas”, sem uma leitura visual melhor. Priorizar o gráfico de anel de tarefas e seus valores essenciais, com atrasadas como indicador separado.
+
+O resumo financeiro deve usar os mesmos cálculos e componentes da tela Financeiro. Não criar uma segunda versão de cálculos na Home.
+
+A Home deve ser um painel de leitura rápida, não uma cópia longa das listas de Tarefas, Agenda ou Financeiro.
+
+Preservar os blocos configuráveis/reordenáveis existentes e preferências do usuário. Reorganizar a ordem padrão para colocar dados relevantes mais acima; não apagar personalizações salvas. Se for necessário ajustar uma configuração existente, fazer isso de modo retrocompatível e sem apagar escolhas explícitas.
+
+## 5.5 Agenda — visualização mensal inicial
+
+Manter Dia, Semana, Mês e Lista.
+
+Ao abrir a Agenda:
+- iniciar em Mês;
+- mostrar o mês atual;
+- deixar hoje selecionado;
+- marcar discretamente os dias ocupados;
+- ao tocar em um dia, atualizar os itens daquele dia;
+- exibir os itens abaixo do calendário;
+- manter navegação por mês anterior/próximo.
+
+A Agenda reúne tarefas com data, compromissos, eventos e obrigações financeiras relevantes sem duplicar registros. Cada ocorrência abre seu registro de origem.
+
+## 5.6 Agenda — semana horizontal
+
+A semana atual não atende à experiência desejada: hoje os sete dias são empilhados verticalmente em uma lista.
+
+Substituir por uma visualização horizontal com sete cartões/colunas, de segunda a domingo:
+
+- cada cartão representa um dia;
+- cabeçalho compacto com nome abreviado e data;
+- as tarefas e demais ocorrências do dia aparecem uma abaixo da outra dentro daquele cartão;
+- os cartões ficam lado a lado;
+- navegação lateral por arraste/deslize permite percorrer os dias;
+- manter as setas de semana anterior e próxima e o intervalo visível;
+- semana de segunda a domingo;
+- não colocar os sete dias em sete colunas minúsculas;
+- em celular, mostrar a quantidade de dias que caiba com boa leitura e deixar claro que existem outros dias lateralmente;
+- em telas maiores, aproveitar a largura para mostrar mais cartões;
+- tocar no cabeçalho de um dia seleciona/foca aquele dia sem duplicar seus itens.
+
+A interação lateral deve ser natural, sem exigir rolagem vertical longa para encontrar cada dia. A semana inteira deve ser carregada logicamente e filtrada em conjunto.
+
+## 5.7 Agenda — recolher calendário e liberar espaço
+
+Adicionar controle compacto para recolher/expandir a área de calendário/navegação.
+
+- Em Mês, recolher a grade mensal.
+- Em Semana, recolher a faixa de cartões.
+- Preservar data, semana e filtros selecionados.
+- Quando recolhido, deixar faixa compacta com período/data e forma óbvia de reabrir.
+- Fazer a lista de ocorrências subir e ocupar o espaço liberado.
+- Não ocultar nem excluir dados.
+
+## 5.8 Agenda — painel único de filtros
+
+Não exibir fileiras permanentes de chips “Filtrar por tipo” e “Filtrar por categoria”.
+
+Adicionar **um botão pequeno de filtro** que abre um único painel compacto contendo:
+
+**Tipo:** Tudo, Tarefas, Financeiro, Eventos, Compromissos e Projetos se continuarem sendo ocorrências.
+
+**Categoria:** mostrar somente categorias compatíveis com o tipo escolhido. Exemplo: ao selecionar Tarefas, apresentar categorias/tags de tarefas; ao selecionar Financeiro, apresentar categorias financeiras.
+
+O filtro deve funcionar nas quatro visualizações:
+- Dia: itens da data selecionada;
+- Semana: todos os sete dias;
+- Mês: marcadores e lista respeitam o filtro;
+- Lista: cronologia filtrada.
+
+Controles como “Mostrar já pagos” ficam dentro do painel quando o tipo Financeiro estiver selecionado. Indicar filtros ativos discretamente. Não criar uma segunda faixa fixa de chips.
+
+## 5.9 Pesquisa — uma lupa global
+
+O cabeçalho principal já possui pesquisa global.
+
+- Remover barras de pesquisa largas e permanentes da Agenda, Financeiro e Eventos.
+- Não adicionar uma segunda lupa local que pareça duplicar a busca global.
+- O painel de filtros da Agenda não é uma busca; é um controle contextual.
+- A pesquisa global deve continuar pesquisando nos módulos.
+- Pesquisa local contextual só pode existir se reutilizar a experiência global sem ocupar espaço permanente.
+
+## 5.10 Tarefas — somente ações executáveis
+
+A aba Tarefas mostra exclusivamente atividades a executar: organizar, preparar, atualizar, pesquisar, resolver, assistir, criar etc.
+
+Não mostrar lançamentos financeiros, pagamentos, eventos ou compromissos como se fossem tarefas.
+
+Organizar a primeira visão com filtros claros, como Hoje, Próximas, Atrasadas, Todas e Concluídas, aproveitando o que já existe. Não abrir com uma lista interminável até anos futuros. “Todas” continua permitindo consultar o histórico e as tarefas futuras.
+
+Pagamentos e obrigações são registros do Financeiro. Eles aparecem na Agenda pela data de vencimento, sem gerar tarefa duplicada automaticamente. Uma tarefa separada pode ser criada manualmente e vinculada quando o usuário realmente quiser acompanhar uma ação executável.
+
+## 5.11 Status e atraso das tarefas
+
+Status de execução e condição do prazo são dimensões distintas.
+
+Estados de execução: Pendente/Não iniciada, Em andamento, Aguardando, Bloqueada, Concluída e Cancelada.
+
+Condição do prazo: No prazo, Atrasada ou Sem prazo.
+
+Uma tarefa pode estar Em andamento e Atrasada ao mesmo tempo. Atraso é derivado automaticamente do prazo e do estado, sem marcação manual.
+
+O gráfico de tarefas da Home deve usar três categorias mutuamente exclusivas:
+1. Concluídas
+2. Pendentes
+3. Em andamento
+
+Atrasadas são um indicador separado, pois pertencem ao conjunto de tarefas pendentes/em andamento e não devem virar uma quarta fatia duplicada. Canceladas não entram na distribuição. Tarefas sem prazo não são misturadas silenciosamente no mês.
+
+Aparência de atraso:
+- bolinha pequena e tag “Atrasada” em vermelho discreto;
+- título permanece na cor normal;
+- prazo em texto secundário;
+- não pintar a linha inteira de vermelho;
+- vermelho reservado a atraso e alertas críticos reais.
+
+## 5.12 Financeiro — experiência visual completa
+
+Evoluir a tela Financeiro com os requisitos de `docs/lista.md` e `NEXUS_PRODUCT_SPEC.md`:
+
+- seletor global mês/ano;
+- gráfico de rosca interativo por categoria;
+- alternância Pagas / Pagas + previstas;
+- toque em fatia/legenda filtra lançamentos;
+- gráfico de barras dos últimos seis meses;
+- alternância Realizado / Previsto;
+- resultado do mês claramente separado do saldo declarado;
+- previsão dos próximos 30 dias, sempre identificada como previsão;
+- orçamentos com barras de progresso;
+- metas financeiras;
+- cartões, faturas e parcelas;
+- sem duplicar compras e pagamento de fatura;
+- sem taxas, juros ou multas fictícios.
+
+Todos os componentes devem usar regras centralizadas em `FinanceRules` ou equivalente. Home, Financeiro, Agenda, alertas e widgets devem compartilhar a mesma fonte de dados/cálculos.
+
+Remover a pesquisa larga permanente do Financeiro e usar pesquisa global/filtros compactos.
+
+## 5.13 Eventos e Compromissos
+
+Preservar a distinção entre:
+- Evento: ocasião com identidade, período, local opcional, ingresso/preço real e vínculos.
+- Compromisso: tempo reservado na agenda.
+
+Preservar local opcional (Presencial, Online, A definir), banner leve e vínculos de eventos com tarefas, compromissos e lançamentos.
+
+O preço do ingresso deve ser o preço real informado. Não inventar taxa. Custos extras só existem quando registrados pelo usuário.
+
+Remover a barra de pesquisa larga permanente de Eventos. Usar filtros locais compactos e pesquisa global.
+
+## 5.14 Recorrência — começar por Tarefas
+
+A interface de recorrência deve ser simples, dentro de “Mais detalhes”, com a opção “Repetir”:
+
+- Não repetir
+- Diariamente
+- Dias específicos da semana
+- Semanalmente
+- Quinzenalmente
+- Mensalmente
+- Intervalo personalizado
+
+Permitir início e término opcionais. Ao editar/excluir, oferecer “Só esta ocorrência” ou “Toda a série”.
+
+Adiar uma ocorrência altera apenas aquela ocorrência, preservando a cadência e o histórico.
+
+Implementar nesta primeira etapa somente recorrência de **Tarefas**. Não ampliar simultaneamente para Compromissos e Eventos. Não gerar centenas de ocorrências futuras no SQLite; projetar as ocorrências necessárias na janela da Agenda, com idempotência e preservação do histórico.
+
+Recorrências financeiras existentes permanecem independentes.
+
+## 5.15 Mercado — sem token obrigatório
+
+O Mercado é informativo e opcional, não é corretora nem recomendação.
+
+Priorizar Dólar (USD-BRL), Euro (EUR-BRL) e Bitcoin (BTC-BRL), usando fonte que permita consulta sem chave pessoal, após validação técnica de disponibilidade, termos e limites.
+
+Ibovespa só entra se houver fonte adequada sem exigir token/chave pessoal. Não exigir token brapi.
+
+- Home: cartão compacto, cotação, variação e mini gráfico.
+- Financeiro: visão ampliada usando as mesmas cotações/cache.
+- Histórico com períodos disponíveis.
+- Cache local Room.
+- Atualização sob demanda, sem polling em segundo plano nesta etapa.
+- Se offline/falha, mostrar último cache válido e horário.
+- Não bloquear Home e não transmitir transações ou dados pessoais.
+- Sem notícias, carteira, ordens, corretora, ações individuais ou recomendações.
+
+---
+
+# 6. ORDEM SUGERIDA DOS LOTES DE IMPLEMENTAÇÃO
+
+O objetivo é uma única atualização coerente do produto, mas desenvolvida por lotes pequenos o suficiente para manter o projeto sempre compilável. Não tente alterar todos os módulos em uma única edição gigantesca.
+
+A ordem abaixo pode ser ajustada se a auditoria mostrar dependências reais diferentes, mas qualquer mudança deve ser justificada.
+
+## Lote 0 — Recuperar a execução anterior e estabilizar baseline
+
+1. Localizar o prompt de implementação originado no Claude e a etapa exata interrompida.
+2. Comparar o workspace com `integracao-google`.
+3. Inventariar arquivos alterados, artefatos, pendências e mudanças não sincronizadas.
+4. Executar o workflow/build sem novas funcionalidades para conhecer a baseline.
+5. Corrigir falhas de compilação preexistentes, sem misturar com mudanças visuais.
+6. Identificar falhas de testes preexistentes e preparar a execução unitária.
+7. Atualizar o mapa de progresso com evidências.
+
+**Aceite:** baseline estável e estado da implementação anterior compreendido. Nenhum trabalho válido descartado.
+
+## Lote 1 — Navegação e cabeçalho do Dashboard
+
+1. Alterar a ordem visual da barra inferior para Tarefas, Agenda, Início, Financeiro e Eventos.
+2. Preservar IDs/semântica das abas e validar deep-links.
+3. Integrar a frase diária ao cabeçalho saudação/data, sem card próprio.
+4. Reduzir a altura do cabeçalho sem remover a biblioteca ou configurações de frases.
+5. Ajustar ordem padrão dos blocos do Dashboard, preservando preferências configuradas.
+6. Colocar indicadores/gráficos principais acima das listas extensas.
+
+**Aceite:** Início no centro; frase discreta no cabeçalho; gráficos prioritários visíveis cedo; navegação sem regressão.
+
+## Lote 2 — Dashboard visual e resumo de tarefas/Financeiro
+
+1. Implementar/ajustar o gráfico de anel de tarefas com três categorias exclusivas.
+2. Exibir atrasadas como indicador separado.
+3. Construir/ajustar o resumo financeiro compacto com cálculos compartilhados.
+4. Colocar os gráficos no topo da Home, após o cabeçalho.
+5. Reduzir cartões/metric tiles redundantes e listas longas.
+6. Preservar personalização de blocos e estados vazios.
+
+**Aceite:** Dashboard permite entender tarefas e dinheiro rapidamente sem rolar uma longa lista antes dos indicadores.
+
+## Lote 3 — Agenda mensal, semanal e filtros
+
+1. Mês inicial com hoje selecionado e ocorrências por dia.
+2. Semana horizontal em sete cartões de segunda a domingo, navegáveis por deslize.
+3. Itens do dia dentro de cada cartão, sem empilhar os sete dias verticalmente.
+4. Setas de semana anterior/próxima.
+5. Recolher/expandir o calendário.
+6. Um botão único de filtros com tipo e categorias contextuais.
+7. Remover busca larga local e evitar duplicar lupa global.
+8. Validar ocorrências financeiras, de tarefas, eventos e compromissos sem duplicação.
+
+**Aceite:** Semana lateral utilizável em celular, mês inicial correto, filtros funcionais e lista do dia acessível sem rolagem excessiva.
+
+## Lote 4 — Tarefas e regras de atraso
+
+1. Separar claramente tarefa de lançamento financeiro.
+2. Organizar filtros/visões de tarefas para evitar lista inicial interminável.
+3. Separar estado da tarefa de condição do prazo.
+4. Adotar marcação discreta de atraso.
+5. Corrigir inconsistências de persistência/integração identificadas na baseline.
+
+**Aceite:** aba Tarefas contém somente ações executáveis; status, prazo e alertas permanecem coerentes.
+
+## Lote 5 — Financeiro visual
+
+1. Implementar seletor de mês.
+2. Donut de categorias interativo.
+3. Barras comparativas de seis meses.
+4. Alternância Realizado/Previsto.
+5. Resultado do mês.
+6. Previsão dos próximos 30 dias.
+7. Orçamentos e metas com componentes compactos.
+8. Validar cartões/faturas sem dupla contagem.
+9. Remover busca fixa redundante.
+
+**Aceite:** cálculos consistentes, gráficos interativos, nenhum valor previsto apresentado como realizado e nenhum pagamento de fatura contado como nova despesa.
+
+## Lote 6 — Recorrência de Tarefas
+
+1. Motor de recorrência de tarefas.
+2. Interface simples em “Mais detalhes”.
+3. Edição individual/série.
+4. Adiamento de ocorrência sem alterar série.
+5. Histórico e idempotência.
+6. Integração com Agenda e notificações existentes.
+
+**Aceite:** não há duplicação nem perda de histórico; ocorrências aparecem corretamente em Dia/Semana/Mês.
+
+## Lote 7 — Mercado e integração final
+
+1. Validar fonte de dados sem token pessoal.
+2. Implementar cache e histórico somente se a fonte for adequada.
+3. Exibir mini cartão na Home e tela ampliada no Financeiro.
+4. Garantir fallback offline.
+5. Integrar notificações, widgets, relatórios e Dashboard às regras já alteradas.
+6. Atualizar documentação e testes de regressão.
+
+**Aceite:** demais módulos funcionam offline; Mercado não bloqueia Home; dados externos são cacheados e identificados pela última atualização.
+
+Se a complexidade real exigir outra ordem, apresentar a justificativa e preservar a regra de compilação por lote.
+
+---
+
+# 7. TESTES E CRITÉRIOS DE ACEITE
+
+Além dos critérios detalhados em `docs/lista.md`, validar:
+
+## 7.1 Navegação
+- Barra inferior na ordem correta.
+- Início no centro.
+- Agenda na segunda posição.
+- Tarefas na primeira posição.
+- Deep-links de widgets abrem a tela/registro correto.
+- Voltar não perde alterações sem confirmação.
+- Navegação não troca o módulo alvo por causa da nova ordem visual.
+
+## 7.2 Dashboard
+- Saudação, data e frase compartilham um cabeçalho compacto.
+- Frase não possui card/fundo próprio.
+- Gráficos estão visíveis logo no começo da Home.
+- Atrasadas não são contadas duas vezes no anel.
+- Resumo financeiro compartilha cálculos com o Financeiro.
+- Preferências personalizadas são preservadas.
+
+## 7.3 Agenda
+- Mês abre selecionando hoje.
+- Semana começa segunda e termina domingo.
+- Sete cartões são horizontais e deslizam lateralmente.
+- Itens ficam dentro do dia correto e em ordem coerente.
+- Filtros por tipo/categoria atuam nas quatro visualizações.
+- Calendário recolhido preserva data/filtros.
+- Contas/faturas não duplicam compras de cartão.
+- Eventos multi-dia não se perdem.
+
+## 7.4 Tarefas
+- Só tarefas aparecem na aba.
+- Pagamentos permanecem no Financeiro e aparecem na Agenda pela data.
+- Atraso é derivado corretamente.
+- Canceladas não entram na distribuição.
+- Recorrências não duplicam instâncias nem apagam histórico.
+
+## 7.5 Financeiro
+- Todos os componentes respeitam o mês selecionado.
+- Donut filtra categorias ao toque.
+- Barras permitem alternar Realizado/Previsto.
+- Cartão/fatura não gera dupla contagem.
+- Previsão 30 dias tem rótulo explícito.
+- Nenhuma taxa fictícia é criada.
+
+## 7.6 Compatibilidade e persistência
+- Abrir banco existente sem perda de dados.
+- Backup e restauração permanecem compatíveis.
+- Sem migração desnecessária para mudanças visuais.
+- Widgets e notificações continuam funcionando.
+- Tema claro/escuro permanece legível.
+- Aplicativo funciona sem internet, exceto atualização de Mercado.
+
+## 7.7 Build e CI
+- Executar `testDebugUnitTest` quando a suíte estiver preparada.
+- Executar `gradle :app:assembleDebug` pelo workflow do repositório.
+- Confirmar que o artefato APK foi publicado.
+- Registrar link da execução do GitHub Actions.
+- Não declarar “build aprovado” sem evidência.
+- Fazer smoke test em dispositivo/emulador quando possível; registrar o que não foi verificado.
+
+---
+
+# 8. DOCUMENTAÇÃO E NOMES DAS ENTREGAS
+
+Manter nomes claros e numerados. Esta atualização é:
+
+**NEXUS Update 01 — Control Center & Mobile Experience**
+
+Ao terminar, atualizar:
+- `docs/NEXUS_CURRENT_STATE.md` com o estado factual pós-implementação;
+- `docs/NEXUS_IMPLEMENTATION_ROADMAP.md` com lotes realmente concluídos e pendências;
+- `docs/NEXUS_INTEGRATION_MAP.md` se regras/fluxos tiverem mudado;
+- `docs/NEXUS_PRODUCT_SPEC.md` e `docs/NEXUS_DESIGN_SYSTEM.md` para refletir as decisões implementadas;
+- relatório de entrega com nome `NEXUS_UPDATE_01_REPORT.md`.
+
+Não marcar itens como concluídos sem teste/evidência. Separar:
+- implementado;
+- compilado;
+- teste unitário aprovado;
+- validado manualmente;
+- não verificado;
+- pendente.
+
+Não substituir `docs/lista.md`: ele é a fonte consolidada das decisões do usuário. Se surgir conflito, registre e explique; não altere as decisões sem aprovação.
+
+---
+
+# 9. RELATÓRIO OBRIGATÓRIO ANTES DE ENCERRAR
+
+Entregar um relatório com:
+
+1. Ponto em que a execução anterior do prompt do Claude foi interrompida.
+2. O que já estava feito e foi preservado.
+3. O que estava pendente e foi concluído.
+4. Arquivos alterados e resumo de cada alteração.
+5. Mudanças no banco Room/migrações, se houver, e justificativa.
+6. Testes executados e resultados exatos.
+7. Resultado do GitHub Actions.
+8. Link para o APK Debug, se o workflow o publicou.
+9. Limitações e testes que ainda dependem do aparelho.
+10. Commit/branch de origem e commit/branch final.
+11. Pontos que foram adiados e motivo.
+
+Não afirmar que a próxima atualização está pronta se o build falhou, o APK não foi produzido ou houver mudança parcialmente integrada.
+
+---
+
+# 10. INSTRUÇÃO FINAL
+
+Trabalhe como continuação cuidadosa de um aplicativo real.
+
+**Primeiro recupere e preserve o trabalho interrompido; depois implemente as novas decisões de maneira incremental.** Não reinicie o projeto, não apague código válido, não simplifique removendo funcionalidades e não avance sobre uma base que deixou de compilar.
+
+O objetivo é melhorar a experiência do NEXUS sem comprometer a confiança que o usuário deposita nos dados, na persistência e na possibilidade de instalar uma nova versão do aplicativo.
+
+Cada lote termina compilável. A atualização final só é considerada entregue depois do APK gerado e do relatório de evidências.

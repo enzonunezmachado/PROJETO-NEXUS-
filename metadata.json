@@ -1,0 +1,6 @@
+{
+  "name": "NEXUS — Android Phase 1",
+  "description": "Projeto Android nativo (Kotlin + Jetpack Compose + Room) do centro de comando pessoal offline NEXUS, com inspetor de código e exportador ZIP.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
