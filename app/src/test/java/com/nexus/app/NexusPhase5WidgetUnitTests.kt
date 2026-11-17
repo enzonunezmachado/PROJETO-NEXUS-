@@ -3,7 +3,12 @@ package com.nexus.app
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.nexus.app.core.DateTimeUtils
+import com.nexus.app.data.backup.CreditCardBackupDto
+import com.nexus.app.data.backup.CreditCardStatementBackupDto
 import com.nexus.app.data.backup.NexusBackupPayload
+import com.nexus.app.data.backup.ProjectBackupDto
+import com.nexus.app.data.backup.TaskBackupDto
+import com.nexus.app.data.backup.TransactionBackupDto
 import com.nexus.app.data.db.entity.AppointmentEntity
 import com.nexus.app.data.db.entity.CategoryEntity
 import com.nexus.app.data.db.entity.CreditCardEntity
@@ -15,9 +20,11 @@ import com.nexus.app.data.db.entity.TaskEntity
 import com.nexus.app.data.db.entity.TransactionEntity
 import com.nexus.app.data.repository.NexusRepository
 import com.nexus.app.domain.model.CategoryScope
+import com.nexus.app.domain.model.EventCostType
 import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.FinancialStatus
 import com.nexus.app.domain.model.PaymentMethod
+import com.nexus.app.domain.model.ProjectStatus
 import com.nexus.app.domain.model.StatementStatus
 import com.nexus.app.domain.model.TaskPriority
 import com.nexus.app.domain.model.TaskStatus
@@ -254,7 +261,7 @@ class NexusPhase5WidgetUnitTests {
                 description = "Salário",
                 amountCents = 500_000L,
                 status = FinancialStatus.SETTLED,
-                paymentMethod = PaymentMethod.TRANSFER,
+                paymentMethod = PaymentMethod.BANK_TRANSFER,
                 occurredAt = pastEpoch,
                 settledAt = pastEpoch,
                 createdAt = 1L,
@@ -527,8 +534,20 @@ class NexusPhase5WidgetUnitTests {
 
         val payload = tolerantJson.decodeFromString<NexusBackupPayload>(backupJson)
         val restoredBalance = payload.settings.firstOrNull()?.declaredBalanceCents ?: 0L
-        val myTasks = NexusRepository.buildMyTasksWidgetSnapshot(payload.tasks, payload.projects, today, dueEpoch - 60_000L)
-        val finance = NexusRepository.buildFinanceWidgetSnapshot(restoredBalance, payload.transactions, payload.statements, payload.creditCards, today)
+        val restoredTasks = payload.tasks.filter { it.title.isNotBlank() }.map { it.toEntity(dueEpoch) }
+        val restoredProjects = payload.projects.filter { it.name.isNotBlank() }.map { it.toEntity(dueEpoch) }
+        val restoredTransactions = payload.transactions.filter { it.description.isNotBlank() }.map { it.toEntity(dueEpoch) }
+        val restoredCards = payload.creditCards.filter { it.name.isNotBlank() }.map { it.toEntity(dueEpoch) }
+        val restoredStatements = payload.creditCardStatements.filter { it.yearMonth.isNotBlank() }.map { it.toEntity(dueEpoch) }
+
+        val myTasks = NexusRepository.buildMyTasksWidgetSnapshot(restoredTasks, restoredProjects, today, dueEpoch - 60_000L)
+        val finance = NexusRepository.buildFinanceWidgetSnapshot(
+            declaredBalanceCents = restoredBalance,
+            transactions = restoredTransactions,
+            statements = restoredStatements,
+            cards = restoredCards,
+            today = today
+        )
 
         assertEquals(1, myTasks.pendingTasksCount)
         assertEquals("Tarefa Restaurada", myTasks.tasks.first().title)
@@ -599,4 +618,92 @@ class NexusPhase5WidgetUnitTests {
         assertNotNull(failure.exceptionOrNull())
         assertNull(failure.getOrNull())
     }
+
+    private fun TaskBackupDto.toEntity(fallbackNow: Long): TaskEntity = TaskEntity(
+        id = id,
+        title = title.trim(),
+        description = description,
+        projectId = projectId,
+        categoryId = categoryId,
+        eventId = eventId,
+        goalId = goalId,
+        priority = TaskPriority.fromStringOrDefault(priority),
+        status = TaskStatus.fromStringOrDefault(status),
+        dueAt = dueAt,
+        hasDueTime = hasDueTime,
+        notes = notes,
+        completedAt = completedAt,
+        recurrenceId = recurrenceId,
+        occurrenceDateIso = occurrenceDateIso,
+        createdAt = if (createdAt > 0L) createdAt else fallbackNow,
+        updatedAt = if (updatedAt > 0L) updatedAt else fallbackNow
+    )
+
+    private fun ProjectBackupDto.toEntity(fallbackNow: Long): ProjectEntity = ProjectEntity(
+        id = id,
+        name = name.trim(),
+        description = description,
+        deadlineAt = deadlineAt,
+        status = ProjectStatus.fromStringOrDefault(status),
+        priority = TaskPriority.fromStringOrDefault(priority),
+        goalId = goalId,
+        createdAt = if (createdAt > 0L) createdAt else fallbackNow,
+        updatedAt = if (updatedAt > 0L) updatedAt else fallbackNow
+    )
+
+    private fun CreditCardBackupDto.toEntity(fallbackNow: Long): CreditCardEntity = CreditCardEntity(
+        id = id,
+        name = name.trim(),
+        institution = institution,
+        totalLimitCents = totalLimitCents,
+        availableLimitCents = availableLimitCents,
+        closingDay = closingDay.coerceIn(1, 31),
+        dueDay = dueDay.coerceIn(1, 31),
+        colorHex = colorHex.ifBlank { "#9A9A9A" },
+        notes = notes,
+        createdAt = if (createdAt > 0L) createdAt else fallbackNow,
+        updatedAt = if (updatedAt > 0L) updatedAt else fallbackNow
+    )
+
+    private fun CreditCardStatementBackupDto.toEntity(fallbackNow: Long): CreditCardStatementEntity =
+        CreditCardStatementEntity(
+            id = id,
+            creditCardId = creditCardId,
+            yearMonth = yearMonth,
+            closingAt = closingAt,
+            dueAt = dueAt,
+            status = StatementStatus.fromStringOrDefault(status),
+            paidAt = paidAt,
+            paidAmountCents = paidAmountCents,
+            createdAt = if (createdAt > 0L) createdAt else fallbackNow,
+            updatedAt = if (updatedAt > 0L) updatedAt else fallbackNow
+        )
+
+    private fun TransactionBackupDto.toEntity(fallbackNow: Long): TransactionEntity = TransactionEntity(
+        id = id,
+        type = TransactionType.fromStringOrDefault(type),
+        description = description.trim(),
+        amountCents = amountCents,
+        categoryId = categoryId,
+        status = FinancialStatus.fromStringOrDefault(status),
+        paymentMethod = PaymentMethod.fromStringOrDefault(paymentMethod),
+        occurredAt = if (occurredAt > 0L) occurredAt else fallbackNow,
+        dueAt = dueAt,
+        settledAt = settledAt,
+        projectId = projectId,
+        eventId = eventId,
+        taskId = taskId,
+        eventCostType = eventCostType?.let { EventCostType.fromStringOrDefault(it) },
+        isTicketObligation = isTicketObligation,
+        creditCardId = creditCardId,
+        statementId = statementId,
+        installmentPurchaseId = installmentPurchaseId,
+        installmentNumber = installmentNumber,
+        installmentsTotal = installmentsTotal,
+        recurringRuleId = recurringRuleId,
+        occurrenceIndex = occurrenceIndex,
+        notes = notes,
+        createdAt = if (createdAt > 0L) createdAt else fallbackNow,
+        updatedAt = if (updatedAt > 0L) updatedAt else fallbackNow
+    )
 }

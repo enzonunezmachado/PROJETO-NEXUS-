@@ -185,9 +185,9 @@ class NexusStage2UnitTests {
 
     @Test
     fun `suggestExpenseCategoryId matches finance category by name or returns null`() {
-        val taskHealth = CategoryEntity(id = "cat-task-saude", name = "Saúde", scope = CategoryScope.TASK, createdAt = 1L, updatedAt = 1L)
-        val finHealth = CategoryEntity(id = "cat-fin-saude", name = "saúde", scope = CategoryScope.FINANCE, createdAt = 1L, updatedAt = 1L)
-        val taskStudy = CategoryEntity(id = "cat-task-estudo", name = "Estudos", scope = CategoryScope.TASK, createdAt = 1L, updatedAt = 1L)
+        val taskHealth = CategoryEntity(id = "cat-task-saude", name = "Saúde", colorHex = "#4CAF50", scope = CategoryScope.TASK, createdAt = 1L, updatedAt = 1L)
+        val finHealth = CategoryEntity(id = "cat-fin-saude", name = "saúde", colorHex = "#22C55E", scope = CategoryScope.FINANCE, createdAt = 1L, updatedAt = 1L)
+        val taskStudy = CategoryEntity(id = "cat-task-estudo", name = "Estudos", colorHex = "#3B82F6", scope = CategoryScope.TASK, createdAt = 1L, updatedAt = 1L)
 
         assertEquals("cat-fin-saude", AgendaEngine.suggestExpenseCategoryId("cat-task-saude", listOf(taskHealth, finHealth, taskStudy)))
         assertNull(AgendaEngine.suggestExpenseCategoryId("cat-task-estudo", listOf(taskHealth, finHealth, taskStudy)))
@@ -196,10 +196,10 @@ class NexusStage2UnitTests {
 
     @Test
     fun `contextualCategoriesForKind filters strictly by selected occurrence kind`() {
-        val generalCat = CategoryEntity(id = "c-gen", name = "Geral", scope = CategoryScope.GENERAL, createdAt = 1L, updatedAt = 1L)
-        val taskCat = CategoryEntity(id = "c-task", name = "Trabalho", scope = CategoryScope.TASK, createdAt = 1L, updatedAt = 1L)
-        val finCat = CategoryEntity(id = "c-fin", name = "Moradia", scope = CategoryScope.FINANCE, createdAt = 1L, updatedAt = 1L)
-        val eventCat = CategoryEntity(id = "c-ev", name = "Show", scope = CategoryScope.EVENT, createdAt = 1L, updatedAt = 1L)
+        val generalCat = CategoryEntity(id = "c-gen", name = "Geral", colorHex = "#9A9A9A", scope = CategoryScope.GENERAL, createdAt = 1L, updatedAt = 1L)
+        val taskCat = CategoryEntity(id = "c-task", name = "Trabalho", colorHex = "#60A5FA", scope = CategoryScope.TASK, createdAt = 1L, updatedAt = 1L)
+        val finCat = CategoryEntity(id = "c-fin", name = "Moradia", colorHex = "#F59E0B", scope = CategoryScope.FINANCE, createdAt = 1L, updatedAt = 1L)
+        val eventCat = CategoryEntity(id = "c-ev", name = "Show", colorHex = "#EC4899", scope = CategoryScope.EVENT, createdAt = 1L, updatedAt = 1L)
         val all = listOf(generalCat, taskCat, finCat, eventCat)
 
         assertTrue(AgendaEngine.contextualCategoriesForKind(all, null).isEmpty())

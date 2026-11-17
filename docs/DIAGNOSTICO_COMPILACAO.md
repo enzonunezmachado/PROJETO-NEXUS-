@@ -171,3 +171,46 @@ Para reduzir o risco de outros erros ocultos antes da próxima execução no CI:
 - **Limitação do ambiente:** este ambiente segue sem JDK, Gradle ou Android SDK, portanto o projeto **ainda não foi compilado nem testado localmente**.
 - **Próxima validação esperada no GitHub Actions:** conclusão de `:app:compileDebugKotlin` sem erros e avanço do pipeline para `:app:testDebugUnitTest` e `:app:assembleDebug`. Caso surja algum erro específico na compilação dos testes unitários (`testDebugUnitTest`), ele poderá então ser diagnosticado isoladamente.
 
+---
+
+## Build #4 — Compilação principal concluída e correção dos testes unitários
+
+### 1. Resultado e duração da Build #4
+- **Execução:** `NEXUS Android Build #4` (branch `main`, commit `eae89bc431b64ad9631294d2ac4e08c22183986b`).
+- **Resultado:** `Failure` na tarefa **`:app:compileDebugUnitTestKotlin`**.
+- **Duração aproximada:** **~2m 20s** no total do job (**1m 43s** no Gradle).
+- **Memória / K2 OOM:** **o erro `OutOfMemoryError: GC overhead limit exceeded` NÃO voltou a ocorrer.**
+- **Compilação principal concluída:** as tarefas **`:app:kspDebugKotlin`**, **`:app:compileDebugKotlin`**, **`:app:compileDebugJavaWithJavac`**, **`:app:dexBuilderDebug`**, **`:app:kspDebugUnitTestKotlin`** e **`:app:packageDebug`** foram **concluídas com sucesso**, gerando o APK de debug antes da fase de testes unitários.
+
+### 2. Os 15 erros encontrados em `:app:compileDebugUnitTestKotlin` e suas causas
+
+| Arquivo / Linhas | Erros do compilador | Causa identificada |
+|---|---|---|
+| `NexusPhase5WidgetUnitTests.kt:257` | `Unresolved reference 'TRANSFER'` (1 erro) | O enum `PaymentMethod` em `NexusEnums.kt` define `BANK_TRANSFER("Transferência")`, e não `TRANSFER`. O teste utilizava nome de constante desatualizado para representar receita salarial por transferência bancária. |
+| `NexusPhase5WidgetUnitTests.kt:530, 531` | `Argument type mismatch` para `List<TaskBackupDto>` vs `List<TaskEntity>`, `List<ProjectBackupDto>` vs `List<ProjectEntity>`, `List<TransactionBackupDto>` vs `List<TransactionEntity>`, `List<CreditCardBackupDto>` vs `List<CreditCardEntity>`, além de `Unresolved reference 'statements'` (5 erros) | O teste decodifica um `NexusBackupPayload` (composto por DTOs `*BackupDto` e com propriedade `creditCardStatements`, não `statements`) e passava essas listas diretamente para `NexusRepository.buildMyTasksWidgetSnapshot` e `NexusRepository.buildFinanceWidgetSnapshot`, que operam sobre entidades Room (`*Entity`). Faltava a etapa de conversão DTO -> Entidade equivalente ao processo de restauração do `BackupManager.restoreAtomically`. |
+| `NexusStage2UnitTests.kt:188, 189, 190, 199, 200, 201, 202` | `No value passed for parameter 'colorHex'` (7 erros) | `CategoryEntity` (`NexusEntities.kt:44`) possui `val colorHex: String` como parâmetro obrigatório sem valor padrão. Os testes de sugestão de categoria e filtragem contextual instanciavam `CategoryEntity` omitindo `colorHex`. |
+| `NexusStage3FinanceUnitTests.kt:62, 119` | `No value passed for parameter 'colorHex'` (2 erros) | Mesma causa de `NexusStage2UnitTests.kt`: as criações de `CategoryEntity` nos cenários de gasto por categoria, previsão de 30 dias e progresso de orçamentos omitiam o campo obrigatório `colorHex`. |
+
+### 3. Arquivos modificados e correções realizadas
+
+**Alterações no código de produção:** **nenhuma.** Todo o código-fonte em `app/src/main/`, entidades, DTOs, DAOs, repositórios e `gradle.properties` foi mantido integralmente inalterado.
+
+1. **`/app/src/test/java/com/nexus/app/NexusPhase5WidgetUnitTests.kt`**
+   - Linha 257: substituído `PaymentMethod.TRANSFER` por `PaymentMethod.BANK_TRANSFER`, mantendo o cenário original de receita realizada.
+   - Linhas 525–548 e helpers privados ao final do arquivo: adicionados mappers locais `TaskBackupDto.toEntity`, `ProjectBackupDto.toEntity`, `CreditCardBackupDto.toEntity`, `CreditCardStatementBackupDto.toEntity` e `TransactionBackupDto.toEntity` espelhando as regras de `BackupManager.restoreAtomically`, além do uso correto de `payload.creditCardStatements` antes de invocar `buildMyTasksWidgetSnapshot` e `buildFinanceWidgetSnapshot`.
+2. **`/app/src/test/java/com/nexus/app/NexusStage2UnitTests.kt`**
+   - Linhas 188–190 e 199–202: informados valores hexadecimais válidos em `colorHex` nas 7 instâncias de `CategoryEntity` usadas pelos testes de sugestão de categoria e filtro contextual, sem alterar asserções ou regras.
+3. **`/app/src/test/java/com/nexus/app/NexusStage3FinanceUnitTests.kt`**
+   - Linhas 61–71 e 126: fornecidos valores hexadecimais válidos para `colorHex` nas categorias geradas no loop `(1..8)` e em `foodCat`, preservando todos os cálculos de top 6 + `Outros`, fluxo de caixa, previsão de 30 dias e progresso de orçamento.
+
+### 4. Investigação preventiva dos demais testes unitários
+Varredura estática executada nos **9 arquivos** em `app/src/test/java/com/nexus/app/` (`NexusPhase1UnitTests.kt`, `NexusPhase2UnitTests.kt`, `NexusPhase3And4UnitTests.kt`, `NexusPhase5WidgetUnitTests.kt`, `NexusPhase6UnitTests.kt`, `NexusStage1UnitTests.kt`, `NexusStage2UnitTests.kt`, `NexusStage3FinanceUnitTests.kt` e `NexusLote6RecurrenceUnitTests.kt`):
+- Conferidos todos os acessos a enums (`Enum.VALOR`), construtores de `data class` (parâmetros obrigatórios e nomeados), assinaturas de métodos de `NexusRepository`, `AgendaEngine`, `FinanceRules`, `TaskRules`, `RecurrenceEngine`, `ReminderRules`, `NexusNotificationScheduler`, `NexusWidgetSizes`, `DateTimeUtils` e propriedades de `NexusBackupPayload`.
+- **Resultado após as correções:** 0 ocorrências remanescentes de enum inválido, parâmetro ausente/desconhecido, método inexistente ou desbalanceamento sintático.
+
+### 5. Problemas que ainda precisam ser investigados e próxima etapa de validação
+- **Execução real dos testes em JVM/CI:** este ambiente não possui JDK, Gradle ou Android SDK; portanto, **os testes unitários ainda não foram compilados nem executados localmente** (`TOTAL_STATIC_TEST_ISSUES=0` refere-se apenas à verificação estática).
+- **Possíveis falhas em runtime durante `:app:testDebugUnitTest`:** como `:app:compileDebugUnitTestKotlin` falhou antes da execução JUnit na Build #4, eventuais divergências comportamentais em asserções dos testes só poderão ser observadas quando `:app:testDebugUnitTest` executar de fato na próxima rodada do CI (especialmente cenários sensíveis a fuso horário ou regras atualizadas do domínio). Os avisos de depreciação de ícones do Material e condições sempre verdadeiras no código principal permanecem não-bloqueantes.
+- **Próxima etapa de validação:** submeter nova execução do workflow `.github/workflows/android-build.yml` no GitHub Actions para validar **`:app:compileDebugUnitTestKotlin`**, **`:app:testDebugUnitTest`** e **`:app:assembleDebug`**.
+
+

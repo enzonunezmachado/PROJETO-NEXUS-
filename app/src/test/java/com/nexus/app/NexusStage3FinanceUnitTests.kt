@@ -58,8 +58,16 @@ class NexusStage3FinanceUnitTests {
     fun `computeCategorySpend groups past top 6 into Outros and switches PaidOnly vs PaidAndPlanned cleanly`() {
         val month = YearMonth.of(2026, 11)
         val today = LocalDate.of(2026, 11, 16)
+        val paletteHex = listOf("#60A5FA", "#34D399", "#F59E0B", "#F472B6", "#A78BFA", "#38BDF8", "#FB7185", "#9A9A9A")
         val cats = (1..8).map { i ->
-            CategoryEntity(id = "c$i", name = "Cat $i", scope = CategoryScope.FINANCE, createdAt = 1L, updatedAt = 1L)
+            CategoryEntity(
+                id = "c$i",
+                name = "Cat $i",
+                colorHex = paletteHex[(i - 1) % paletteHex.size],
+                scope = CategoryScope.FINANCE,
+                createdAt = 1L,
+                updatedAt = 1L
+            )
         }
 
         val items = listOf(
@@ -116,7 +124,7 @@ class NexusStage3FinanceUnitTests {
     fun `computeForecast30Days and computeBudgetProgress calculate exact amounts and exceeded budgets`() {
         val today = LocalDate.of(2026, 11, 16)
         val month = YearMonth.of(2026, 11)
-        val foodCat = CategoryEntity(id = "c-food", name = "Alimentação", scope = CategoryScope.FINANCE, createdAt = 1L, updatedAt = 1L)
+        val foodCat = CategoryEntity(id = "c-food", name = "Alimentação", colorHex = "#F59E0B", scope = CategoryScope.FINANCE, createdAt = 1L, updatedAt = 1L)
 
         val items = listOf(
             txWithCategory("over", TransactionType.EXPENSE, 150_00L, FinancialStatus.PENDING, today.minusDays(2), foodCat),
