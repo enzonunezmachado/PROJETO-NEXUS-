@@ -784,6 +784,11 @@ private fun NexusAppRoot(
                             onOpenCards = openFinanceCards,
                             onOpenProject = { activeEditor = ActiveEditor.ProjectEditor(it) },
                             onCreateAppointment = { openAppointmentEditor(null) },
+                            onOpenVirtualRecurringTask = { recId, dateIso ->
+                                viewModel.openOrMaterializeRecurringOccurrence(recId, dateIso) { materializedTaskId ->
+                                    activeEditor = ActiveEditor.TaskEditor(materializedTaskId)
+                                }
+                            },
                             modifier = contentModifier
                         )
                         MainTab.TASKS -> TasksAndProjectsScreen(
@@ -900,7 +905,7 @@ private fun NexusAppRoot(
                     events = allEvents,
                     goals = allPersonalGoals,
                     onDismiss = { activeEditor = ActiveEditor.None },
-                    onSave = { id, title, desc, projId, catId, evId, goalId, prio, st, dueAt, hasTime, notes, subs, reminderMins ->
+                    onSave = { id, title, desc, projId, catId, evId, goalId, prio, st, dueAt, hasTime, notes, subs, reminderMins, recDraft, editScope ->
                         viewModel.saveTask(
                             id = id,
                             title = title,
@@ -916,13 +921,15 @@ private fun NexusAppRoot(
                             notes = notes,
                             subtaskDrafts = subs,
                             reminderMinutesBefore = reminderMins,
+                            recurrenceDraft = recDraft,
+                            recurringEditScope = editScope,
                             onSaved = { activeEditor = ActiveEditor.None }
                         )
                     },
                     onToggleComplete = viewModel::toggleTaskCompletion,
                     onToggleSubtask = viewModel::toggleSubtask,
                     onOpenEvent = { evId -> activeEditor = ActiveEditor.EventEditor(evId) },
-                    onRegisterExpense = { id, title, desc, projId, catId, evId, goalId, prio, st, dueAt, hasTime, notes, subs, reminderMins ->
+                    onRegisterExpense = { id, title, desc, projId, catId, evId, goalId, prio, st, dueAt, hasTime, notes, subs, reminderMins, recDraft, editScope ->
                         viewModel.saveTask(
                             id = id,
                             title = title,
@@ -938,6 +945,8 @@ private fun NexusAppRoot(
                             notes = notes,
                             subtaskDrafts = subs,
                             reminderMinutesBefore = reminderMins,
+                            recurrenceDraft = recDraft,
+                            recurringEditScope = editScope,
                             onSaved = { savedTaskId ->
                                 activeEditor = ActiveEditor.TransactionEditor(
                                     transactionId = null,
@@ -954,8 +963,8 @@ private fun NexusAppRoot(
                     onOpenTransaction = { txId ->
                         activeEditor = ActiveEditor.TransactionEditor(txId)
                     },
-                    onDelete = { taskId ->
-                        viewModel.deleteTask(taskId) { activeEditor = ActiveEditor.None }
+                    onDelete = { taskId, deleteScope ->
+                        viewModel.deleteTask(taskId, scope = deleteScope) { activeEditor = ActiveEditor.None }
                     },
                     onDirtyStateChange = { activeEditorDirty = it }
                 )

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
@@ -109,6 +110,7 @@ fun AgendaScreen(
     onOpenCards: () -> Unit,
     onOpenProject: (String) -> Unit,
     onCreateAppointment: () -> Unit,
+    onOpenVirtualRecurringTask: (recurrenceId: String, occurrenceDateIso: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val palette = LocalNexusPalette.current
@@ -118,7 +120,13 @@ fun AgendaScreen(
     val openOccurrence: (AgendaOccurrence) -> Unit = { occ ->
         when (occ.sourceType) {
             AgendaSourceType.APPOINTMENT -> onOpenAppointment(occ.sourceId)
-            AgendaSourceType.TASK -> onOpenTask(occ.sourceId)
+            AgendaSourceType.TASK -> {
+                if (occ.isVirtualRecurrence && occ.recurrenceId != null) {
+                    onOpenVirtualRecurringTask(occ.recurrenceId, occ.occurrenceDateIso)
+                } else {
+                    onOpenTask(occ.sourceId)
+                }
+            }
             AgendaSourceType.EVENT -> onOpenEvent(occ.sourceId)
             AgendaSourceType.TRANSACTION -> onOpenTransaction(occ.sourceId)
             AgendaSourceType.STATEMENT -> onOpenCards()
@@ -750,12 +758,25 @@ private fun WeekCardOccurrenceItem(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = timeText,
-                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
-                    color = if (occurrence.isOverdue) palette.danger else palette.textSecondary,
-                    maxLines = 1
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (occurrence.recurrenceId != null) {
+                        Icon(
+                            imageVector = Icons.Outlined.Repeat,
+                            contentDescription = "Tarefa recorrente",
+                            tint = palette.accentNeon,
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                    Text(
+                        text = timeText,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                        color = if (occurrence.isOverdue) palette.danger else palette.textSecondary,
+                        maxLines = 1
+                    )
+                }
             }
         }
     }
@@ -880,6 +901,14 @@ private fun AgendaOccurrenceRow(
                                 .size(6.dp)
                                 .clip(CircleShape)
                                 .background(palette.danger)
+                        )
+                    }
+                    if (occurrence.recurrenceId != null) {
+                        Icon(
+                            imageVector = Icons.Outlined.Repeat,
+                            contentDescription = "Tarefa recorrente",
+                            tint = palette.accentNeon,
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                     Text(

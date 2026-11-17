@@ -23,14 +23,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Directions
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -95,24 +93,17 @@ fun EventsScreen(
     modifier: Modifier = Modifier
 ) {
     val palette = LocalNexusPalette.current
-    var searchQuery by remember { mutableStateOf("") }
     var filterMode by remember { mutableStateOf("UPCOMING") } // UPCOMING, ALL, PENDING_TICKET
     val todayStart = DateTimeUtils.localDateToStartOfDayEpoch(DateTimeUtils.todayLocalDate())
 
-    val filtered = remember(events, searchQuery, filterMode) {
-        val q = searchQuery.trim().lowercase()
+    val filtered = remember(events, filterMode, todayStart) {
         events.filter { item ->
             val ev = item.event
-            val matchesMode = when (filterMode) {
+            when (filterMode) {
                 "UPCOMING" -> ev.endAt >= todayStart && ev.eventStatus != EventLifecycleStatus.CANCELLED
                 "PENDING_TICKET" -> !ev.ticketStatus.isPaidOrBought && ev.ticketStatus != TicketStatus.FREE && ev.ticketStatus != TicketStatus.CANCELLED
                 else -> true
             }
-            val matchesQ = q.isEmpty() ||
-                ev.name.lowercase().contains(q) ||
-                ev.locationName.lowercase().contains(q) ||
-                ev.city.lowercase().contains(q)
-            matchesMode && matchesQ
         }
     }
 
@@ -136,25 +127,6 @@ fun EventsScreen(
                     Text("Novo evento", color = palette.textPrimary)
                 }
             }
-        }
-
-        item {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Buscar eventos por nome, local ou cidade") },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Outlined.Close, contentDescription = "Limpar")
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
         }
 
         item {

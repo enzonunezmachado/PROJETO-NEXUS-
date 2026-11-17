@@ -190,7 +190,7 @@ fun MoreScreen(
                 MoreMenuItem(
                     icon = Icons.Outlined.Backup,
                     title = "Backup e Restauração",
-                    subtitle = "Exportar ou restaurar todo o banco (v1 a v5) em JSON via Storage Access Framework",
+                    subtitle = "Exportar ou restaurar todo o banco (v1 a v6) em JSON via Storage Access Framework",
                     onClick = onOpenBackup
                 )
             }
@@ -198,7 +198,7 @@ fun MoreScreen(
                 MoreMenuItem(
                     icon = Icons.Outlined.BugReport,
                     title = "Diagnóstico",
-                    subtitle = "Versão do banco (v${NexusDatabase.DATABASE_VERSION}), contagem das 25 tabelas e logs",
+                    subtitle = "Versão do banco (v${NexusDatabase.DATABASE_VERSION}), contagem das 27 tabelas e logs",
                     onClick = onOpenDiagnostics
                 )
             }
@@ -1068,13 +1068,13 @@ fun BackupScreen(
             item {
                 NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
                     Text(
-                        text = "Exportar backup completo (JSON v5)",
+                        text = "Exportar backup completo (JSON v6)",
                         style = MaterialTheme.typography.titleMedium,
                         color = palette.textPrimary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Gera um arquivo JSON versionado com todas as 25 tabelas locais (tarefas, projetos, objetivos pessoais, personalização, frases, agenda, eventos, financeiro, lembretes e rotina) via seletor SAF.",
+                        text = "Gera um arquivo JSON versionado com todas as 27 tabelas locais (tarefas, séries recorrentes, projetos, objetivos pessoais, personalização, frases, agenda, eventos, financeiro, lembretes e rotina) via seletor SAF.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = palette.textSecondary
                     )
@@ -1106,7 +1106,7 @@ fun BackupScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Valida o arquivo, mostra o resumo por tabela e restaura dentro de uma transação única (tudo ou nada). Compatível com backups v1 a v5.",
+                        text = "Valida o arquivo, mostra o resumo por tabela e restaura dentro de uma transação única (tudo ou nada). Compatível com backups v1 a v6.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = palette.textSecondary
                     )
@@ -1141,6 +1141,7 @@ fun BackupScreen(
                                 appendLine("Objetivos pessoais: ${summary.personalGoalsRestored} · Marcos: ${summary.goalMilestonesRestored} · Histórico: ${summary.goalProgressLogsRestored}")
                                 appendLine("Projetos: ${summary.projectsRestored} · Eventos: ${summary.eventsRestored}")
                                 appendLine("Tarefas: ${summary.tasksRestored} · Subtarefas: ${summary.subtasksRestored}")
+                                appendLine("Séries recorrentes: ${summary.recurrencesRestored} · Exceções: ${summary.recurrenceExceptionsRestored}")
                                 appendLine("Compromissos: ${summary.appointmentsRestored}")
                                 appendLine("Cartões: ${summary.creditCardsRestored} · Faturas: ${summary.statementsRestored}")
                                 appendLine("Parcelamentos: ${summary.installmentPurchasesRestored} · Recorrências: ${summary.recurringRulesRestored}")
@@ -1194,6 +1195,7 @@ fun BackupScreen(
                     Text("• Objetivos pessoais: ${preview.personalGoalsCount} · Marcos: ${preview.goalMilestonesCount} · Evolução: ${preview.goalProgressLogsCount}", color = palette.textSecondary)
                     Text("• Projetos: ${preview.projectsCount} · Eventos: ${preview.eventsCount}", color = palette.textSecondary)
                     Text("• Tarefas: ${preview.tasksCount} · Subtarefas: ${preview.subtasksCount}", color = palette.textSecondary)
+                    Text("• Séries recorrentes: ${preview.recurrencesCount} · Exceções: ${preview.recurrenceExceptionsCount}", color = palette.textSecondary)
                     Text("• Compromissos: ${preview.appointmentsCount}", color = palette.textSecondary)
                     Text("• Cartões: ${preview.creditCardsCount} · Faturas: ${preview.statementsCount}", color = palette.textSecondary)
                     Text("• Parcelamentos: ${preview.installmentPurchasesCount} · Recorrências: ${preview.recurringRulesCount}", color = palette.textSecondary)
@@ -1281,7 +1283,9 @@ fun DiagnosticsScreen(
         "quotes" to tableCounts.quotes,
         "personal_goals" to tableCounts.personalGoals,
         "goal_milestones" to tableCounts.goalMilestones,
-        "goal_progress_logs" to tableCounts.goalProgressLogs
+        "goal_progress_logs" to tableCounts.goalProgressLogs,
+        "recurrences" to tableCounts.recurrences,
+        "recurrence_exceptions" to tableCounts.recurrenceExceptions
     )
 
     Column(modifier = modifier.fillMaxSize()) {

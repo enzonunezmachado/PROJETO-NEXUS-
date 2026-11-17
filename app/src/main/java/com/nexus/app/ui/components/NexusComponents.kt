@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -61,6 +62,7 @@ import com.nexus.app.data.repository.NexusRepository
 import com.nexus.app.domain.model.TaskPriority
 import com.nexus.app.domain.model.TaskStatus
 import com.nexus.app.domain.model.TaskWithDetails
+import com.nexus.app.domain.rules.RecurrenceEngine
 import com.nexus.app.ui.theme.LocalNexusPalette
 import java.time.LocalDate
 import java.time.LocalTime
@@ -394,11 +396,15 @@ fun TaskRowCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
+                val activeRecurrence = item.recurrence?.takeIf { it.isActive }
                 val metaParts = buildList {
                     add(task.status.label)
                     item.project?.let { add(it.name) }
                     task.dueAt?.let { due ->
                         add(formatContextualDueDate(due, task.hasDueTime, today))
+                    }
+                    activeRecurrence?.let { rec ->
+                        add(RecurrenceEngine.formatRecurrenceSummary(rec))
                     }
                     if (item.subtasks.isNotEmpty()) {
                         add("${item.completedSubtasksCount}/${item.subtasks.size} subtarefas")
@@ -427,6 +433,14 @@ fun TaskRowCard(
                         )
                     } else {
                         PriorityIndicatorDot(priority = task.priority)
+                    }
+                    if (activeRecurrence != null) {
+                        Icon(
+                            imageVector = Icons.Outlined.Repeat,
+                            contentDescription = "Tarefa recorrente",
+                            tint = palette.accentNeon,
+                            modifier = Modifier.size(14.dp)
+                        )
                     }
                     Text(
                         text = metaParts.joinToString(" · "),
