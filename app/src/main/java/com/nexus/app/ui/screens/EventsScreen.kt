@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import com.nexus.app.core.DateTimeUtils
 import com.nexus.app.data.db.entity.CategoryEntity
 import com.nexus.app.data.db.entity.CreditCardEntity
+import com.nexus.app.data.db.entity.EventEntity
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.EventWithDetails
@@ -252,6 +253,68 @@ fun EventSummaryCard(
     }
 }
 
+private data class EventEditorInitialState(
+    val startDate: LocalDate,
+    val startTime: LocalTime,
+    val endDate: LocalDate,
+    val endTime: LocalTime,
+    val ticketPrice: String,
+    val ticketQty: String,
+    val ticketFees: String,
+    val ticketDueDate: LocalDate?,
+    val installments: String,
+    val reminderMinutes: Int?,
+    val name: String,
+    val description: String,
+    val categoryId: String?,
+    val isAllDay: Boolean,
+    val officialLink: String,
+    val ticketLink: String,
+    val locationName: String,
+    val address: String,
+    val city: String,
+    val state: String,
+    val notes: String,
+    val eventStatus: EventLifecycleStatus,
+    val ticketStatus: TicketStatus,
+    val paymentMethod: PaymentMethod,
+    val creditCardId: String?
+)
+
+private fun buildEventEditorInitialState(
+    ev: EventEntity?,
+    existingReminder: ReminderEntity?
+): EventEditorInitialState {
+    val today = DateTimeUtils.todayLocalDate()
+    return EventEditorInitialState(
+        startDate = ev?.let { DateTimeUtils.toLocalDate(it.startAt) } ?: today,
+        startTime = ev?.let { DateTimeUtils.epochToLocalTime(it.startAt) } ?: LocalTime.of(19, 0),
+        endDate = ev?.let { DateTimeUtils.toLocalDate(it.endAt) } ?: today,
+        endTime = ev?.let { DateTimeUtils.epochToLocalTime(it.endAt) } ?: LocalTime.of(21, 0),
+        ticketPrice = ev?.let { DateTimeUtils.centsToInputString(it.ticketPriceCents) } ?: "",
+        ticketQty = (ev?.ticketQuantity ?: 1).toString(),
+        ticketFees = ev?.let { DateTimeUtils.centsToInputString(it.ticketFeesCents) } ?: "",
+        ticketDueDate = ev?.ticketDueDate?.let { DateTimeUtils.toLocalDate(it) },
+        installments = (ev?.installmentsCount ?: 1).toString(),
+        reminderMinutes = ReminderRules.resolveEditorReminderMinutes(existingReminder),
+        name = ev?.name ?: "",
+        description = ev?.description ?: "",
+        categoryId = ev?.categoryId,
+        isAllDay = ev?.isAllDay ?: false,
+        officialLink = ev?.officialLink ?: "",
+        ticketLink = ev?.ticketLink ?: "",
+        locationName = ev?.locationName ?: "",
+        address = ev?.address ?: "",
+        city = ev?.city ?: "",
+        state = ev?.state ?: "",
+        notes = ev?.notes ?: "",
+        eventStatus = ev?.eventStatus ?: EventLifecycleStatus.PLANNED,
+        ticketStatus = ev?.ticketStatus ?: TicketStatus.FREE,
+        paymentMethod = ev?.paymentMethod ?: PaymentMethod.PIX,
+        creditCardId = ev?.creditCardId
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EventEditorSheet(
@@ -300,65 +363,41 @@ fun EventEditorSheet(
     val palette = LocalNexusPalette.current
     val context = LocalContext.current
     val ev = existingEvent?.event
+    val evId: String? = ev?.id
+    val reminderId: String? = existingReminder?.id
+    val reminderMinutesKey: Int? = existingReminder?.minutesBefore
+    val reminderStatusKey: Any? = existingReminder?.status
 
-    val initialStartDate = remember(ev?.id) {
-        ev?.let { DateTimeUtils.toLocalDate(it.startAt) } ?: DateTimeUtils.todayLocalDate()
-    }
-    val initialStartTime = remember(ev?.id) {
-        ev?.let { DateTimeUtils.epochToLocalTime(it.startAt) } ?: LocalTime.of(19, 0)
-    }
-    val initialEndDate = remember(ev?.id) {
-        ev?.let { DateTimeUtils.toLocalDate(it.endAt) } ?: DateTimeUtils.todayLocalDate()
-    }
-    val initialEndTime = remember(ev?.id) {
-        ev?.let { DateTimeUtils.epochToLocalTime(it.endAt) } ?: LocalTime.of(21, 0)
-    }
-    val initialTicketPrice = remember(ev?.id) {
-        ev?.let { DateTimeUtils.centsToInputString(it.ticketPriceCents) } ?: ""
-    }
-    val initialTicketQty = remember(ev?.id) { (ev?.ticketQuantity ?: 1).toString() }
-    val initialTicketFees = remember(ev?.id) {
-        ev?.let { DateTimeUtils.centsToInputString(it.ticketFeesCents) } ?: ""
-    }
-    val initialTicketDueDate = remember(ev?.id) {
-        ev?.ticketDueDate?.let { DateTimeUtils.toLocalDate(it) }
-    }
-    val initialInstallments = remember(ev?.id) { (ev?.installmentsCount ?: 1).toString() }
-    val initialReminderMinutes = remember(
-        ev?.id,
-        existingReminder?.id,
-        existingReminder?.minutesBefore,
-        existingReminder?.status
-    ) {
-        ReminderRules.resolveEditorReminderMinutes(existingReminder)
+    val init = remember(evId, reminderId, reminderMinutesKey, reminderStatusKey) {
+        buildEventEditorInitialState(ev, existingReminder)
     }
 
-    var name by remember(ev?.id) { mutableStateOf(ev?.name ?: "") }
-    var description by remember(ev?.id) { mutableStateOf(ev?.description ?: "") }
-    var categoryId by remember(ev?.id) { mutableStateOf(ev?.categoryId) }
-    var isAllDay by remember(ev?.id) { mutableStateOf(ev?.isAllDay ?: false) }
-    var startDate by remember(ev?.id) { mutableStateOf(initialStartDate) }
-    var startTime by remember(ev?.id) { mutableStateOf(initialStartTime) }
-    var endDate by remember(ev?.id) { mutableStateOf(initialEndDate) }
-    var endTime by remember(ev?.id) { mutableStateOf(initialEndTime) }
+    var name by remember(evId) { mutableStateOf(init.name) }
+    var description by remember(evId) { mutableStateOf(init.description) }
+    var categoryId by remember(evId) { mutableStateOf(init.categoryId) }
+    var isAllDay by remember(evId) { mutableStateOf(init.isAllDay) }
+    var startDate by remember(evId) { mutableStateOf(init.startDate) }
+    var startTime by remember(evId) { mutableStateOf(init.startTime) }
+    var endDate by remember(evId) { mutableStateOf(init.endDate) }
+    var endTime by remember(evId) { mutableStateOf(init.endTime) }
 
-    var officialLink by remember(ev?.id) { mutableStateOf(ev?.officialLink ?: "") }
-    var ticketLink by remember(ev?.id) { mutableStateOf(ev?.ticketLink ?: "") }
-    var locationName by remember(ev?.id) { mutableStateOf(ev?.locationName ?: "") }
-    var address by remember(ev?.id) { mutableStateOf(ev?.address ?: "") }
-    var city by remember(ev?.id) { mutableStateOf(ev?.city ?: "") }
-    var state by remember(ev?.id) { mutableStateOf(ev?.state ?: "") }
-    var notes by remember(ev?.id) { mutableStateOf(ev?.notes ?: "") }
+    var officialLink by remember(evId) { mutableStateOf(init.officialLink) }
+    var ticketLink by remember(evId) { mutableStateOf(init.ticketLink) }
+    var locationName by remember(evId) { mutableStateOf(init.locationName) }
+    var address by remember(evId) { mutableStateOf(init.address) }
+    var city by remember(evId) { mutableStateOf(init.city) }
+    var state by remember(evId) { mutableStateOf(init.state) }
+    var notes by remember(evId) { mutableStateOf(init.notes) }
 
-    var eventStatus by remember(ev?.id) { mutableStateOf(ev?.eventStatus ?: EventLifecycleStatus.PLANNED) }
-    var ticketStatus by remember(ev?.id) { mutableStateOf(ev?.ticketStatus ?: TicketStatus.FREE) }
-    var ticketPriceInput by remember(ev?.id) { mutableStateOf(initialTicketPrice) }
-    var ticketQtyInput by remember(ev?.id) { mutableStateOf(initialTicketQty) }
-    var ticketFeesInput by remember(ev?.id) { mutableStateOf(initialTicketFees) }
-    var ticketDueDate by remember(ev?.id) { mutableStateOf(initialTicketDueDate) }
-    var paymentMethod by remember(ev?.id) { mutableStateOf(ev?.paymentMethod ?: PaymentMethod.PIX) }
-    var creditCardId by remember(ev?.id) { mutableStateOf(ev?.creditCardId) }
-    var installmentsInput by remember(ev?.id) { mutableStateOf(initialInstallments) }
+    var eventStatus by remember(evId) { mutableStateOf(init.eventStatus) }
+    var ticketStatus by remember(evId) { mutableStateOf(init.ticketStatus) }
+    var ticketPriceInput by remember(evId) { mutableStateOf(init.ticketPrice) }
+    var ticketQtyInput by remember(evId) { mutableStateOf(init.ticketQty) }
+    var ticketFeesInput by remember(evId) { mutableStateOf(init.ticketFees) }
+    var ticketDueDate by remember(evId) { mutableStateOf(init.ticketDueDate) }
+    var paymentMethod by remember(evId) { mutableStateOf(init.paymentMethod) }
+    var creditCardId by remember(evId) { mutableStateOf(init.creditCardId) }
+    var installmentsInput by remember(evId) { mutableStateOf(init.installments) }
 
     var pickTarget by remember { mutableStateOf<String?>(null) }
     var showCategoryMenu by remember { mutableStateOf(false) }
@@ -369,13 +408,13 @@ fun EventEditorSheet(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
     var nameError by remember { mutableStateOf(false) }
-    var reminderMinutesBefore by remember(ev?.id, existingReminder?.id) {
-        mutableStateOf(initialReminderMinutes)
+    var reminderMinutesBefore by remember(evId, reminderId) {
+        mutableStateOf(init.reminderMinutes)
     }
-    var reminderModified by remember(ev?.id, existingReminder?.id) { mutableStateOf(false) }
-    var linkedAppointmentsCount by remember(ev?.id) { mutableStateOf(0) }
+    var reminderModified by remember(evId, reminderId) { mutableStateOf(false) }
+    var linkedAppointmentsCount by remember(evId) { mutableStateOf(0) }
 
-    LaunchedEffect(ev?.id, showDeleteConfirm) {
+    LaunchedEffect(evId, showDeleteConfirm) {
         if (ev != null && showDeleteConfirm) {
             linkedAppointmentsCount = countLinkedAppointments(ev.id)
         }
@@ -383,29 +422,29 @@ fun EventEditorSheet(
 
     val fullAddressText = listOf(locationName, address, city, state).filter { it.isNotBlank() }.joinToString(", ")
 
-    val hasUnsavedChanges = name != (ev?.name ?: "") ||
-        description != (ev?.description ?: "") ||
-        categoryId != ev?.categoryId ||
-        isAllDay != (ev?.isAllDay ?: false) ||
-        startDate != initialStartDate ||
-        endDate != initialEndDate ||
-        (!isAllDay && (startTime != initialStartTime || endTime != initialEndTime)) ||
-        officialLink != (ev?.officialLink ?: "") ||
-        ticketLink != (ev?.ticketLink ?: "") ||
-        locationName != (ev?.locationName ?: "") ||
-        address != (ev?.address ?: "") ||
-        city != (ev?.city ?: "") ||
-        state != (ev?.state ?: "") ||
-        notes != (ev?.notes ?: "") ||
-        eventStatus != (ev?.eventStatus ?: EventLifecycleStatus.PLANNED) ||
-        ticketStatus != (ev?.ticketStatus ?: TicketStatus.FREE) ||
-        ticketPriceInput != initialTicketPrice ||
-        ticketQtyInput != initialTicketQty ||
-        ticketFeesInput != initialTicketFees ||
-        ticketDueDate != initialTicketDueDate ||
-        paymentMethod != (ev?.paymentMethod ?: PaymentMethod.PIX) ||
-        creditCardId != ev?.creditCardId ||
-        installmentsInput != initialInstallments ||
+    val hasUnsavedChanges = name != init.name ||
+        description != init.description ||
+        categoryId != init.categoryId ||
+        isAllDay != init.isAllDay ||
+        startDate != init.startDate ||
+        endDate != init.endDate ||
+        (!isAllDay && (startTime != init.startTime || endTime != init.endTime)) ||
+        officialLink != init.officialLink ||
+        ticketLink != init.ticketLink ||
+        locationName != init.locationName ||
+        address != init.address ||
+        city != init.city ||
+        state != init.state ||
+        notes != init.notes ||
+        eventStatus != init.eventStatus ||
+        ticketStatus != init.ticketStatus ||
+        ticketPriceInput != init.ticketPrice ||
+        ticketQtyInput != init.ticketQty ||
+        ticketFeesInput != init.ticketFees ||
+        ticketDueDate != init.ticketDueDate ||
+        paymentMethod != init.paymentMethod ||
+        creditCardId != init.creditCardId ||
+        installmentsInput != init.installments ||
         reminderModified
 
     val currentIsDirty by rememberUpdatedState(hasUnsavedChanges)

@@ -402,33 +402,42 @@ private fun PersonalGoalEditorDialog(
     ) -> Unit
 ) {
     val palette = LocalNexusPalette.current
-    val initialTargetDate = remember(existing?.id) {
+    val goalIdKey: String? = existing?.id
+    val initialTargetDate = remember(goalIdKey) {
         existing?.targetDateAt?.let { DateTimeUtils.toLocalDate(it) }
     }
-    var title by remember(existing?.id) { mutableStateOf(existing?.title ?: "") }
-    var description by remember(existing?.id) { mutableStateOf(existing?.description ?: "") }
-    var categoryId by remember(existing?.id) { mutableStateOf(existing?.categoryId) }
-    var targetDate by remember(existing?.id) { mutableStateOf(initialTargetDate) }
-    var status by remember(existing?.id) { mutableStateOf(existing?.status ?: GoalStatus.ACTIVE) }
-    var progressMode by remember(existing?.id) { mutableStateOf(existing?.progressMode ?: GoalProgressMode.AUTO) }
-    var manualPct by remember(existing?.id) {
-        mutableFloatStateOf((existing?.manualProgressPercent ?: 0).toFloat())
+    val initTitle = existing?.title ?: ""
+    val initDescription = existing?.description ?: ""
+    val initCategoryId = existing?.categoryId
+    val initStatus = existing?.status ?: GoalStatus.ACTIVE
+    val initProgressMode = existing?.progressMode ?: GoalProgressMode.AUTO
+    val initManualPct = existing?.manualProgressPercent ?: 0
+    val initNotes = existing?.notes ?: ""
+
+    var title by remember(goalIdKey) { mutableStateOf(initTitle) }
+    var description by remember(goalIdKey) { mutableStateOf(initDescription) }
+    var categoryId by remember(goalIdKey) { mutableStateOf(initCategoryId) }
+    var targetDate by remember(goalIdKey) { mutableStateOf(initialTargetDate) }
+    var status by remember(goalIdKey) { mutableStateOf(initStatus) }
+    var progressMode by remember(goalIdKey) { mutableStateOf(initProgressMode) }
+    var manualPct by remember(goalIdKey) {
+        mutableFloatStateOf(initManualPct.toFloat())
     }
-    var notes by remember(existing?.id) { mutableStateOf(existing?.notes ?: "") }
+    var notes by remember(goalIdKey) { mutableStateOf(initNotes) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showCategoryMenu by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
     var titleError by remember { mutableStateOf(false) }
 
-    val hasUnsavedChanges = title != (existing?.title ?: "") ||
-        description != (existing?.description ?: "") ||
-        categoryId != existing?.categoryId ||
+    val hasUnsavedChanges = title != initTitle ||
+        description != initDescription ||
+        categoryId != initCategoryId ||
         targetDate != initialTargetDate ||
-        status != (existing?.status ?: GoalStatus.ACTIVE) ||
-        progressMode != (existing?.progressMode ?: GoalProgressMode.AUTO) ||
-        manualPct.toInt() != (existing?.manualProgressPercent ?: 0) ||
-        notes != (existing?.notes ?: "")
+        status != initStatus ||
+        progressMode != initProgressMode ||
+        manualPct.toInt() != initManualPct ||
+        notes != initNotes
 
     val requestDismiss: () -> Unit = {
         val action = resolveBackAction(
@@ -1137,18 +1146,22 @@ private fun MilestoneEditorDialog(
     onSave: (title: String, description: String, dueAt: Long?) -> Unit
 ) {
     val palette = LocalNexusPalette.current
-    val initialDueDate = remember(existing?.id) {
+    val milestoneIdKey: String? = existing?.id
+    val initialDueDate = remember(milestoneIdKey) {
         existing?.dueAt?.let { DateTimeUtils.toLocalDate(it) }
     }
-    var title by remember(existing?.id) { mutableStateOf(existing?.title ?: "") }
-    var description by remember(existing?.id) { mutableStateOf(existing?.description ?: "") }
-    var dueDate by remember(existing?.id) { mutableStateOf(initialDueDate) }
+    val initTitle = existing?.title ?: ""
+    val initDescription = existing?.description ?: ""
+
+    var title by remember(milestoneIdKey) { mutableStateOf(initTitle) }
+    var description by remember(milestoneIdKey) { mutableStateOf(initDescription) }
+    var dueDate by remember(milestoneIdKey) { mutableStateOf(initialDueDate) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
     var titleError by remember { mutableStateOf(false) }
 
-    val hasUnsavedChanges = title != (existing?.title ?: "") ||
-        description != (existing?.description ?: "") ||
+    val hasUnsavedChanges = title != initTitle ||
+        description != initDescription ||
         dueDate != initialDueDate
 
     val requestDismiss: () -> Unit = {

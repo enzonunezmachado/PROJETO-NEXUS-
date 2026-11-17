@@ -77,6 +77,8 @@ import com.nexus.app.data.db.entity.AppointmentEntity
 import com.nexus.app.data.db.entity.CategoryEntity
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
+import com.nexus.app.data.db.entity.TaskEntity
+import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.domain.model.EventWithDetails
 import com.nexus.app.domain.model.PersonalGoalWithDetails
 import com.nexus.app.domain.model.ProjectStatus
@@ -199,6 +201,79 @@ private fun QuickAddOptionCard(
     }
 }
 
+private data class TaskEditorInitialState(
+    val title: String,
+    val description: String,
+    val notes: String,
+    val projectId: String?,
+    val categoryId: String?,
+    val eventId: String?,
+    val goalId: String?,
+    val priority: TaskPriority,
+    val status: TaskStatus,
+    val dueDate: LocalDate?,
+    val hasDueTime: Boolean,
+    val dueTime: LocalTime,
+    val subtasks: List<Triple<String?, String, Boolean>>,
+    val reminderMinutes: Int?,
+    val recFrequency: TaskRecurrenceFrequency?,
+    val customIntervalText: String,
+    val weekdaysMask: Int,
+    val recStartDate: LocalDate,
+    val recEndDate: LocalDate?,
+    val maxOccurrencesText: String,
+    val recEndMode: String,
+    val hasActiveRecurrence: Boolean
+)
+
+private fun buildTaskEditorInitialState(
+    task: TaskEntity?,
+    activeRecurrence: TaskRecurrenceEntity?,
+    existingTask: TaskWithDetails?,
+    initialEventId: String?,
+    existingReminder: ReminderEntity?
+): TaskEditorInitialState {
+    val initialDueDate = task?.dueAt?.let { DateTimeUtils.toLocalDate(it) }
+    val initialDueTime = if (task?.dueAt != null && task.hasDueTime) {
+        DateTimeUtils.epochToLocalTime(task.dueAt)
+    } else {
+        LocalTime.of(9, 0)
+    }
+    val initialRecStartDate = RecurrenceEngine.parseLocalDateOrNull(activeRecurrence?.startDateIso)
+        ?: initialDueDate
+        ?: DateTimeUtils.todayLocalDate()
+    val initialRecEndDate = RecurrenceEngine.parseLocalDateOrNull(activeRecurrence?.endDateIso)
+    val initialRecEndMode = when {
+        initialRecEndDate != null -> "DATE"
+        activeRecurrence?.maxOccurrences != null && activeRecurrence.maxOccurrences > 0 -> "COUNT"
+        else -> "NONE"
+    }
+    return TaskEditorInitialState(
+        title = task?.title ?: "",
+        description = task?.description ?: "",
+        notes = task?.notes ?: "",
+        projectId = task?.projectId,
+        categoryId = task?.categoryId,
+        eventId = task?.eventId ?: initialEventId,
+        goalId = task?.goalId,
+        priority = task?.priority ?: TaskPriority.NORMAL,
+        status = task?.status ?: TaskStatus.NOT_STARTED,
+        dueDate = initialDueDate,
+        hasDueTime = task?.hasDueTime ?: false,
+        dueTime = initialDueTime,
+        subtasks = existingTask?.subtasks?.map { Triple(it.id as String?, it.title, it.isCompleted) }.orEmpty(),
+        reminderMinutes = ReminderRules.resolveEditorReminderMinutes(existingReminder),
+        recFrequency = activeRecurrence?.frequency,
+        customIntervalText = (activeRecurrence?.customIntervalDays?.coerceAtLeast(1) ?: 2).toString(),
+        weekdaysMask = activeRecurrence?.weekdaysMask ?: 0,
+        recStartDate = initialRecStartDate,
+        recEndDate = initialRecEndDate,
+        maxOccurrencesText = activeRecurrence?.maxOccurrences?.takeIf { it > 0 }?.toString() ?: "",
+        recEndMode = initialRecEndMode,
+        hasActiveRecurrence = activeRecurrence != null
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TaskEditorSheet(
@@ -257,106 +332,78 @@ fun TaskEditorSheet(
     val palette = LocalNexusPalette.current
     val task = existingTask?.task
     val activeRecurrence = existingTask?.recurrence?.takeIf { it.isActive }
+    val taskKey: String? = task?.id
+    val activeRecurrenceId: String? = activeRecurrence?.id
+    val activeRecurrenceUpdatedAt: Long? = activeRecurrence?.updatedAt
+    val reminderKey: String? = existingReminder?.id
+    val reminderMinutesKey: Int? = existingReminder?.minutesBefore
+    val reminderStatusKey: Any? = existingReminder?.status
 
-    val initialDueDate = remember(task?.id) {
-        task?.dueAt?.let { DateTimeUtils.toLocalDate(it) }
-    }
-    val initialHasDueTime = task?.hasDueTime ?: false
-    val initialDueTime = remember(task?.id) {
-        if (task?.dueAt != null && task.hasDueTime) {
-            DateTimeUtils.epochToLocalTime(task.dueAt)
-        } else {
-            LocalTime.of(9, 0)
-        }
-    }
-    val initialSubtasks = remember(task?.id) {
-        existingTask?.subtasks?.map { Triple(it.id as String?, it.title, it.isCompleted) }.orEmpty()
-    }
-    val initialReminderMinutes = remember(
-        task?.id,
-        existingReminder?.id,
-        existingReminder?.minutesBefore,
-        existingReminder?.status
+    val init = remember(
+        taskKey,
+        activeRecurrenceId,
+        activeRecurrenceUpdatedAt,
+        initialEventId,
+        reminderKey,
+        reminderMinutesKey,
+        reminderStatusKey
     ) {
-        ReminderRules.resolveEditorReminderMinutes(existingReminder)
+        buildTaskEditorInitialState(
+            task = task,
+            activeRecurrence = activeRecurrence,
+            existingTask = existingTask,
+            initialEventId = initialEventId,
+            existingReminder = existingReminder
+        )
     }
 
-    val initialRecFrequency = remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        activeRecurrence?.frequency
-    }
-    val initialCustomIntervalText = remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        (activeRecurrence?.customIntervalDays?.coerceAtLeast(1) ?: 2).toString()
-    }
-    val initialWeekdaysMask = remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        activeRecurrence?.weekdaysMask ?: 0
-    }
-    val initialRecStartDate = remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        RecurrenceEngine.parseLocalDateOrNull(activeRecurrence?.startDateIso)
-            ?: initialDueDate
-            ?: DateTimeUtils.todayLocalDate()
-    }
-    val initialRecEndDate = remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        RecurrenceEngine.parseLocalDateOrNull(activeRecurrence?.endDateIso)
-    }
-    val initialMaxOccurrencesText = remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        activeRecurrence?.maxOccurrences?.takeIf { it > 0 }?.toString() ?: ""
-    }
-    val initialRecEndMode = remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        when {
-            activeRecurrence?.endDateIso != null &&
-                RecurrenceEngine.parseLocalDateOrNull(activeRecurrence.endDateIso) != null -> "DATE"
-            activeRecurrence?.maxOccurrences != null && activeRecurrence.maxOccurrences > 0 -> "COUNT"
-            else -> "NONE"
-        }
-    }
+    var title by remember(taskKey) { mutableStateOf(init.title) }
+    var description by remember(taskKey) { mutableStateOf(init.description) }
+    var notes by remember(taskKey) { mutableStateOf(init.notes) }
+    var projectId by remember(taskKey) { mutableStateOf(init.projectId) }
+    var categoryId by remember(taskKey) { mutableStateOf(init.categoryId) }
+    var eventId by remember(taskKey, initialEventId) { mutableStateOf(init.eventId) }
+    var goalId by remember(taskKey) { mutableStateOf(init.goalId) }
+    var priority by remember(taskKey) { mutableStateOf(init.priority) }
+    var status by remember(taskKey) { mutableStateOf(init.status) }
 
-    var title by remember(task?.id) { mutableStateOf(task?.title ?: "") }
-    var description by remember(task?.id) { mutableStateOf(task?.description ?: "") }
-    var notes by remember(task?.id) { mutableStateOf(task?.notes ?: "") }
-    var projectId by remember(task?.id) { mutableStateOf(task?.projectId) }
-    var categoryId by remember(task?.id) { mutableStateOf(task?.categoryId) }
-    var eventId by remember(task?.id) { mutableStateOf(task?.eventId ?: initialEventId) }
-    var goalId by remember(task?.id) { mutableStateOf(task?.goalId) }
-    var priority by remember(task?.id) { mutableStateOf(task?.priority ?: TaskPriority.NORMAL) }
-    var status by remember(task?.id) { mutableStateOf(task?.status ?: TaskStatus.NOT_STARTED) }
+    var dueDate by remember(taskKey) { mutableStateOf(init.dueDate) }
+    var hasDueTime by remember(taskKey) { mutableStateOf(init.hasDueTime) }
+    var dueTime by remember(taskKey) { mutableStateOf(init.dueTime) }
 
-    var dueDate by remember(task?.id) { mutableStateOf(initialDueDate) }
-    var hasDueTime by remember(task?.id) { mutableStateOf(initialHasDueTime) }
-    var dueTime by remember(task?.id) { mutableStateOf(initialDueTime) }
-
-    val draftSubtasks = remember(task?.id) {
+    val draftSubtasks = remember(taskKey) {
         mutableStateListOf<Triple<String?, String, Boolean>>().apply {
-            addAll(initialSubtasks)
+            addAll(init.subtasks)
         }
     }
     var newSubtaskText by remember { mutableStateOf("") }
 
-    var recurrenceFrequency by remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        mutableStateOf(initialRecFrequency)
+    var recurrenceFrequency by remember(taskKey, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.recFrequency)
     }
-    var customIntervalDaysText by remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        mutableStateOf(initialCustomIntervalText)
+    var customIntervalDaysText by remember(taskKey, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.customIntervalText)
     }
-    var weekdaysMask by remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        mutableStateOf(initialWeekdaysMask)
+    var weekdaysMask by remember(taskKey, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.weekdaysMask)
     }
-    var recurrenceStartDate by remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        mutableStateOf(initialRecStartDate)
+    var recurrenceStartDate by remember(taskKey, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.recStartDate)
     }
-    var recurrenceStartCustomized by remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        mutableStateOf(activeRecurrence != null)
+    var recurrenceStartCustomized by remember(taskKey, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.hasActiveRecurrence)
     }
-    var recurrenceEndMode by remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        mutableStateOf(initialRecEndMode)
+    var recurrenceEndMode by remember(taskKey, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.recEndMode)
     }
-    var recurrenceEndDate by remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        mutableStateOf(initialRecEndDate)
+    var recurrenceEndDate by remember(taskKey, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.recEndDate)
     }
-    var maxOccurrencesText by remember(task?.id, activeRecurrence?.id, activeRecurrence?.updatedAt) {
-        mutableStateOf(initialMaxOccurrencesText)
+    var maxOccurrencesText by remember(taskKey, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.maxOccurrencesText)
     }
-    var showMoreDetails by remember(task?.id, activeRecurrence?.id) {
-        mutableStateOf(activeRecurrence != null)
+    var showMoreDetails by remember(taskKey, activeRecurrenceId) {
+        mutableStateOf(init.hasActiveRecurrence)
     }
 
     var showDatePicker by remember { mutableStateOf(false) }
@@ -376,51 +423,40 @@ fun TaskEditorSheet(
     var pendingScopeSaveAction by remember { mutableStateOf<((RecurringEditScope) -> Unit)?>(null) }
     var pendingRuleChangeConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var titleError by remember { mutableStateOf(false) }
-    var reminderMinutesBefore by remember(task?.id, existingReminder?.id) {
-        mutableStateOf(initialReminderMinutes)
+    var reminderMinutesBefore by remember(taskKey, reminderKey) {
+        mutableStateOf(init.reminderMinutes)
     }
-    var reminderModified by remember(task?.id, existingReminder?.id) { mutableStateOf(false) }
+    var reminderModified by remember(taskKey, reminderKey) { mutableStateOf(false) }
 
-    val recurrenceRuleChanged = recurrenceFrequency != initialRecFrequency ||
+    val recurrenceRuleChanged = recurrenceFrequency != init.recFrequency ||
         (recurrenceFrequency == TaskRecurrenceFrequency.CUSTOM_DAYS &&
-            customIntervalDaysText.trim() != initialCustomIntervalText) ||
+            customIntervalDaysText.trim() != init.customIntervalText) ||
         (recurrenceFrequency == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS &&
-            weekdaysMask != initialWeekdaysMask) ||
+            weekdaysMask != init.weekdaysMask) ||
         (recurrenceFrequency != null && (
-            recurrenceStartDate != initialRecStartDate ||
-                recurrenceEndMode != initialRecEndMode ||
-                (recurrenceEndMode == "DATE" && recurrenceEndDate != initialRecEndDate) ||
-                (recurrenceEndMode == "COUNT" && maxOccurrencesText.trim() != initialMaxOccurrencesText)
+            recurrenceStartDate != init.recStartDate ||
+                recurrenceEndMode != init.recEndMode ||
+                (recurrenceEndMode == "DATE" && recurrenceEndDate != init.recEndDate) ||
+                (recurrenceEndMode == "COUNT" && maxOccurrencesText.trim() != init.maxOccurrencesText)
             ))
 
-    val templateFieldsChanged = title != (task?.title ?: "") ||
-        description != (task?.description ?: "") ||
-        notes != (task?.notes ?: "") ||
-        projectId != task?.projectId ||
-        categoryId != task?.categoryId ||
-        eventId != (task?.eventId ?: initialEventId) ||
-        goalId != task?.goalId ||
-        priority != (task?.priority ?: TaskPriority.NORMAL) ||
-        dueDate != initialDueDate ||
-        hasDueTime != initialHasDueTime ||
-        (hasDueTime && dueTime != initialDueTime) ||
+    val templateFieldsChanged = title != init.title ||
+        description != init.description ||
+        notes != init.notes ||
+        projectId != init.projectId ||
+        categoryId != init.categoryId ||
+        eventId != init.eventId ||
+        goalId != init.goalId ||
+        priority != init.priority ||
+        dueDate != init.dueDate ||
+        hasDueTime != init.hasDueTime ||
+        (hasDueTime && dueTime != init.dueTime) ||
         reminderModified
 
-    val hasUnsavedChanges = title != (task?.title ?: "") ||
-        description != (task?.description ?: "") ||
-        notes != (task?.notes ?: "") ||
-        projectId != task?.projectId ||
-        categoryId != task?.categoryId ||
-        eventId != (task?.eventId ?: initialEventId) ||
-        goalId != task?.goalId ||
-        priority != (task?.priority ?: TaskPriority.NORMAL) ||
-        status != (task?.status ?: TaskStatus.NOT_STARTED) ||
-        dueDate != initialDueDate ||
-        hasDueTime != initialHasDueTime ||
-        (hasDueTime && dueTime != initialDueTime) ||
-        draftSubtasks.toList() != initialSubtasks ||
+    val hasUnsavedChanges = templateFieldsChanged ||
+        status != init.status ||
+        draftSubtasks.toList() != init.subtasks ||
         newSubtaskText.isNotBlank() ||
-        reminderModified ||
         recurrenceRuleChanged
 
     fun buildRecurrenceDraft(): TaskRecurrenceDraft? {
@@ -812,245 +848,44 @@ fun TaskEditorSheet(
                 }
             }
 
-            NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showMoreDetails = !showMoreDetails },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Repeat,
-                            contentDescription = null,
-                            tint = if (recurrenceFrequency != null) palette.accentNeon else palette.textSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "Mais detalhes",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = palette.textPrimary
-                            )
-                            Text(
-                                text = recurrenceFrequency?.let { "Repetir: ${it.label}" }
-                                    ?: "Repetição e opções da série",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = palette.textSecondary
-                            )
+            TaskRecurrenceSectionCard(
+                showMoreDetails = showMoreDetails,
+                onToggleMoreDetails = { showMoreDetails = !showMoreDetails },
+                recurrenceFrequency = recurrenceFrequency,
+                showRecurrenceFreqDropdown = showRecurrenceFreqDropdown,
+                onToggleRecurrenceFreqDropdown = { showRecurrenceFreqDropdown = it },
+                onSelectRecurrenceFrequency = { freq ->
+                    recurrenceFrequency = freq
+                    if (freq != null) {
+                        if (!recurrenceStartCustomized) {
+                            recurrenceStartDate = dueDate ?: DateTimeUtils.todayLocalDate()
+                        }
+                        if (freq == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS && weekdaysMask == 0) {
+                            val anchor = dueDate ?: recurrenceStartDate
+                            weekdaysMask = RecurrenceEngine.weekdayBit(anchor.dayOfWeek)
                         }
                     }
-                    Icon(
-                        imageVector = if (showMoreDetails) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                        contentDescription = if (showMoreDetails) "Recolher detalhes" else "Expandir detalhes",
-                        tint = palette.textSecondary
-                    )
-                }
-
-                if (showMoreDetails) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(
-                            onClick = { showRecurrenceFreqDropdown = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text(
-                                text = "Repetir: ${recurrenceFrequency?.label ?: "Não repetir"}",
-                                color = palette.textPrimary,
-                                maxLines = 1
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showRecurrenceFreqDropdown,
-                            onDismissRequest = { showRecurrenceFreqDropdown = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Não repetir") },
-                                onClick = {
-                                    recurrenceFrequency = null
-                                    showRecurrenceFreqDropdown = false
-                                }
-                            )
-                            TaskRecurrenceFrequency.entries.forEach { freq ->
-                                DropdownMenuItem(
-                                    text = { Text(freq.label) },
-                                    onClick = {
-                                        recurrenceFrequency = freq
-                                        if (!recurrenceStartCustomized) {
-                                            recurrenceStartDate = dueDate ?: DateTimeUtils.todayLocalDate()
-                                        }
-                                        if (freq == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS && weekdaysMask == 0) {
-                                            val anchor = dueDate ?: recurrenceStartDate
-                                            weekdaysMask = RecurrenceEngine.weekdayBit(anchor.dayOfWeek)
-                                        }
-                                        showRecurrenceFreqDropdown = false
-                                    }
-                                )
-                            }
-                        }
+                },
+                customIntervalDaysText = customIntervalDaysText,
+                onCustomIntervalChange = { customIntervalDaysText = it },
+                weekdaysMask = weekdaysMask,
+                onWeekdaysMaskChange = { weekdaysMask = it },
+                recurrenceStartDate = recurrenceStartDate,
+                onPickRecurrenceStartDate = { showRecStartDatePicker = true },
+                recurrenceEndMode = recurrenceEndMode,
+                onSelectRecurrenceEndMode = { modeKey ->
+                    recurrenceEndMode = modeKey
+                    if (modeKey == "DATE" && recurrenceEndDate == null) {
+                        recurrenceEndDate = recurrenceStartDate.plusMonths(1)
+                    } else if (modeKey == "COUNT" && maxOccurrencesText.isBlank()) {
+                        maxOccurrencesText = "5"
                     }
-
-                    if (recurrenceFrequency == TaskRecurrenceFrequency.CUSTOM_DAYS) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = customIntervalDaysText,
-                            onValueChange = { raw ->
-                                customIntervalDaysText = raw.filter { it.isDigit() }.take(3)
-                            },
-                            label = { Text("Intervalo em dias") },
-                            supportingText = { Text("Mínimo de 1 dia entre ocorrências.") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    if (recurrenceFrequency == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "Dias da semana",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = palette.textSecondary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            DayOfWeek.entries.forEach { day ->
-                                val bit = RecurrenceEngine.weekdayBit(day)
-                                val selected = (weekdaysMask and bit) != 0
-                                val dayLabel = day.getDisplayName(TextStyle.SHORT, DateTimeUtils.LOCALE_PT_BR)
-                                    .replace(".", "")
-                                    .replaceFirstChar { it.uppercase(DateTimeUtils.LOCALE_PT_BR) }
-                                FilterChip(
-                                    selected = selected,
-                                    onClick = {
-                                        val nextMask = if (selected) weekdaysMask and bit.inv() else weekdaysMask or bit
-                                        if (nextMask != 0) {
-                                            weekdaysMask = nextMask
-                                        }
-                                    },
-                                    label = { Text(dayLabel) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = palette.surface,
-                                        selectedLabelColor = palette.accentNeon
-                                    )
-                                )
-                            }
-                        }
-                    }
-
-                    if (recurrenceFrequency != null) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = "Início da série",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = palette.textSecondary
-                                )
-                                Text(
-                                    text = DateTimeUtils.formatDate(recurrenceStartDate),
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-                                    color = palette.textPrimary
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = { showRecStartDatePicker = true },
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Text("Alterar", color = palette.textPrimary)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "Término da repetição",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = palette.textSecondary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            listOf(
-                                "NONE" to "Sem fim",
-                                "DATE" to "Até data",
-                                "COUNT" to "Máx. ocorrências"
-                            ).forEach { (modeKey, label) ->
-                                FilterChip(
-                                    selected = recurrenceEndMode == modeKey,
-                                    onClick = {
-                                        recurrenceEndMode = modeKey
-                                        if (modeKey == "DATE" && recurrenceEndDate == null) {
-                                            recurrenceEndDate = recurrenceStartDate.plusMonths(1)
-                                        } else if (modeKey == "COUNT" && maxOccurrencesText.isBlank()) {
-                                            maxOccurrencesText = "5"
-                                        }
-                                    },
-                                    label = { Text(label) },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = palette.surface,
-                                        selectedLabelColor = palette.accentNeon
-                                    )
-                                )
-                            }
-                        }
-
-                        if (recurrenceEndMode == "DATE") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "Data final",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = palette.textSecondary
-                                    )
-                                    Text(
-                                        text = DateTimeUtils.formatDate(recurrenceEndDate ?: recurrenceStartDate.plusMonths(1)),
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
-                                        color = palette.textPrimary
-                                    )
-                                }
-                                OutlinedButton(
-                                    onClick = { showRecEndDatePicker = true },
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Text("Alterar", color = palette.textPrimary)
-                                }
-                            }
-                        } else if (recurrenceEndMode == "COUNT") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = maxOccurrencesText,
-                                onValueChange = { raw ->
-                                    maxOccurrencesText = raw.filter { it.isDigit() }.take(3)
-                                },
-                                label = { Text("Máximo de ocorrências") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                }
-            }
+                },
+                recurrenceEndDate = recurrenceEndDate,
+                onPickRecurrenceEndDate = { showRecEndDatePicker = true },
+                maxOccurrencesText = maxOccurrencesText,
+                onMaxOccurrencesChange = { maxOccurrencesText = it }
+            )
 
             NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
                 val addPendingSubtask = {
@@ -1373,168 +1208,22 @@ fun TaskEditorSheet(
         )
     }
 
-    if (showDeleteConfirm && task != null) {
-        val linkedCount = existingTask?.linkedTransactions?.size ?: 0
-        if (activeRecurrence != null) {
-            AlertDialog(
-                onDismissRequest = { showDeleteConfirm = false },
-                containerColor = palette.surfaceElevated,
-                title = {
-                    Text(
-                        text = "Excluir tarefa recorrente?",
-                        color = palette.textPrimary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                text = {
-                    Text(
-                        text = if (linkedCount > 0) {
-                            "\"${task.title}\" faz parte de uma série recorrente. Você pode remover só esta ocorrência ou toda a série (os $linkedCount lançamento(s) vinculado(s) serão mantidos sem vínculo)."
-                        } else {
-                            "\"${task.title}\" faz parte de uma série recorrente. Deseja remover apenas esta ocorrência ou encerrar toda a série?"
-                        },
-                        color = palette.textSecondary
-                    )
-                },
-                confirmButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(
-                            onClick = {
-                                showDeleteConfirm = false
-                                onDelete(task.id, RecurringEditScope.ENTIRE_SERIES)
-                            }
-                        ) {
-                            Text("Toda a série", color = palette.danger)
-                        }
-                        Button(
-                            onClick = {
-                                showDeleteConfirm = false
-                                onDelete(task.id, RecurringEditScope.THIS_OCCURRENCE_ONLY)
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = palette.danger,
-                                contentColor = androidx.compose.ui.graphics.Color.White
-                            )
-                        ) {
-                            Text("Só esta")
-                        }
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteConfirm = false }) {
-                        Text("Cancelar", color = palette.textPrimary)
-                    }
-                }
-            )
-        } else {
-            val deleteMessage = if (linkedCount > 0) {
-                "A tarefa \"${task.title}\" e suas subtarefas serão removidas permanentemente. Os $linkedCount lançamento(s) financeiro(s) vinculado(s) serão mantidos sem vínculo."
-            } else {
-                "A tarefa \"${task.title}\" e suas subtarefas serão removidas permanentemente."
-            }
-            ConfirmDangerDialog(
-                title = "Excluir tarefa?",
-                message = deleteMessage,
-                onConfirm = {
-                    showDeleteConfirm = false
-                    onDelete(task.id, RecurringEditScope.THIS_OCCURRENCE_ONLY)
-                },
-                onDismiss = { showDeleteConfirm = false }
-            )
-        }
-    }
-
-    pendingScopeSaveAction?.let { executeSave ->
-        AlertDialog(
-            onDismissRequest = { pendingScopeSaveAction = null },
-            containerColor = palette.surfaceElevated,
-            title = {
-                Text(
-                    text = "Atualizar tarefa recorrente",
-                    color = palette.textPrimary,
-                    fontWeight = FontWeight.SemiBold
-                )
-            },
-            text = {
-                Text(
-                    text = "Deseja aplicar as alterações somente nesta ocorrência ou no modelo de toda a série?",
-                    color = palette.textSecondary
-                )
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = {
-                            pendingScopeSaveAction = null
-                            executeSave(RecurringEditScope.ENTIRE_SERIES)
-                        }
-                    ) {
-                        Text("Toda a série", color = palette.info)
-                    }
-                    Button(
-                        onClick = {
-                            pendingScopeSaveAction = null
-                            executeSave(RecurringEditScope.THIS_OCCURRENCE_ONLY)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = palette.highlight,
-                            contentColor = palette.background
-                        )
-                    ) {
-                        Text("Só esta ocorrência")
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingScopeSaveAction = null }) {
-                    Text("Cancelar", color = palette.textSecondary)
-                }
-            }
-        )
-    }
-
-    pendingRuleChangeConfirmAction?.let { confirmSeriesSave ->
-        AlertDialog(
-            onDismissRequest = { pendingRuleChangeConfirmAction = null },
-            containerColor = palette.surfaceElevated,
-            title = {
-                Text(
-                    text = "Alterar regra da série?",
-                    color = palette.textPrimary,
-                    fontWeight = FontWeight.SemiBold
-                )
-            },
-            text = {
-                Text(
-                    text = if (recurrenceFrequency == null) {
-                        "Remover a repetição cancelará as próximas ocorrências não concluídas de toda a série."
-                    } else {
-                        "Alterações na frequência, dias ou período de repetição serão aplicadas a toda a série."
-                    },
-                    color = palette.textSecondary
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        pendingRuleChangeConfirmAction = null
-                        confirmSeriesSave()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = palette.highlight,
-                        contentColor = palette.background
-                    )
-                ) {
-                    Text("Aplicar na série")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRuleChangeConfirmAction = null }) {
-                    Text("Cancelar", color = palette.textSecondary)
-                }
-            }
-        )
-    }
+    TaskScopeConfirmDialogs(
+        task = task,
+        hasActiveRecurrence = activeRecurrence != null,
+        linkedTransactionsCount = existingTask?.linkedTransactions?.size ?: 0,
+        recurrenceFrequency = recurrenceFrequency,
+        showDeleteConfirm = showDeleteConfirm,
+        onDismissDeleteConfirm = { showDeleteConfirm = false },
+        onConfirmDelete = { deleteScope ->
+            showDeleteConfirm = false
+            task?.let { onDelete(it.id, deleteScope) }
+        },
+        pendingScopeSaveAction = pendingScopeSaveAction,
+        onClearPendingScopeSave = { pendingScopeSaveAction = null },
+        pendingRuleChangeConfirmAction = pendingRuleChangeConfirmAction,
+        onClearPendingRuleChange = { pendingRuleChangeConfirmAction = null }
+    )
 
     if (showDiscardConfirm) {
         ConfirmDiscardChangesDialog(
@@ -1608,6 +1297,426 @@ fun TaskEditorSheet(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TaskRecurrenceSectionCard(
+    showMoreDetails: Boolean,
+    onToggleMoreDetails: () -> Unit,
+    recurrenceFrequency: TaskRecurrenceFrequency?,
+    showRecurrenceFreqDropdown: Boolean,
+    onToggleRecurrenceFreqDropdown: (Boolean) -> Unit,
+    onSelectRecurrenceFrequency: (TaskRecurrenceFrequency?) -> Unit,
+    customIntervalDaysText: String,
+    onCustomIntervalChange: (String) -> Unit,
+    weekdaysMask: Int,
+    onWeekdaysMaskChange: (Int) -> Unit,
+    recurrenceStartDate: LocalDate,
+    onPickRecurrenceStartDate: () -> Unit,
+    recurrenceEndMode: String,
+    onSelectRecurrenceEndMode: (String) -> Unit,
+    recurrenceEndDate: LocalDate?,
+    onPickRecurrenceEndDate: () -> Unit,
+    maxOccurrencesText: String,
+    onMaxOccurrencesChange: (String) -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggleMoreDetails() },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Repeat,
+                    contentDescription = null,
+                    tint = if (recurrenceFrequency != null) palette.accentNeon else palette.textSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Column {
+                    Text(
+                        text = "Mais detalhes",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = recurrenceFrequency?.let { "Repetir: ${it.label}" }
+                            ?: "Repetição e opções da série",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.textSecondary
+                    )
+                }
+            }
+            Icon(
+                imageVector = if (showMoreDetails) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                contentDescription = if (showMoreDetails) "Recolher detalhes" else "Expandir detalhes",
+                tint = palette.textSecondary
+            )
+        }
+
+        if (showMoreDetails) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { onToggleRecurrenceFreqDropdown(true) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "Repetir: ${recurrenceFrequency?.label ?: "Não repetir"}",
+                        color = palette.textPrimary,
+                        maxLines = 1
+                    )
+                }
+                DropdownMenu(
+                    expanded = showRecurrenceFreqDropdown,
+                    onDismissRequest = { onToggleRecurrenceFreqDropdown(false) }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Não repetir") },
+                        onClick = {
+                            onSelectRecurrenceFrequency(null)
+                            onToggleRecurrenceFreqDropdown(false)
+                        }
+                    )
+                    TaskRecurrenceFrequency.entries.forEach { freq ->
+                        DropdownMenuItem(
+                            text = { Text(freq.label) },
+                            onClick = {
+                                onSelectRecurrenceFrequency(freq)
+                                onToggleRecurrenceFreqDropdown(false)
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (recurrenceFrequency == TaskRecurrenceFrequency.CUSTOM_DAYS) {
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = customIntervalDaysText,
+                    onValueChange = { raw ->
+                        onCustomIntervalChange(raw.filter { it.isDigit() }.take(3))
+                    },
+                    label = { Text("Intervalo em dias") },
+                    supportingText = { Text("Mínimo de 1 dia entre ocorrências.") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            if (recurrenceFrequency == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Dias da semana",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.textSecondary
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    DayOfWeek.entries.forEach { day ->
+                        val bit = RecurrenceEngine.weekdayBit(day)
+                        val selected = (weekdaysMask and bit) != 0
+                        val dayLabel = day.getDisplayName(TextStyle.SHORT, DateTimeUtils.LOCALE_PT_BR)
+                            .replace(".", "")
+                            .replaceFirstChar { it.uppercase(DateTimeUtils.LOCALE_PT_BR) }
+                        FilterChip(
+                            selected = selected,
+                            onClick = {
+                                val nextMask = if (selected) weekdaysMask and bit.inv() else weekdaysMask or bit
+                                if (nextMask != 0) {
+                                    onWeekdaysMaskChange(nextMask)
+                                }
+                            },
+                            label = { Text(dayLabel) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = palette.surface,
+                                selectedLabelColor = palette.accentNeon
+                            )
+                        )
+                    }
+                }
+            }
+
+            if (recurrenceFrequency != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Início da série",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.textSecondary
+                        )
+                        Text(
+                            text = DateTimeUtils.formatDate(recurrenceStartDate),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                            color = palette.textPrimary
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = onPickRecurrenceStartDate,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Alterar", color = palette.textPrimary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Término da repetição",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.textSecondary
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(
+                        "NONE" to "Sem fim",
+                        "DATE" to "Até data",
+                        "COUNT" to "Máx. ocorrências"
+                    ).forEach { (modeKey, label) ->
+                        FilterChip(
+                            selected = recurrenceEndMode == modeKey,
+                            onClick = { onSelectRecurrenceEndMode(modeKey) },
+                            label = { Text(label) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = palette.surface,
+                                selectedLabelColor = palette.accentNeon
+                            )
+                        )
+                    }
+                }
+
+                if (recurrenceEndMode == "DATE") {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Data final",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = palette.textSecondary
+                            )
+                            Text(
+                                text = DateTimeUtils.formatDate(recurrenceEndDate ?: recurrenceStartDate.plusMonths(1)),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+                                color = palette.textPrimary
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onPickRecurrenceEndDate,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Alterar", color = palette.textPrimary)
+                        }
+                    }
+                } else if (recurrenceEndMode == "COUNT") {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = maxOccurrencesText,
+                        onValueChange = { raw ->
+                            onMaxOccurrencesChange(raw.filter { it.isDigit() }.take(3))
+                        },
+                        label = { Text("Máximo de ocorrências") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskScopeConfirmDialogs(
+    task: TaskEntity?,
+    hasActiveRecurrence: Boolean,
+    linkedTransactionsCount: Int,
+    recurrenceFrequency: TaskRecurrenceFrequency?,
+    showDeleteConfirm: Boolean,
+    onDismissDeleteConfirm: () -> Unit,
+    onConfirmDelete: (RecurringEditScope) -> Unit,
+    pendingScopeSaveAction: ((RecurringEditScope) -> Unit)?,
+    onClearPendingScopeSave: () -> Unit,
+    pendingRuleChangeConfirmAction: (() -> Unit)?,
+    onClearPendingRuleChange: () -> Unit
+) {
+    val palette = LocalNexusPalette.current
+
+    if (showDeleteConfirm && task != null) {
+        if (hasActiveRecurrence) {
+            AlertDialog(
+                onDismissRequest = onDismissDeleteConfirm,
+                containerColor = palette.surfaceElevated,
+                title = {
+                    Text(
+                        text = "Excluir tarefa recorrente?",
+                        color = palette.textPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
+                text = {
+                    Text(
+                        text = if (linkedTransactionsCount > 0) {
+                            "\"${task.title}\" faz parte de uma série recorrente. Você pode remover só esta ocorrência ou toda a série (os $linkedTransactionsCount lançamento(s) vinculado(s) serão mantidos sem vínculo)."
+                        } else {
+                            "\"${task.title}\" faz parte de uma série recorrente. Deseja remover apenas esta ocorrência ou encerrar toda a série?"
+                        },
+                        color = palette.textSecondary
+                    )
+                },
+                confirmButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = { onConfirmDelete(RecurringEditScope.ENTIRE_SERIES) }
+                        ) {
+                            Text("Toda a série", color = palette.danger)
+                        }
+                        Button(
+                            onClick = { onConfirmDelete(RecurringEditScope.THIS_OCCURRENCE_ONLY) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = palette.danger,
+                                contentColor = androidx.compose.ui.graphics.Color.White
+                            )
+                        ) {
+                            Text("Só esta")
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismissDeleteConfirm) {
+                        Text("Cancelar", color = palette.textPrimary)
+                    }
+                }
+            )
+        } else {
+            val deleteMessage = if (linkedTransactionsCount > 0) {
+                "A tarefa \"${task.title}\" e suas subtarefas serão removidas permanentemente. Os $linkedTransactionsCount lançamento(s) financeiro(s) vinculado(s) serão mantidos sem vínculo."
+            } else {
+                "A tarefa \"${task.title}\" e suas subtarefas serão removidas permanentemente."
+            }
+            ConfirmDangerDialog(
+                title = "Excluir tarefa?",
+                message = deleteMessage,
+                onConfirm = { onConfirmDelete(RecurringEditScope.THIS_OCCURRENCE_ONLY) },
+                onDismiss = onDismissDeleteConfirm
+            )
+        }
+    }
+
+    pendingScopeSaveAction?.let { executeSave ->
+        AlertDialog(
+            onDismissRequest = onClearPendingScopeSave,
+            containerColor = palette.surfaceElevated,
+            title = {
+                Text(
+                    text = "Atualizar tarefa recorrente",
+                    color = palette.textPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Text(
+                    text = "Deseja aplicar as alterações somente nesta ocorrência ou no modelo de toda a série?",
+                    color = palette.textSecondary
+                )
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            onClearPendingScopeSave()
+                            executeSave(RecurringEditScope.ENTIRE_SERIES)
+                        }
+                    ) {
+                        Text("Toda a série", color = palette.info)
+                    }
+                    Button(
+                        onClick = {
+                            onClearPendingScopeSave()
+                            executeSave(RecurringEditScope.THIS_OCCURRENCE_ONLY)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = palette.highlight,
+                            contentColor = palette.background
+                        )
+                    ) {
+                        Text("Só esta ocorrência")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onClearPendingScopeSave) {
+                    Text("Cancelar", color = palette.textSecondary)
+                }
+            }
+        )
+    }
+
+    pendingRuleChangeConfirmAction?.let { confirmSeriesSave ->
+        AlertDialog(
+            onDismissRequest = onClearPendingRuleChange,
+            containerColor = palette.surfaceElevated,
+            title = {
+                Text(
+                    text = "Alterar regra da série?",
+                    color = palette.textPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            },
+            text = {
+                Text(
+                    text = if (recurrenceFrequency == null) {
+                        "Remover a repetição cancelará as próximas ocorrências não concluídas de toda a série."
+                    } else {
+                        "Alterações na frequência, dias ou período de repetição serão aplicadas a toda a série."
+                    },
+                    color = palette.textSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onClearPendingRuleChange()
+                        confirmSeriesSave()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.highlight,
+                        contentColor = palette.background
+                    )
+                ) {
+                    Text("Aplicar na série")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onClearPendingRuleChange) {
+                    Text("Cancelar", color = palette.textSecondary)
+                }
+            }
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppointmentEditorSheet(
@@ -1638,39 +1747,46 @@ fun AppointmentEditorSheet(
     val palette = LocalNexusPalette.current
     val context = LocalContext.current
 
-    val initialStartDate = remember(existingAppointment?.id) {
+    val appointmentId: String? = existingAppointment?.id
+    val reminderId: String? = existingReminder?.id
+    val reminderMinutesKey: Int? = existingReminder?.minutesBefore
+    val reminderStatusKey: Any? = existingReminder?.status
+
+    val initStartDate = remember(appointmentId, initialDate) {
         existingAppointment?.let { DateTimeUtils.toLocalDate(it.startAt) } ?: initialDate
     }
-    val initialStartTime = remember(existingAppointment?.id) {
+    val initStartTime = remember(appointmentId) {
         existingAppointment?.let { DateTimeUtils.epochToLocalTime(it.startAt) } ?: LocalTime.of(9, 0)
     }
-    val initialEndDate = remember(existingAppointment?.id) {
+    val initEndDate = remember(appointmentId, initialDate) {
         existingAppointment?.let { DateTimeUtils.toLocalDate(it.endAt) } ?: initialDate
     }
-    val initialEndTime = remember(existingAppointment?.id) {
+    val initEndTime = remember(appointmentId) {
         existingAppointment?.let { DateTimeUtils.epochToLocalTime(it.endAt) } ?: LocalTime.of(10, 0)
     }
-    val initialReminderMinutes = remember(
-        existingAppointment?.id,
-        existingReminder?.id,
-        existingReminder?.minutesBefore,
-        existingReminder?.status
-    ) {
+    val initReminderMinutes = remember(appointmentId, reminderId, reminderMinutesKey, reminderStatusKey) {
         ReminderRules.resolveEditorReminderMinutes(existingReminder)
     }
+    val initTitle = existingAppointment?.title ?: ""
+    val initDescription = existingAppointment?.description ?: ""
+    val initCategoryId = existingAppointment?.categoryId
+    val initEventId = existingAppointment?.eventId
+    val initIsAllDay = existingAppointment?.isAllDay ?: false
+    val initLocation = existingAppointment?.location ?: ""
+    val initLink = existingAppointment?.link ?: ""
 
-    var title by remember(existingAppointment?.id) { mutableStateOf(existingAppointment?.title ?: "") }
-    var description by remember(existingAppointment?.id) { mutableStateOf(existingAppointment?.description ?: "") }
-    var categoryId by remember(existingAppointment?.id) { mutableStateOf(existingAppointment?.categoryId) }
-    var eventId by remember(existingAppointment?.id) { mutableStateOf(existingAppointment?.eventId) }
-    var isAllDay by remember(existingAppointment?.id) { mutableStateOf(existingAppointment?.isAllDay ?: false) }
-    var location by remember(existingAppointment?.id) { mutableStateOf(existingAppointment?.location ?: "") }
-    var link by remember(existingAppointment?.id) { mutableStateOf(existingAppointment?.link ?: "") }
+    var title by remember(appointmentId) { mutableStateOf(initTitle) }
+    var description by remember(appointmentId) { mutableStateOf(initDescription) }
+    var categoryId by remember(appointmentId) { mutableStateOf(initCategoryId) }
+    var eventId by remember(appointmentId) { mutableStateOf(initEventId) }
+    var isAllDay by remember(appointmentId) { mutableStateOf(initIsAllDay) }
+    var location by remember(appointmentId) { mutableStateOf(initLocation) }
+    var link by remember(appointmentId) { mutableStateOf(initLink) }
 
-    var startDate by remember(existingAppointment?.id) { mutableStateOf(initialStartDate) }
-    var startTime by remember(existingAppointment?.id) { mutableStateOf(initialStartTime) }
-    var endDate by remember(existingAppointment?.id) { mutableStateOf(initialEndDate) }
-    var endTime by remember(existingAppointment?.id) { mutableStateOf(initialEndTime) }
+    var startDate by remember(appointmentId) { mutableStateOf(initStartDate) }
+    var startTime by remember(appointmentId) { mutableStateOf(initStartTime) }
+    var endDate by remember(appointmentId) { mutableStateOf(initEndDate) }
+    var endTime by remember(appointmentId) { mutableStateOf(initEndTime) }
 
     var pickTarget by remember { mutableStateOf<String?>(null) }
     var showCategoryMenu by remember { mutableStateOf(false) }
@@ -1678,21 +1794,21 @@ fun AppointmentEditorSheet(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
     var titleError by remember { mutableStateOf(false) }
-    var reminderMinutesBefore by remember(existingAppointment?.id, existingReminder?.id) {
-        mutableStateOf(initialReminderMinutes)
+    var reminderMinutesBefore by remember(appointmentId, reminderId) {
+        mutableStateOf(initReminderMinutes)
     }
-    var reminderModified by remember(existingAppointment?.id, existingReminder?.id) { mutableStateOf(false) }
+    var reminderModified by remember(appointmentId, reminderId) { mutableStateOf(false) }
 
-    val hasUnsavedChanges = title != (existingAppointment?.title ?: "") ||
-        description != (existingAppointment?.description ?: "") ||
-        categoryId != existingAppointment?.categoryId ||
-        eventId != existingAppointment?.eventId ||
-        isAllDay != (existingAppointment?.isAllDay ?: false) ||
-        location != (existingAppointment?.location ?: "") ||
-        link != (existingAppointment?.link ?: "") ||
-        startDate != initialStartDate ||
-        endDate != initialEndDate ||
-        (!isAllDay && (startTime != initialStartTime || endTime != initialEndTime)) ||
+    val hasUnsavedChanges = title != initTitle ||
+        description != initDescription ||
+        categoryId != initCategoryId ||
+        eventId != initEventId ||
+        isAllDay != initIsAllDay ||
+        location != initLocation ||
+        link != initLink ||
+        startDate != initStartDate ||
+        endDate != initEndDate ||
+        (!isAllDay && (startTime != initStartTime || endTime != initEndTime)) ||
         reminderModified
 
     val currentIsDirty by rememberUpdatedState(hasUnsavedChanges)
@@ -2070,17 +2186,23 @@ fun ProjectEditorSheet(
 ) {
     val palette = LocalNexusPalette.current
     val project = existingProject?.project
+    val projectIdKey: String? = project?.id
 
-    val initialDeadlineDate = remember(project?.id) {
+    val initialDeadlineDate = remember(projectIdKey) {
         project?.deadlineAt?.let { DateTimeUtils.toLocalDate(it) }
     }
+    val initName = project?.name ?: ""
+    val initDescription = project?.description ?: ""
+    val initStatus = project?.status ?: ProjectStatus.ACTIVE
+    val initPriority = project?.priority ?: TaskPriority.NORMAL
+    val initGoalId = project?.goalId
 
-    var name by remember(project?.id) { mutableStateOf(project?.name ?: "") }
-    var description by remember(project?.id) { mutableStateOf(project?.description ?: "") }
-    var deadlineDate by remember(project?.id) { mutableStateOf(initialDeadlineDate) }
-    var status by remember(project?.id) { mutableStateOf(project?.status ?: ProjectStatus.ACTIVE) }
-    var priority by remember(project?.id) { mutableStateOf(project?.priority ?: TaskPriority.NORMAL) }
-    var goalId by remember(project?.id) { mutableStateOf(project?.goalId) }
+    var name by remember(projectIdKey) { mutableStateOf(initName) }
+    var description by remember(projectIdKey) { mutableStateOf(initDescription) }
+    var deadlineDate by remember(projectIdKey) { mutableStateOf(initialDeadlineDate) }
+    var status by remember(projectIdKey) { mutableStateOf(initStatus) }
+    var priority by remember(projectIdKey) { mutableStateOf(initPriority) }
+    var goalId by remember(projectIdKey) { mutableStateOf(initGoalId) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showStatusMenu by remember { mutableStateOf(false) }
@@ -2091,18 +2213,18 @@ fun ProjectEditorSheet(
     var linkedTaskCount by remember { mutableStateOf(0) }
     var nameError by remember { mutableStateOf(false) }
 
-    LaunchedEffect(showDeleteConfirm, project?.id) {
+    LaunchedEffect(showDeleteConfirm, projectIdKey) {
         if (showDeleteConfirm && project != null) {
             linkedTaskCount = countLinkedTasks(project.id)
         }
     }
 
-    val hasUnsavedChanges = name != (project?.name ?: "") ||
-        description != (project?.description ?: "") ||
+    val hasUnsavedChanges = name != initName ||
+        description != initDescription ||
         deadlineDate != initialDeadlineDate ||
-        status != (project?.status ?: ProjectStatus.ACTIVE) ||
-        priority != (project?.priority ?: TaskPriority.NORMAL) ||
-        goalId != project?.goalId
+        status != initStatus ||
+        priority != initPriority ||
+        goalId != initGoalId
 
     val currentIsDirty by rememberUpdatedState(hasUnsavedChanges)
     LaunchedEffect(hasUnsavedChanges) { onDirtyStateChange(hasUnsavedChanges) }

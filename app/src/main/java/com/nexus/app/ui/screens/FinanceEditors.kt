@@ -50,6 +50,7 @@ import com.nexus.app.data.db.entity.CreditCardEntity
 import com.nexus.app.data.db.entity.FinancialGoalEntity
 import com.nexus.app.data.db.entity.LoanEntity
 import com.nexus.app.data.db.entity.ReminderEntity
+import com.nexus.app.data.db.entity.TransactionEntity
 import com.nexus.app.domain.model.EventCostType
 import com.nexus.app.domain.model.EventWithDetails
 import com.nexus.app.domain.model.FinancialStatus
@@ -73,6 +74,52 @@ import com.nexus.app.ui.components.ReminderLeadTimeSelector
 import com.nexus.app.ui.theme.LocalNexusPalette
 import java.time.LocalDate
 import java.time.LocalTime
+
+private data class TransactionEditorInitialState(
+    val type: TransactionType,
+    val description: String,
+    val amountInput: String,
+    val categoryId: String?,
+    val status: FinancialStatus,
+    val paymentMethod: PaymentMethod?,
+    val dueDate: LocalDate,
+    val projectId: String?,
+    val eventId: String?,
+    val taskId: String?,
+    val eventCostType: EventCostType?,
+    val creditCardId: String?,
+    val notes: String,
+    val reminderMinutes: Int?
+)
+
+private fun buildTransactionEditorInitialState(
+    tx: TransactionEntity?,
+    initialType: TransactionType,
+    initialEventId: String?,
+    initialTaskId: String?,
+    initialDescription: String?,
+    initialCategoryId: String?,
+    requireExplicitPaymentMethod: Boolean,
+    existingReminder: ReminderEntity?
+): TransactionEditorInitialState {
+    val today = DateTimeUtils.todayLocalDate()
+    return TransactionEditorInitialState(
+        type = tx?.type ?: initialType,
+        description = tx?.description ?: initialDescription.orEmpty(),
+        amountInput = tx?.let { DateTimeUtils.centsToInputString(it.amountCents) } ?: "",
+        categoryId = tx?.categoryId ?: initialCategoryId,
+        status = tx?.status ?: FinancialStatus.PENDING,
+        paymentMethod = tx?.paymentMethod ?: if (requireExplicitPaymentMethod) null else PaymentMethod.PIX,
+        dueDate = tx?.dueAt?.let { DateTimeUtils.toLocalDate(it) } ?: today,
+        projectId = tx?.projectId,
+        eventId = tx?.eventId ?: initialEventId,
+        taskId = tx?.taskId ?: initialTaskId,
+        eventCostType = tx?.eventCostType,
+        creditCardId = tx?.creditCardId,
+        notes = tx?.notes ?: "",
+        reminderMinutes = ReminderRules.resolveEditorReminderMinutes(existingReminder)
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,50 +163,48 @@ fun TransactionEditorSheet(
 ) {
     val palette = LocalNexusPalette.current
     val tx = existing?.transaction
+    val txId: String? = tx?.id
+    val reminderId: String? = existingReminder?.id
+    val reminderMinutesKey: Int? = existingReminder?.minutesBefore
+    val reminderStatusKey: Any? = existingReminder?.status
 
-    val initialAmountInput = remember(tx?.id) {
-        tx?.let { DateTimeUtils.centsToInputString(it.amountCents) } ?: ""
-    }
-    val initialDueDate = remember(tx?.id) {
-        tx?.dueAt?.let { DateTimeUtils.toLocalDate(it) } ?: DateTimeUtils.todayLocalDate()
-    }
-    val initialDescriptionValue = remember(tx?.id, initialDescription) {
-        tx?.description ?: initialDescription.orEmpty()
-    }
-    val initialCategoryValue = remember(tx?.id, initialCategoryId) {
-        tx?.categoryId ?: initialCategoryId
-    }
-    val initialPaymentMethodValue: PaymentMethod? = remember(tx?.id, requireExplicitPaymentMethod) {
-        tx?.paymentMethod ?: if (requireExplicitPaymentMethod) null else PaymentMethod.PIX
-    }
-    val initialTaskValue = remember(tx?.id, initialTaskId) {
-        tx?.taskId ?: initialTaskId
-    }
-    val initialEventCostType = remember(tx?.id) {
-        tx?.eventCostType
-    }
-    val initialReminderMinutes = remember(
-        tx?.id,
-        existingReminder?.id,
-        existingReminder?.minutesBefore,
-        existingReminder?.status
+    val init = remember(
+        txId,
+        initialType,
+        initialEventId,
+        initialTaskId,
+        initialDescription,
+        initialCategoryId,
+        requireExplicitPaymentMethod,
+        reminderId,
+        reminderMinutesKey,
+        reminderStatusKey
     ) {
-        ReminderRules.resolveEditorReminderMinutes(existingReminder)
+        buildTransactionEditorInitialState(
+            tx = tx,
+            initialType = initialType,
+            initialEventId = initialEventId,
+            initialTaskId = initialTaskId,
+            initialDescription = initialDescription,
+            initialCategoryId = initialCategoryId,
+            requireExplicitPaymentMethod = requireExplicitPaymentMethod,
+            existingReminder = existingReminder
+        )
     }
 
-    var type by remember(tx?.id) { mutableStateOf(tx?.type ?: initialType) }
-    var description by remember(tx?.id, initialDescription) { mutableStateOf(initialDescriptionValue) }
-    var amountInput by remember(tx?.id) { mutableStateOf(initialAmountInput) }
-    var categoryId by remember(tx?.id, initialCategoryId) { mutableStateOf(initialCategoryValue) }
-    var status by remember(tx?.id) { mutableStateOf(tx?.status ?: FinancialStatus.PENDING) }
-    var paymentMethod by remember(tx?.id, requireExplicitPaymentMethod) { mutableStateOf(initialPaymentMethodValue) }
-    var dueDate by remember(tx?.id) { mutableStateOf(initialDueDate) }
-    var projectId by remember(tx?.id) { mutableStateOf(tx?.projectId) }
-    var eventId by remember(tx?.id) { mutableStateOf(tx?.eventId ?: initialEventId) }
-    var taskId by remember(tx?.id, initialTaskId) { mutableStateOf(initialTaskValue) }
-    var eventCostType by remember(tx?.id) { mutableStateOf(initialEventCostType) }
-    var creditCardId by remember(tx?.id) { mutableStateOf(tx?.creditCardId) }
-    var notes by remember(tx?.id) { mutableStateOf(tx?.notes ?: "") }
+    var type by remember(txId) { mutableStateOf(init.type) }
+    var description by remember(txId, initialDescription) { mutableStateOf(init.description) }
+    var amountInput by remember(txId) { mutableStateOf(init.amountInput) }
+    var categoryId by remember(txId, initialCategoryId) { mutableStateOf(init.categoryId) }
+    var status by remember(txId) { mutableStateOf(init.status) }
+    var paymentMethod by remember(txId, requireExplicitPaymentMethod) { mutableStateOf(init.paymentMethod) }
+    var dueDate by remember(txId) { mutableStateOf(init.dueDate) }
+    var projectId by remember(txId) { mutableStateOf(init.projectId) }
+    var eventId by remember(txId) { mutableStateOf(init.eventId) }
+    var taskId by remember(txId, initialTaskId) { mutableStateOf(init.taskId) }
+    var eventCostType by remember(txId) { mutableStateOf(init.eventCostType) }
+    var creditCardId by remember(txId) { mutableStateOf(init.creditCardId) }
+    var notes by remember(txId) { mutableStateOf(init.notes) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showCatMenu by remember { mutableStateOf(false) }
@@ -173,24 +218,24 @@ fun TransactionEditorSheet(
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
     var validationMessage by remember { mutableStateOf<String?>(null) }
-    var reminderMinutesBefore by remember(tx?.id, existingReminder?.id) {
-        mutableStateOf(initialReminderMinutes)
+    var reminderMinutesBefore by remember(txId, reminderId) {
+        mutableStateOf(init.reminderMinutes)
     }
-    var reminderModified by remember(tx?.id, existingReminder?.id) { mutableStateOf(false) }
+    var reminderModified by remember(txId, reminderId) { mutableStateOf(false) }
 
-    val hasUnsavedChanges = type != (tx?.type ?: initialType) ||
-        description != initialDescriptionValue ||
-        amountInput != initialAmountInput ||
-        categoryId != initialCategoryValue ||
-        status != (tx?.status ?: FinancialStatus.PENDING) ||
-        paymentMethod != initialPaymentMethodValue ||
-        dueDate != initialDueDate ||
-        projectId != tx?.projectId ||
-        eventId != (tx?.eventId ?: initialEventId) ||
-        taskId != initialTaskValue ||
-        eventCostType != initialEventCostType ||
-        creditCardId != tx?.creditCardId ||
-        notes != (tx?.notes ?: "") ||
+    val hasUnsavedChanges = type != init.type ||
+        description != init.description ||
+        amountInput != init.amountInput ||
+        categoryId != init.categoryId ||
+        status != init.status ||
+        paymentMethod != init.paymentMethod ||
+        dueDate != init.dueDate ||
+        projectId != init.projectId ||
+        eventId != init.eventId ||
+        taskId != init.taskId ||
+        eventCostType != init.eventCostType ||
+        creditCardId != init.creditCardId ||
+        notes != init.notes ||
         reminderModified
 
     val currentIsDirty by rememberUpdatedState(hasUnsavedChanges)
@@ -552,29 +597,36 @@ fun CreditCardEditorSheet(
     onDirtyStateChange: (Boolean) -> Unit = {}
 ) {
     val palette = LocalNexusPalette.current
-    val initialTotalLimit = remember(existing?.id) {
+    val cardIdKey: String? = existing?.id
+    val initialTotalLimit = remember(cardIdKey) {
         existing?.let { DateTimeUtils.centsToInputString(it.totalLimitCents) } ?: ""
     }
-    val initialAvailableLimit = remember(existing?.id) {
+    val initialAvailableLimit = remember(cardIdKey) {
         existing?.let { DateTimeUtils.centsToInputString(it.availableLimitCents) } ?: ""
     }
-    var name by remember(existing?.id) { mutableStateOf(existing?.name ?: "") }
-    var institution by remember(existing?.id) { mutableStateOf(existing?.institution ?: "") }
-    var totalLimit by remember(existing?.id) { mutableStateOf(initialTotalLimit) }
-    var availableLimit by remember(existing?.id) { mutableStateOf(initialAvailableLimit) }
-    var closingDay by remember(existing?.id) { mutableStateOf((existing?.closingDay ?: 10).toString()) }
-    var dueDay by remember(existing?.id) { mutableStateOf((existing?.dueDay ?: 17).toString()) }
-    var notes by remember(existing?.id) { mutableStateOf(existing?.notes ?: "") }
+    val initName = existing?.name ?: ""
+    val initInstitution = existing?.institution ?: ""
+    val initClosingDay = (existing?.closingDay ?: 10).toString()
+    val initDueDay = (existing?.dueDay ?: 17).toString()
+    val initNotes = existing?.notes ?: ""
+
+    var name by remember(cardIdKey) { mutableStateOf(initName) }
+    var institution by remember(cardIdKey) { mutableStateOf(initInstitution) }
+    var totalLimit by remember(cardIdKey) { mutableStateOf(initialTotalLimit) }
+    var availableLimit by remember(cardIdKey) { mutableStateOf(initialAvailableLimit) }
+    var closingDay by remember(cardIdKey) { mutableStateOf(initClosingDay) }
+    var dueDay by remember(cardIdKey) { mutableStateOf(initDueDay) }
+    var notes by remember(cardIdKey) { mutableStateOf(initNotes) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
 
-    val hasUnsavedChanges = name != (existing?.name ?: "") ||
-        institution != (existing?.institution ?: "") ||
+    val hasUnsavedChanges = name != initName ||
+        institution != initInstitution ||
         totalLimit != initialTotalLimit ||
         availableLimit != initialAvailableLimit ||
-        closingDay != (existing?.closingDay ?: 10).toString() ||
-        dueDay != (existing?.dueDay ?: 17).toString() ||
-        notes != (existing?.notes ?: "")
+        closingDay != initClosingDay ||
+        dueDay != initDueDay ||
+        notes != initNotes
 
     val currentIsDirty by rememberUpdatedState(hasUnsavedChanges)
     LaunchedEffect(hasUnsavedChanges) { onDirtyStateChange(hasUnsavedChanges) }
@@ -1097,34 +1149,39 @@ fun LoanEditorSheet(
     onDirtyStateChange: (Boolean) -> Unit = {}
 ) {
     val palette = LocalNexusPalette.current
-    val initialOrig = remember(existing?.id) { existing?.let { DateTimeUtils.centsToInputString(it.originalAmountCents) } ?: "" }
-    val initialContr = remember(existing?.id) { existing?.let { DateTimeUtils.centsToInputString(it.contractedAmountCents) } ?: "" }
-    val initialInstAmt = remember(existing?.id) { existing?.let { DateTimeUtils.centsToInputString(it.installmentAmountCents) } ?: "" }
-    val initialRem = remember(existing?.id) { existing?.let { DateTimeUtils.centsToInputString(it.remainingBalanceCents) } ?: "" }
-    val initialNextDue = remember(existing?.id) { existing?.nextDueAt?.let { DateTimeUtils.toLocalDate(it) } }
+    val loanIdKey: String? = existing?.id
+    val initialOrig = remember(loanIdKey) { existing?.let { DateTimeUtils.centsToInputString(it.originalAmountCents) } ?: "" }
+    val initialContr = remember(loanIdKey) { existing?.let { DateTimeUtils.centsToInputString(it.contractedAmountCents) } ?: "" }
+    val initialInstAmt = remember(loanIdKey) { existing?.let { DateTimeUtils.centsToInputString(it.installmentAmountCents) } ?: "" }
+    val initialRem = remember(loanIdKey) { existing?.let { DateTimeUtils.centsToInputString(it.remainingBalanceCents) } ?: "" }
+    val initialNextDue = remember(loanIdKey) { existing?.nextDueAt?.let { DateTimeUtils.toLocalDate(it) } }
+    val initCreditor = existing?.creditor ?: ""
+    val initTotalInst = (existing?.installmentsTotal ?: 12).toString()
+    val initPaidInst = (existing?.paidInstallments ?: 0).toString()
+    val initNotes = existing?.notes ?: ""
 
-    var creditor by remember(existing?.id) { mutableStateOf(existing?.creditor ?: "") }
-    var originalInput by remember(existing?.id) { mutableStateOf(initialOrig) }
-    var contractedInput by remember(existing?.id) { mutableStateOf(initialContr) }
-    var totalInstInput by remember(existing?.id) { mutableStateOf((existing?.installmentsTotal ?: 12).toString()) }
-    var instAmountInput by remember(existing?.id) { mutableStateOf(initialInstAmt) }
-    var paidInstInput by remember(existing?.id) { mutableStateOf((existing?.paidInstallments ?: 0).toString()) }
-    var remainingInput by remember(existing?.id) { mutableStateOf(initialRem) }
-    var nextDueDate by remember(existing?.id) { mutableStateOf(initialNextDue) }
-    var notes by remember(existing?.id) { mutableStateOf(existing?.notes ?: "") }
+    var creditor by remember(loanIdKey) { mutableStateOf(initCreditor) }
+    var originalInput by remember(loanIdKey) { mutableStateOf(initialOrig) }
+    var contractedInput by remember(loanIdKey) { mutableStateOf(initialContr) }
+    var totalInstInput by remember(loanIdKey) { mutableStateOf(initTotalInst) }
+    var instAmountInput by remember(loanIdKey) { mutableStateOf(initialInstAmt) }
+    var paidInstInput by remember(loanIdKey) { mutableStateOf(initPaidInst) }
+    var remainingInput by remember(loanIdKey) { mutableStateOf(initialRem) }
+    var nextDueDate by remember(loanIdKey) { mutableStateOf(initialNextDue) }
+    var notes by remember(loanIdKey) { mutableStateOf(initNotes) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
-    val hasUnsavedChanges = creditor != (existing?.creditor ?: "") ||
+    val hasUnsavedChanges = creditor != initCreditor ||
         originalInput != initialOrig ||
         contractedInput != initialContr ||
-        totalInstInput != (existing?.installmentsTotal ?: 12).toString() ||
+        totalInstInput != initTotalInst ||
         instAmountInput != initialInstAmt ||
-        paidInstInput != (existing?.paidInstallments ?: 0).toString() ||
+        paidInstInput != initPaidInst ||
         remainingInput != initialRem ||
         nextDueDate != initialNextDue ||
-        notes != (existing?.notes ?: "")
+        notes != initNotes
 
     val currentIsDirty by rememberUpdatedState(hasUnsavedChanges)
     LaunchedEffect(hasUnsavedChanges) { onDirtyStateChange(hasUnsavedChanges) }
@@ -1452,23 +1509,26 @@ fun FinancialGoalEditorDialog(
     onDirtyStateChange: (Boolean) -> Unit = {}
 ) {
     val palette = LocalNexusPalette.current
-    val initialTargetInput = remember(existing?.id) { existing?.let { DateTimeUtils.centsToInputString(it.targetAmountCents) } ?: "" }
-    val initialCurrentInput = remember(existing?.id) { existing?.let { DateTimeUtils.centsToInputString(it.currentAmountCents) } ?: "" }
-    val initialDeadlineDate = remember(existing?.id) { existing?.deadlineAt?.let { DateTimeUtils.toLocalDate(it) } }
+    val goalIdKey: String? = existing?.id
+    val initialTargetInput = remember(goalIdKey) { existing?.let { DateTimeUtils.centsToInputString(it.targetAmountCents) } ?: "" }
+    val initialCurrentInput = remember(goalIdKey) { existing?.let { DateTimeUtils.centsToInputString(it.currentAmountCents) } ?: "" }
+    val initialDeadlineDate = remember(goalIdKey) { existing?.deadlineAt?.let { DateTimeUtils.toLocalDate(it) } }
+    val initName = existing?.name ?: ""
+    val initNotes = existing?.notes ?: ""
 
-    var name by remember(existing?.id) { mutableStateOf(existing?.name ?: "") }
-    var targetInput by remember(existing?.id) { mutableStateOf(initialTargetInput) }
-    var currentInput by remember(existing?.id) { mutableStateOf(initialCurrentInput) }
-    var deadlineDate by remember(existing?.id) { mutableStateOf(initialDeadlineDate) }
-    var notes by remember(existing?.id) { mutableStateOf(existing?.notes ?: "") }
+    var name by remember(goalIdKey) { mutableStateOf(initName) }
+    var targetInput by remember(goalIdKey) { mutableStateOf(initialTargetInput) }
+    var currentInput by remember(goalIdKey) { mutableStateOf(initialCurrentInput) }
+    var deadlineDate by remember(goalIdKey) { mutableStateOf(initialDeadlineDate) }
+    var notes by remember(goalIdKey) { mutableStateOf(initNotes) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
 
-    val hasUnsavedChanges = name != (existing?.name ?: "") ||
+    val hasUnsavedChanges = name != initName ||
         targetInput != initialTargetInput ||
         currentInput != initialCurrentInput ||
         deadlineDate != initialDeadlineDate ||
-        notes != (existing?.notes ?: "")
+        notes != initNotes
     LaunchedEffect(hasUnsavedChanges) { onDirtyStateChange(hasUnsavedChanges) }
 
     val requestDismiss: () -> Unit = {
