@@ -491,7 +491,6 @@ fun PriorityIndicatorDot(priority: TaskPriority) {
     )
 }
 
-@Composable
 fun parseHexColorOrDefault(hex: String?, fallback: Color): Color {
     if (hex.isNullOrBlank()) return fallback
     return try {

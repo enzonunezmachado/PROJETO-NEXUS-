@@ -110,7 +110,7 @@ fun AgendaScreen(
     onOpenCards: () -> Unit,
     onOpenProject: (String) -> Unit,
     onCreateAppointment: () -> Unit,
-    onOpenVirtualRecurringTask: (recurrenceId: String, occurrenceDateIso: String) -> Unit = {},
+    onOpenVirtualRecurringTask: (recurrenceId: String, occurrenceDateIso: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val palette = LocalNexusPalette.current

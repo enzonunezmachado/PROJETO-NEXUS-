@@ -119,7 +119,7 @@ fun DonutChart(
                                 val dx = offset.x - cx
                                 val dy = offset.y - cy
                                 val dist = hypot(dx, dy)
-                                val outerR = size.minDimension / 2f
+                                val outerR = minOf(size.width, size.height) / 2f
                                 val innerR = outerR * 0.45f
                                 if (dist < innerR || dist > outerR) return@detectTapGestures
 

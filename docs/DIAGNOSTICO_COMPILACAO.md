@@ -120,3 +120,54 @@ Todas as funcionalidades, regras de negócio, fluxos de persistência, validaç�
 
 **Justificativa:**  
 A falha em `:app:compileDebugKotlin` teve causa raiz clara e comprovada tanto pelo stack trace (`transformDelegateExpression` -> `transformSafeCallExpression` -> `FirDataFlowAnalyzer.exitSafeCall` -> `LogicSystem.addImplication` -> `OutOfMemoryError`) quanto pela análise quantitativa do código-fonte e do `/gradle.properties`. As duas frentes foram corrigidas de forma cirúrgica e sem perda de funcionalidades: (1) eliminação do padrão disparador de explosão no `FirDataFlowAnalyzer` em todos os editores grandes (`EntityEditors.kt`, `EventsScreen.kt`, `FinanceEditors.kt`, `PlanningGoalsScreen.kt`) com decomposição de `TaskEditorSheet`, e (2) dimensionamento explícito e seguro de memória em `/gradle.properties` (`kotlin.daemon.jvmargs=-Xmx3072m` + `org.gradle.jvmargs=-Xmx1536m`). Além disso, não há pendências estruturais, imports quebrados ou código inacabado bloqueando o build.
+
+---
+
+## F. Nova rodada — Build #3 do GitHub Actions e correção dos 8 erros Kotlin
+
+### 1. Resultado da tentativa de compilação (Build #3)
+- **Execução:** `NEXUS Android Build #3` (`commit ec6cc94893459f39d1c2da5ec2025fed9416b5e8`, branch `main`).
+- **Duração:** **~1m 10s** no total do job (~**36s** no passo do Gradle, contra ~9m 07s até a queda na tentativa anterior).
+- **Memória / K2 OOM:** **o erro `OutOfMemoryError: GC overhead limit exceeded` NÃO voltou a ocorrer.** O `:app:kspDebugKotlin` concluiu normalmente e o `:app:compileDebugKotlin` conseguiu percorrer toda a análise FIR/Compose sem estourar heap, revelando erros reais de código Kotlin que antes ficavam ocultos pela falha prematura de memória.
+- **Resultado final do Gradle no Build #3:** falha em `:app:compileDebugKotlin` com **8 mensagens de erro em 3 arquivos** (`DonutChart.kt`, `AgendaScreen.kt` e `FinanceScreen.kt`).
+
+### 2. Análise detalhada dos erros encontrados e origem
+
+| Arquivo / Linha | Erro do compilador | Causa raiz técnica | Origem |
+|---|---|---|---|
+| `app/src/main/java/com/nexus/app/ui/components/charts/DonutChart.kt:122` | `Unresolved reference 'minDimension'.` | Dentro de `Modifier.pointerInput(...) { detectTapGestures { offset -> ... } }`, `this` é `PointerInputScope`, cujo `size` é `androidx.compose.ui.unit.IntSize` (`width: Int`, `height: Int`), que não possui `minDimension` — diferente de `DrawScope.size` (`androidx.compose.ui.geometry.Size`) usado no bloco `Canvas` na linha 141. | **Pré-existente** (introduzido no Stage 3 ao implementar o gráfico interativo de rosca; ocultado anteriormente pelo OOM do K2). |
+| `app/src/main/java/com/nexus/app/ui/screens/AgendaScreen.kt:113` | `Initializer type mismatch: expected 'kotlin.Function2<String, String, Unit>', actual 'kotlin.Function0<Unit>'.` | O parâmetro `onOpenVirtualRecurringTask: (recurrenceId: String, occurrenceDateIso: String) -> Unit = {}` usa lambda vazio `{}` como valor padrão. Em Kotlin, `{}` só se adapta a `() -> Unit` ou lambdas de 1 parâmetro (`it`); para 2 parâmetros, o compilador infere `Function0<Unit>`. (`MainActivity.kt:787` passa `{ recId, dateIso -> ... }` explicitamente). | **Pré-existente do Lote 6** (introduzido na assinatura de `AgendaScreen`; ocultado pelo OOM). |
+| `app/src/main/java/com/nexus/app/ui/screens/FinanceScreen.kt:348` | `@Composable invocations can only happen from the context of a @Composable function` | `parseHexColorOrDefault(pt.colorHex, fallbackColor)` era chamada dentro de `remember(...) { ... }`, cujo lambda de cálculo não é `@Composable`, enquanto `parseHexColorOrDefault` estava anotada com `@Composable` em `NexusComponents.kt:494` apesar de ser uma função pura que não lê nenhum estado nem chama outros composables. | **Pré-existente** (Stage 3 Financeiro / `NexusComponents.kt`; ocultado pelo OOM). |
+| `app/src/main/java/com/nexus/app/ui/screens/FinanceScreen.kt:410-413` | `No value passed for parameter 'currentMonth' / 'onPreviousMonth' / 'onNextMonth'` e `Cannot find a parameter with this name: monthLabel / onPrevious / onNext / onResetToCurrent` (5 mensagens) | A chamada em `OverviewTabContent` usava nomes de parâmetros desatualizados (`monthLabel`, `onPrevious`, `onNext`, `onResetToCurrent`), enquanto `MonthYearSelectorBar` em `NexusComponents.kt:172` recebe `currentMonth: YearMonth`, `onPreviousMonth`, `onNextMonth` e `onResetToCurrentMonth` (e já formata o rótulo do mês em `pt-BR` internamente). | **Pré-existente** (desalinhamento entre `FinanceScreen.kt` e `NexusComponents.kt` desde a criação da barra seletora; ocultado pelo OOM). |
+
+> **Constatação sobre as alterações da rodada anterior:** nenhum dos 8 erros foi introduzido pelas refatorações de OOM em `EntityEditors.kt`, `EventsScreen.kt`, `FinanceEditors.kt`, `PlanningGoalsScreen.kt` ou `gradle.properties`; todos já existiam no código e passaram a ser detectados assim que o compilador deixou de travar por falta de memória.
+
+### 3. Varredura preventiva complementar na base de código
+Para reduzir o risco de outros erros ocultos antes da próxima execução no CI:
+- Varredura em todos os `.kt` de `app/src` por lambdas padrão `{}` em funções de 2+ parâmetros: apenas `AgendaScreen.kt:113` apresentava o problema.
+- Varredura em todos os blocos `remember(...) { ... }` por chamadas `@Composable`: apenas `FinanceScreen.kt:348` (`parseHexColorOrDefault`) apresentava o problema.
+- Conferência dos demais gráficos (`TaskRingChart.kt`, `BarGroupChart.kt`, `Sparkline.kt`, `ProgressBarRow.kt`): nenhum outro uso de `minDimension` dentro de `PointerInputScope`/`IntSize` (em `TaskRingChart.kt:105`, `size.minDimension` está dentro de `DrawScope`, onde o tipo é `Size`).
+- Conferência de todos os chamadores de `MonthYearSelectorBar(...)`: `FinanceScreen.kt:409` era o único chamador externo.
+
+### 4. Arquivos modificados e correções aplicadas
+
+1. **`/app/src/main/java/com/nexus/app/ui/components/charts/DonutChart.kt`** (linha 122)
+   - Substituído `val outerR = size.minDimension / 2f` por `val outerR = minOf(size.width, size.height) / 2f` dentro de `detectTapGestures`.
+   - **Impacto funcional:** preserva exatamente o cálculo geométrico do raio externo (em `Float`) para detecção de toque no anel do gráfico de rosca.
+2. **`/app/src/main/java/com/nexus/app/ui/screens/AgendaScreen.kt`** (linha 113)
+   - Alterado o valor padrão `= {}` de `onOpenVirtualRecurringTask` para `= { _, _ -> }`.
+   - **Impacto funcional:** nenhum; `MainActivity.kt` continua fornecendo o callback real para abrir/materializar ocorrências virtuais recorrentes.
+3. **`/app/src/main/java/com/nexus/app/ui/components/NexusComponents.kt`** (linha 494)
+   - Removida a anotação `@Composable` desnecessária de `parseHexColorOrDefault(hex: String?, fallback: Color): Color`, mantendo assinatura, pacote e implementação pura idênticos.
+   - **Impacto funcional:** permite chamadas tanto em funções `@Composable` (`HomeScreen.kt`, `AgendaScreen.kt`, `MoreSettingsBackupDiagnosticsScreens.kt`) quanto dentro de `remember(...)` (`FinanceScreen.kt`).
+4. **`/app/src/main/java/com/nexus/app/ui/screens/FinanceScreen.kt`** (linhas 409–416)
+   - Ajustada a chamada de `MonthYearSelectorBar` para usar `currentMonth = selectedMonth`, `onPreviousMonth = { onMonthChange(selectedMonth.minusMonths(1)) }`, `onNextMonth = { onMonthChange(selectedMonth.plusMonths(1)) }` e `onResetToCurrentMonth = if (selectedMonth != currentMonth) { { onMonthChange(currentMonth) } } else null`.
+   - Mantida a variável `monthTitle` (usada na linha 730 em `"Nenhum orçamento definido para $monthTitle."`).
+   - **Impacto funcional:** preserva seleção de mês, navegação anterior/próximo, exibição localizada em `pt-BR` e atalho `"Hoje"` quando fora do mês corrente.
+5. **Preservação da configuração de memória e refatorações anti-OOM:** `/gradle.properties` e as extrações em `EntityEditors.kt`, `EventsScreen.kt`, `FinanceEditors.kt` e `PlanningGoalsScreen.kt` foram mantidas intactas.
+
+### 5. Verificação estática e pendências para o próximo CI
+- **Verificação estática local:** parênteses, chaves e colchetes balanceados nos 4 arquivos Kotlin editados; configuração de `/gradle.properties` confirmada intacta.
+- **Limitação do ambiente:** este ambiente segue sem JDK, Gradle ou Android SDK, portanto o projeto **ainda não foi compilado nem testado localmente**.
+- **Próxima validação esperada no GitHub Actions:** conclusão de `:app:compileDebugKotlin` sem erros e avanço do pipeline para `:app:testDebugUnitTest` e `:app:assembleDebug`. Caso surja algum erro específico na compilação dos testes unitários (`testDebugUnitTest`), ele poderá então ser diagnosticado isoladamente.
+

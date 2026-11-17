@@ -407,10 +407,10 @@ private fun OverviewTabContent(
     ) {
         item(key = "fin_month_selector") {
             MonthYearSelectorBar(
-                monthLabel = monthTitle,
-                onPrevious = { onMonthChange(selectedMonth.minusMonths(1)) },
-                onNext = { onMonthChange(selectedMonth.plusMonths(1)) },
-                onResetToCurrent = if (selectedMonth != currentMonth) {
+                currentMonth = selectedMonth,
+                onPreviousMonth = { onMonthChange(selectedMonth.minusMonths(1)) },
+                onNextMonth = { onMonthChange(selectedMonth.plusMonths(1)) },
+                onResetToCurrentMonth = if (selectedMonth != currentMonth) {
                     { onMonthChange(currentMonth) }
                 } else null
             )
