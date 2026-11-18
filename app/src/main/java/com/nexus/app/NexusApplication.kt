@@ -4,6 +4,8 @@ import android.app.Application
 import com.nexus.app.core.GlobalErrorHandler
 import com.nexus.app.data.backup.BackupManager
 import com.nexus.app.data.db.NexusDatabase
+import com.nexus.app.data.market.MarketQuoteRepository
+import com.nexus.app.data.market.MarketQuoteSyncScheduler
 import com.nexus.app.data.repository.NexusRepository
 import com.nexus.app.notifications.NexusNotificationChannels
 import com.nexus.app.notifications.NexusNotificationScheduler
@@ -20,6 +22,10 @@ class AppContainer(application: Application) {
 
     val notificationScheduler: NexusNotificationScheduler by lazy {
         NexusNotificationScheduler(application)
+    }
+
+    val marketQuoteRepository: MarketQuoteRepository by lazy {
+        MarketQuoteRepository.createDefault(application)
     }
 
     val repository: NexusRepository by lazy {
@@ -41,6 +47,7 @@ class NexusApplication : Application() {
         NexusNotificationChannels.ensureChannelsCreated(this)
         container = AppContainer(this)
         container.notificationScheduler.enqueuePeriodicSyncWorker()
+        MarketQuoteSyncScheduler.enqueuePeriodicSync(this)
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler(
             GlobalErrorHandler(

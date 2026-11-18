@@ -23,6 +23,7 @@ import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
+import com.nexus.app.data.market.MarketQuoteRepository
 import com.nexus.app.data.repository.NexusRepository
 import com.nexus.app.domain.model.AgendaItem
 import com.nexus.app.domain.model.BriefingType
@@ -44,6 +45,7 @@ import com.nexus.app.domain.model.GoalProgressMode
 import com.nexus.app.domain.model.GoalStatus
 import com.nexus.app.domain.model.GoalStatusFilter
 import com.nexus.app.domain.model.InstallmentPurchaseWithItems
+import com.nexus.app.domain.model.MarketQuoteUiState
 import com.nexus.app.domain.model.NexusDateFormat
 import com.nexus.app.domain.model.NightReviewSnapshot
 import com.nexus.app.domain.model.PaymentMethod
@@ -149,11 +151,15 @@ data class BackupUiState(
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NexusViewModel(
-    private val repository: NexusRepository
+    private val repository: NexusRepository,
+    private val marketQuoteRepository: MarketQuoteRepository? = null
 ) : ViewModel() {
 
     private val _snackbarEvents = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val snackbarEvents: SharedFlow<String> = _snackbarEvents.asSharedFlow()
+
+    val usdBrlQuoteState: StateFlow<MarketQuoteUiState> =
+        marketQuoteRepository?.usdBrlState ?: MutableStateFlow(MarketQuoteUiState())
 
     init {
         // Garante geracao idempotente de recorrencias e frase do dia ao iniciar sem nunca duplicar
@@ -1508,14 +1514,27 @@ class NexusViewModel(
         }
     }
 
+    fun refreshUsdBrlQuote(manual: Boolean = true) {
+        val repo = marketQuoteRepository ?: return
+        viewModelScope.launch {
+            val state = repo.refreshUsdBrl(force = manual)
+            if (manual && state.lastRefreshFailed && !state.statusMessage.isNullOrBlank()) {
+                emitMessage(state.statusMessage)
+            }
+        }
+    }
+
     fun emitMessage(message: String) {
         _snackbarEvents.tryEmit(message)
     }
 
-    class Factory(private val repository: NexusRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repository: NexusRepository,
+        private val marketQuoteRepository: MarketQuoteRepository? = null
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return NexusViewModel(repository) as T
+            return NexusViewModel(repository, marketQuoteRepository) as T
         }
     }
 }

@@ -29,17 +29,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Savings
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.TrendingDown
+import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -59,6 +65,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,7 +92,10 @@ import com.nexus.app.domain.model.CardWithStatements
 import com.nexus.app.domain.model.CategoryScope
 import com.nexus.app.domain.model.FinancialStatus
 import com.nexus.app.domain.model.InstallmentPurchaseWithItems
+import com.nexus.app.domain.model.MarketQuoteCalculations
+import com.nexus.app.domain.model.MarketQuoteUiState
 import com.nexus.app.domain.model.PaymentMethod
+import com.nexus.app.domain.model.QuoteTrend
 import com.nexus.app.domain.model.StatementStatus
 import com.nexus.app.domain.model.TransactionType
 import com.nexus.app.domain.model.TransactionWithDetails
@@ -117,6 +127,9 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun FinanceScreen(
     dashboardData: MonthlyFinanceDashboardData,
+    usdBrlQuoteState: MarketQuoteUiState,
+    onRefreshUsdBrl: () -> Unit,
+    onAutoRefreshUsdBrl: () -> Unit,
     allTransactions: List<TransactionWithDetails>,
     transactions: List<TransactionWithDetails>,
     categories: List<CategoryEntity>,
@@ -166,6 +179,10 @@ fun FinanceScreen(
     val palette = LocalNexusPalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        onAutoRefreshUsdBrl()
+    }
 
     val csvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
@@ -232,6 +249,8 @@ fun FinanceScreen(
         when (filter.tabMode) {
             FinanceTabMode.OVERVIEW -> OverviewTabContent(
                 dashboardData = dashboardData,
+                usdBrlQuoteState = usdBrlQuoteState,
+                onRefreshUsdBrl = onRefreshUsdBrl,
                 allTransactions = allTransactions,
                 selectedMonth = filter.selectedMonth,
                 onMonthChange = onMonthChange,
@@ -306,6 +325,8 @@ fun FinanceScreen(
 @Composable
 private fun OverviewTabContent(
     dashboardData: MonthlyFinanceDashboardData,
+    usdBrlQuoteState: MarketQuoteUiState,
+    onRefreshUsdBrl: () -> Unit,
     allTransactions: List<TransactionWithDetails>,
     selectedMonth: YearMonth,
     onMonthChange: (YearMonth) -> Unit,
@@ -488,6 +509,13 @@ private fun OverviewTabContent(
                     modifier = Modifier.weight(1f)
                 )
             }
+        }
+
+        item(key = "fin_usd_brl_quote") {
+            UsdBrlQuoteCard(
+                state = usdBrlQuoteState,
+                onRefresh = onRefreshUsdBrl
+            )
         }
 
         if (summary.overdueExpenseCents > 0L) {
@@ -1868,3 +1896,242 @@ private fun PlanningAndLoansTabContent(
         )
     }
 }
+
+@Composable
+private fun UsdBrlQuoteCard(
+    state: MarketQuoteUiState,
+    onRefresh: () -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    val quote = state.quote
+
+    NexusCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = "Dólar (USD/BRL)",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (quote != null) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = palette.surfaceElevated,
+                        border = BorderStroke(1.dp, palette.border)
+                    ) {
+                        Text(
+                            text = quote.modality.displayLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.textSecondary,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+
+            IconButton(
+                onClick = onRefresh,
+                enabled = !state.isRefreshing,
+                modifier = Modifier.size(36.dp)
+            ) {
+                if (state.isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = palette.highlight
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = "Atualizar cotação USD/BRL",
+                        tint = palette.highlight,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        if (quote != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = MarketQuoteCalculations.formatBrlRate(quote.price),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = palette.textPrimary
+                )
+
+                val changePct = quote.changePercent
+                if (changePct != null) {
+                    val trendColor = when (quote.trend) {
+                        QuoteTrend.UP -> palette.positive
+                        QuoteTrend.DOWN -> palette.danger
+                        QuoteTrend.FLAT, QuoteTrend.UNKNOWN -> palette.textSecondary
+                    }
+                    val trendIcon = when (quote.trend) {
+                        QuoteTrend.UP -> Icons.Outlined.TrendingUp
+                        QuoteTrend.DOWN -> Icons.Outlined.TrendingDown
+                        QuoteTrend.FLAT, QuoteTrend.UNKNOWN -> null
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = trendColor.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, trendColor.copy(alpha = 0.35f))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            if (trendIcon != null) {
+                                Icon(
+                                    imageVector = trendIcon,
+                                    contentDescription = when (quote.trend) {
+                                        QuoteTrend.UP -> "Em alta"
+                                        QuoteTrend.DOWN -> "Em queda"
+                                        else -> null
+                                    },
+                                    tint = trendColor,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                            Text(
+                                text = MarketQuoteCalculations.formatSignedPercent(changePct),
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = trendColor
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "Variação indisponível",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary
+                    )
+                }
+            }
+
+            if (quote.bidPrice != null && quote.askPrice != null && quote.bidPrice != quote.askPrice) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Compra: ${MarketQuoteCalculations.formatBrlRate(quote.bidPrice)} • Venda: ${MarketQuoteCalculations.formatBrlRate(quote.askPrice)}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                    color = palette.textSecondary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = palette.border)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Fonte: ${quote.sourceName}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Atualizado em ${DateTimeUtils.formatDateTime(quote.sourceTimestampEpochMs)}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                    color = palette.textSecondary,
+                    maxLines = 1
+                )
+            }
+
+            val badgeMessage = when {
+                state.isOffline -> state.statusMessage ?: "Offline • Exibindo último cache válido"
+                state.lastRefreshFailed -> state.statusMessage ?: "Falha na atualização • Exibindo último cache válido"
+                state.isStale -> "Cache desatualizado • Toque para atualizar"
+                else -> null
+            }
+
+            if (badgeMessage != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                val statusTint = if (state.isOffline || state.lastRefreshFailed) {
+                    palette.warning
+                } else {
+                    palette.textSecondary
+                }
+                val statusIcon = if (state.isOffline) Icons.Outlined.CloudOff else Icons.Outlined.Schedule
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        imageVector = statusIcon,
+                        contentDescription = null,
+                        tint = statusTint,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = badgeMessage,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusTint,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        } else {
+            Text(
+                text = if (state.isRefreshing) "Consultando cotação..." else "Cotação ainda não carregada",
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.textPrimary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = state.statusMessage ?: "Conecte-se à internet para obter a cotação USD/BRL.",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (state.isOffline || state.lastRefreshFailed) palette.warning else palette.textSecondary
+            )
+            if (!state.isRefreshing) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onRefresh,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, palette.border),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = null,
+                        tint = palette.highlight,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Tentar novamente", color = palette.textPrimary, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+

@@ -186,7 +186,10 @@ class MainActivity : ComponentActivity() {
         val appContainer = (application as NexusApplication).container
         setContent {
             val viewModel: NexusViewModel = viewModel(
-                factory = NexusViewModel.Factory(appContainer.repository)
+                factory = NexusViewModel.Factory(
+                    repository = appContainer.repository,
+                    marketQuoteRepository = appContainer.marketQuoteRepository
+                )
             )
             val incomingIntent by incomingIntentFlow.collectAsStateWithLifecycle()
             NexusAppRoot(
@@ -224,6 +227,7 @@ private fun NexusAppRoot(
     val agendaFilter by viewModel.agendaFilter.collectAsStateWithLifecycle()
     val financeSummary by viewModel.financeSummary.collectAsStateWithLifecycle()
     val financeDashboardData by viewModel.financeDashboardData.collectAsStateWithLifecycle()
+    val usdBrlQuoteState by viewModel.usdBrlQuoteState.collectAsStateWithLifecycle()
     val filteredTransactions by viewModel.filteredTransactions.collectAsStateWithLifecycle()
     val allTransactions by viewModel.allTransactions.collectAsStateWithLifecycle()
     val financeFilter by viewModel.financeFilter.collectAsStateWithLifecycle()
@@ -811,6 +815,9 @@ private fun NexusAppRoot(
                         )
                         MainTab.FINANCE -> FinanceScreen(
                             dashboardData = financeDashboardData,
+                            usdBrlQuoteState = usdBrlQuoteState,
+                            onRefreshUsdBrl = { viewModel.refreshUsdBrlQuote(manual = true) },
+                            onAutoRefreshUsdBrl = { viewModel.refreshUsdBrlQuote(manual = false) },
                             allTransactions = allTransactions,
                             transactions = filteredTransactions,
                             categories = categories,
