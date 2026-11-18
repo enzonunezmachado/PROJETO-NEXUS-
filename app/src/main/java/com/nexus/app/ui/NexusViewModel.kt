@@ -161,6 +161,9 @@ class NexusViewModel(
     val usdBrlQuoteState: StateFlow<MarketQuoteUiState> =
         marketQuoteRepository?.usdBrlState ?: MutableStateFlow(MarketQuoteUiState())
 
+    val marketQuoteStates: StateFlow<Map<String, MarketQuoteUiState>> =
+        marketQuoteRepository?.quoteStates ?: MutableStateFlow(emptyMap())
+
     init {
         // Garante geracao idempotente de recorrencias e frase do dia ao iniciar sem nunca duplicar
         viewModelScope.launch {
@@ -1515,11 +1518,31 @@ class NexusViewModel(
     }
 
     fun refreshUsdBrlQuote(manual: Boolean = true) {
+        refreshMarketAsset(com.nexus.app.domain.model.MarketAssetCatalog.USD_BRL_CODE, manual = manual)
+    }
+
+    fun refreshMarketAsset(assetCode: String, manual: Boolean = true) {
         val repo = marketQuoteRepository ?: return
         viewModelScope.launch {
-            val state = repo.refreshUsdBrl(force = manual)
+            val state = repo.refreshAsset(assetCode, force = manual)
             if (manual && state.lastRefreshFailed && !state.statusMessage.isNullOrBlank()) {
                 emitMessage(state.statusMessage)
+            }
+        }
+    }
+
+    fun refreshAllMarketQuotes(manual: Boolean = true) {
+        val repo = marketQuoteRepository ?: return
+        viewModelScope.launch {
+            val states = repo.refreshAll(force = manual)
+            if (manual) {
+                val failedCount = states.values.count { it.lastRefreshFailed }
+                if (failedCount == states.size && states.isNotEmpty()) {
+                    val sampleMsg = states.values.firstOrNull { !it.statusMessage.isNullOrBlank() }?.statusMessage
+                    if (!sampleMsg.isNullOrBlank()) emitMessage(sampleMsg)
+                } else if (failedCount > 0) {
+                    emitMessage("Algumas cotações não puderam ser atualizadas — cache preservado")
+                }
             }
         }
     }

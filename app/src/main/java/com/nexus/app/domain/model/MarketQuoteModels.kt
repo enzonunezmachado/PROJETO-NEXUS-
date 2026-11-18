@@ -20,7 +20,28 @@ enum class QuoteModality(val displayLabel: String) {
     COMMERCIAL("Dólar Comercial"),
     TOURISM("Dólar Turismo"),
     PTAX("Dólar PTAX (BCB)"),
-    REFERENCE("Taxa de Referência")
+    SPOT("Mercado à Vista"),
+    REFERENCE("Taxa de Referência");
+
+    fun labelFor(assetCode: String): String = when (this) {
+        COMMERCIAL -> when (assetCode) {
+            MarketAssetCatalog.USD_BRL_CODE -> "Dólar Comercial"
+            MarketAssetCatalog.EUR_BRL_CODE -> "Euro Comercial"
+            else -> "Comercial"
+        }
+        TOURISM -> when (assetCode) {
+            MarketAssetCatalog.USD_BRL_CODE -> "Dólar Turismo"
+            MarketAssetCatalog.EUR_BRL_CODE -> "Euro Turismo"
+            else -> "Turismo"
+        }
+        PTAX -> when (assetCode) {
+            MarketAssetCatalog.USD_BRL_CODE -> "Dólar PTAX (BCB)"
+            MarketAssetCatalog.EUR_BRL_CODE -> "Euro PTAX (BCB)"
+            else -> "PTAX (BCB)"
+        }
+        SPOT -> "Spot (24h)"
+        REFERENCE -> "Taxa de Referência"
+    }
 }
 
 enum class QuoteTrend {
@@ -42,6 +63,7 @@ data class MarketQuoteSnapshot(
     val askPrice: Double? = null,
     val previousClose: Double? = null,
     val changePercent: Double? = null,
+    val variationPeriodLabel: String? = null,
     val trend: QuoteTrend = QuoteTrend.UNKNOWN,
     val sourceName: String,
     val sourceTimestampEpochMs: Long,
@@ -61,6 +83,10 @@ data class MarketQuoteUiState(
 
 object MarketAssetCatalog {
     const val USD_BRL_CODE = "USD-BRL"
+    const val EUR_BRL_CODE = "EUR-BRL"
+    const val BTC_BRL_CODE = "BTC-BRL"
+    const val ETH_BRL_CODE = "ETH-BRL"
+    const val SOL_BRL_CODE = "SOL-BRL"
 
     data class AssetDescriptor(
         val code: String,
@@ -78,7 +104,44 @@ object MarketAssetCatalog {
         category = AssetCategory.CURRENCY
     )
 
-    val SUPPORTED_ASSETS: List<AssetDescriptor> = listOf(USD_BRL)
+    val EUR_BRL = AssetDescriptor(
+        code = EUR_BRL_CODE,
+        baseSymbol = "EUR",
+        quoteSymbol = "BRL",
+        displayName = "Euro (EUR/BRL)",
+        category = AssetCategory.CURRENCY
+    )
+
+    val BTC_BRL = AssetDescriptor(
+        code = BTC_BRL_CODE,
+        baseSymbol = "BTC",
+        quoteSymbol = "BRL",
+        displayName = "Bitcoin",
+        category = AssetCategory.CRYPTO
+    )
+
+    val ETH_BRL = AssetDescriptor(
+        code = ETH_BRL_CODE,
+        baseSymbol = "ETH",
+        quoteSymbol = "BRL",
+        displayName = "Ethereum",
+        category = AssetCategory.CRYPTO
+    )
+
+    val SOL_BRL = AssetDescriptor(
+        code = SOL_BRL_CODE,
+        baseSymbol = "SOL",
+        quoteSymbol = "BRL",
+        displayName = "Solana",
+        category = AssetCategory.CRYPTO
+    )
+
+    val CURRENCY_ASSETS: List<AssetDescriptor> = listOf(USD_BRL, EUR_BRL)
+    val CRYPTO_ASSETS: List<AssetDescriptor> = listOf(BTC_BRL, ETH_BRL, SOL_BRL)
+    val SUPPORTED_ASSETS: List<AssetDescriptor> = CURRENCY_ASSETS + CRYPTO_ASSETS
+
+    fun findByCode(code: String): AssetDescriptor? =
+        SUPPORTED_ASSETS.firstOrNull { it.code == code }
 }
 
 object MarketQuoteCalculations {
@@ -122,6 +185,20 @@ object MarketQuoteCalculations {
         val formatter = NumberFormat.getNumberInstance(DateTimeUtils.LOCALE_PT_BR).apply {
             minimumFractionDigits = 4
             maximumFractionDigits = 4
+        }
+        return "R$ ${formatter.format(value)}"
+    }
+
+    fun formatPrice(value: Double, category: AssetCategory): String {
+        if (!value.isFinite() || value <= 0.0) return "R$ --"
+        val decimals = when (category) {
+            AssetCategory.CURRENCY -> 4
+            AssetCategory.CRYPTO -> if (value >= 10.0) 2 else 4
+            else -> 2
+        }
+        val formatter = NumberFormat.getNumberInstance(DateTimeUtils.LOCALE_PT_BR).apply {
+            minimumFractionDigits = decimals
+            maximumFractionDigits = decimals
         }
         return "R$ ${formatter.format(value)}"
     }

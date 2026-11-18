@@ -29,7 +29,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Download
@@ -39,9 +38,6 @@ import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Savings
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.TrendingDown
-import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -92,10 +88,10 @@ import com.nexus.app.domain.model.CardWithStatements
 import com.nexus.app.domain.model.CategoryScope
 import com.nexus.app.domain.model.FinancialStatus
 import com.nexus.app.domain.model.InstallmentPurchaseWithItems
+import com.nexus.app.domain.model.MarketAssetCatalog
 import com.nexus.app.domain.model.MarketQuoteCalculations
 import com.nexus.app.domain.model.MarketQuoteUiState
 import com.nexus.app.domain.model.PaymentMethod
-import com.nexus.app.domain.model.QuoteTrend
 import com.nexus.app.domain.model.StatementStatus
 import com.nexus.app.domain.model.TransactionType
 import com.nexus.app.domain.model.TransactionWithDetails
@@ -107,6 +103,9 @@ import com.nexus.app.ui.FinanceFilterState
 import com.nexus.app.ui.FinanceTabMode
 import com.nexus.app.ui.components.AlertBannerCard
 import com.nexus.app.ui.components.AlertSeverity
+import com.nexus.app.ui.components.MarketChangeBadge
+import com.nexus.app.ui.components.MarketModalityBadge
+import com.nexus.app.ui.components.MarketStatusBannerRow
 import com.nexus.app.ui.components.MonthYearSelectorBar
 import com.nexus.app.ui.components.NexusCard
 import com.nexus.app.ui.components.NexusEmptyState
@@ -128,8 +127,13 @@ import java.time.format.DateTimeFormatter
 fun FinanceScreen(
     dashboardData: MonthlyFinanceDashboardData,
     usdBrlQuoteState: MarketQuoteUiState,
+    marketQuoteStates: Map<String, MarketQuoteUiState>,
     onRefreshUsdBrl: () -> Unit,
-    onAutoRefreshUsdBrl: () -> Unit,
+    onRefreshMarketAsset: (String) -> Unit,
+    onRefreshAllMarketQuotes: () -> Unit,
+    onAutoRefreshMarketQuotes: () -> Unit,
+    onOpenMarket: () -> Unit = {},
+    onOpenMarketAsset: (String) -> Unit = {},
     allTransactions: List<TransactionWithDetails>,
     transactions: List<TransactionWithDetails>,
     categories: List<CategoryEntity>,
@@ -181,7 +185,7 @@ fun FinanceScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        onAutoRefreshUsdBrl()
+        onAutoRefreshMarketQuotes()
     }
 
     val csvLauncher = rememberLauncherForActivityResult(
@@ -250,7 +254,12 @@ fun FinanceScreen(
             FinanceTabMode.OVERVIEW -> OverviewTabContent(
                 dashboardData = dashboardData,
                 usdBrlQuoteState = usdBrlQuoteState,
+                marketQuoteStates = marketQuoteStates,
                 onRefreshUsdBrl = onRefreshUsdBrl,
+                onRefreshMarketAsset = onRefreshMarketAsset,
+                onRefreshAllMarketQuotes = onRefreshAllMarketQuotes,
+                onOpenMarket = onOpenMarket,
+                onOpenMarketAsset = onOpenMarketAsset,
                 allTransactions = allTransactions,
                 selectedMonth = filter.selectedMonth,
                 onMonthChange = onMonthChange,
@@ -326,7 +335,12 @@ fun FinanceScreen(
 private fun OverviewTabContent(
     dashboardData: MonthlyFinanceDashboardData,
     usdBrlQuoteState: MarketQuoteUiState,
+    marketQuoteStates: Map<String, MarketQuoteUiState>,
     onRefreshUsdBrl: () -> Unit,
+    onRefreshMarketAsset: (String) -> Unit,
+    onRefreshAllMarketQuotes: () -> Unit,
+    onOpenMarket: () -> Unit,
+    onOpenMarketAsset: (String) -> Unit,
     allTransactions: List<TransactionWithDetails>,
     selectedMonth: YearMonth,
     onMonthChange: (YearMonth) -> Unit,
@@ -511,11 +525,45 @@ private fun OverviewTabContent(
             }
         }
 
-        item(key = "fin_usd_brl_quote") {
-            UsdBrlQuoteCard(
-                state = usdBrlQuoteState,
-                onRefresh = onRefreshUsdBrl
-            )
+        item(key = "fin_market_currencies") {
+            val eurState = marketQuoteStates[MarketAssetCatalog.EUR_BRL_CODE]
+                ?: MarketQuoteUiState(assetCode = MarketAssetCatalog.EUR_BRL_CODE)
+            val anyCurrencyRefreshing = usdBrlQuoteState.isRefreshing || eurState.isRefreshing
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionHeader(
+                    title = "Moedas",
+                    actionLabel = if (anyCurrencyRefreshing) "Atualizando..." else "Atualizar tudo",
+                    onAction = if (anyCurrencyRefreshing) null else onRefreshAllMarketQuotes
+                )
+                UsdBrlQuoteCard(
+                    state = usdBrlQuoteState,
+                    onRefresh = onRefreshUsdBrl,
+                    onOpenDetail = { onOpenMarketAsset(MarketAssetCatalog.USD_BRL_CODE) }
+                )
+                CompactCurrencyQuoteCard(
+                    descriptor = MarketAssetCatalog.EUR_BRL,
+                    state = eurState,
+                    onRefresh = { onRefreshMarketAsset(MarketAssetCatalog.EUR_BRL_CODE) },
+                    onOpenDetail = { onOpenMarketAsset(MarketAssetCatalog.EUR_BRL_CODE) }
+                )
+            }
+        }
+
+        item(key = "fin_market_crypto") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionHeader(
+                    title = "Criptomoedas",
+                    trailing = "Valores em BRL · 24h",
+                    actionLabel = "Ver Mercado",
+                    onAction = onOpenMarket
+                )
+                CryptoQuotesCard(
+                    descriptors = MarketAssetCatalog.CRYPTO_ASSETS,
+                    states = marketQuoteStates,
+                    onRefreshAsset = onRefreshMarketAsset,
+                    onOpenDetail = onOpenMarketAsset
+                )
+            }
         }
 
         if (summary.overdueExpenseCents > 0L) {
@@ -1900,12 +1948,16 @@ private fun PlanningAndLoansTabContent(
 @Composable
 private fun UsdBrlQuoteCard(
     state: MarketQuoteUiState,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onOpenDetail: () -> Unit
 ) {
     val palette = LocalNexusPalette.current
     val quote = state.quote
 
-    NexusCard(modifier = Modifier.fillMaxWidth()) {
+    NexusCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onOpenDetail
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1924,19 +1976,7 @@ private fun UsdBrlQuoteCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 if (quote != null) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = palette.surfaceElevated,
-                        border = BorderStroke(1.dp, palette.border)
-                    ) {
-                        Text(
-                            text = quote.modality.displayLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.textSecondary,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                            maxLines = 1
-                        )
-                    }
+                    MarketModalityBadge(label = quote.modality.labelFor(quote.assetCode))
                 }
             }
 
@@ -1981,48 +2021,11 @@ private fun UsdBrlQuoteCard(
 
                 val changePct = quote.changePercent
                 if (changePct != null) {
-                    val trendColor = when (quote.trend) {
-                        QuoteTrend.UP -> palette.positive
-                        QuoteTrend.DOWN -> palette.danger
-                        QuoteTrend.FLAT, QuoteTrend.UNKNOWN -> palette.textSecondary
-                    }
-                    val trendIcon = when (quote.trend) {
-                        QuoteTrend.UP -> Icons.Outlined.TrendingUp
-                        QuoteTrend.DOWN -> Icons.Outlined.TrendingDown
-                        QuoteTrend.FLAT, QuoteTrend.UNKNOWN -> null
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = trendColor.copy(alpha = 0.14f),
-                        border = BorderStroke(1.dp, trendColor.copy(alpha = 0.35f))
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            if (trendIcon != null) {
-                                Icon(
-                                    imageVector = trendIcon,
-                                    contentDescription = when (quote.trend) {
-                                        QuoteTrend.UP -> "Em alta"
-                                        QuoteTrend.DOWN -> "Em queda"
-                                        else -> null
-                                    },
-                                    tint = trendColor,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
-                            Text(
-                                text = MarketQuoteCalculations.formatSignedPercent(changePct),
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontFeatureSettings = "tnum"
-                                ),
-                                color = trendColor
-                            )
-                        }
-                    }
+                    MarketChangeBadge(
+                        changePercent = changePct,
+                        trend = quote.trend,
+                        periodLabel = quote.variationPeriodLabel
+                    )
                 } else {
                     Text(
                         text = "Variação indisponível",
@@ -2067,40 +2070,7 @@ private fun UsdBrlQuoteCard(
                 )
             }
 
-            val badgeMessage = when {
-                state.isOffline -> state.statusMessage ?: "Offline • Exibindo último cache válido"
-                state.lastRefreshFailed -> state.statusMessage ?: "Falha na atualização • Exibindo último cache válido"
-                state.isStale -> "Cache desatualizado • Toque para atualizar"
-                else -> null
-            }
-
-            if (badgeMessage != null) {
-                Spacer(modifier = Modifier.height(6.dp))
-                val statusTint = if (state.isOffline || state.lastRefreshFailed) {
-                    palette.warning
-                } else {
-                    palette.textSecondary
-                }
-                val statusIcon = if (state.isOffline) Icons.Outlined.CloudOff else Icons.Outlined.Schedule
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Icon(
-                        imageVector = statusIcon,
-                        contentDescription = null,
-                        tint = statusTint,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = badgeMessage,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = statusTint,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
+            MarketStatusBannerRow(state = state)
         } else {
             Text(
                 text = if (state.isRefreshing) "Consultando cotação..." else "Cotação ainda não carregada",
@@ -2134,4 +2104,279 @@ private fun UsdBrlQuoteCard(
         }
     }
 }
+
+@Composable
+private fun CompactCurrencyQuoteCard(
+    descriptor: MarketAssetCatalog.AssetDescriptor,
+    state: MarketQuoteUiState,
+    onRefresh: () -> Unit,
+    onOpenDetail: () -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    val quote = state.quote
+
+    NexusCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onOpenDetail
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = descriptor.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (quote != null) {
+                    MarketModalityBadge(label = quote.modality.labelFor(quote.assetCode))
+                }
+            }
+
+            IconButton(
+                onClick = onRefresh,
+                enabled = !state.isRefreshing,
+                modifier = Modifier.size(34.dp)
+            ) {
+                if (state.isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = palette.highlight
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = "Atualizar ${descriptor.displayName}",
+                        tint = palette.highlight,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        if (quote != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = MarketQuoteCalculations.formatPrice(quote.price, descriptor.category),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = palette.textPrimary
+                )
+
+                val changePct = quote.changePercent
+                if (changePct != null) {
+                    MarketChangeBadge(
+                        changePercent = changePct,
+                        trend = quote.trend,
+                        periodLabel = quote.variationPeriodLabel
+                    )
+                } else {
+                    Text(
+                        text = "Variação indisponível",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Fonte: ${quote.sourceName}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = DateTimeUtils.formatDateTime(quote.sourceTimestampEpochMs),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                    color = palette.textSecondary,
+                    maxLines = 1
+                )
+            }
+            MarketStatusBannerRow(state = state)
+        } else {
+            Text(
+                text = if (state.isRefreshing) {
+                    "Consultando cotação..."
+                } else {
+                    state.statusMessage ?: "Sem cotação salva — toque para atualizar"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (state.isOffline || state.lastRefreshFailed) palette.warning else palette.textSecondary
+            )
+        }
+    }
+}
+
+@Composable
+private fun CryptoQuotesCard(
+    descriptors: List<MarketAssetCatalog.AssetDescriptor>,
+    states: Map<String, MarketQuoteUiState>,
+    onRefreshAsset: (String) -> Unit,
+    onOpenDetail: (String) -> Unit
+) {
+    val palette = LocalNexusPalette.current
+
+    NexusCard(modifier = Modifier.fillMaxWidth()) {
+        descriptors.forEachIndexed { index, descriptor ->
+            if (index > 0) {
+                Spacer(modifier = Modifier.height(10.dp))
+                HorizontalDivider(color = palette.border)
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+            val state = states[descriptor.code] ?: MarketQuoteUiState(assetCode = descriptor.code)
+            val quote = state.quote
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onOpenDetail(descriptor.code) }
+                    .padding(vertical = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = descriptor.displayName,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = palette.textPrimary,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = "${descriptor.baseSymbol}/${descriptor.quoteSymbol}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.textSecondary,
+                                maxLines = 1
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        if (quote != null) {
+                            Text(
+                                text = MarketQuoteCalculations.formatPrice(quote.price, descriptor.category),
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = palette.textPrimary
+                            )
+                        } else {
+                            Text(
+                                text = if (state.isRefreshing) "Consultando..." else "R$ --",
+                                style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
+                                color = palette.textSecondary
+                            )
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (quote?.changePercent != null) {
+                            MarketChangeBadge(
+                                changePercent = quote.changePercent,
+                                trend = quote.trend,
+                                periodLabel = quote.variationPeriodLabel
+                            )
+                        } else if (quote != null) {
+                            Text(
+                                text = "Var. indisponível",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.textSecondary
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { onRefreshAsset(descriptor.code) },
+                            enabled = !state.isRefreshing,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            if (state.isRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(15.dp),
+                                    strokeWidth = 2.dp,
+                                    color = palette.highlight
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Outlined.Refresh,
+                                    contentDescription = "Atualizar ${descriptor.displayName}",
+                                    tint = palette.highlight,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                if (quote != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${quote.sourceName} · ${quote.modality.labelFor(quote.assetCode)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = DateTimeUtils.formatDateTime(quote.sourceTimestampEpochMs),
+                            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                            color = palette.textSecondary,
+                            maxLines = 1
+                        )
+                    }
+                } else {
+                    Text(
+                        text = state.statusMessage ?: "Conecte-se à internet para carregar ${descriptor.baseSymbol}/BRL",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (state.isOffline || state.lastRefreshFailed) palette.warning else palette.textSecondary
+                    )
+                }
+
+                MarketStatusBannerRow(state = state)
+            }
+        }
+    }
+}
+
 

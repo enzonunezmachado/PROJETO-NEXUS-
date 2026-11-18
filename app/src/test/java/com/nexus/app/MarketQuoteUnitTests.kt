@@ -1,16 +1,22 @@
 package com.nexus.app
 
+import com.nexus.app.data.market.AwesomeApiCurrencyDataSource
 import com.nexus.app.data.market.AwesomeApiUsdBrlDataSource
 import com.nexus.app.data.market.BcbOlindaPtaxDataSource
+import com.nexus.app.data.market.CategoryRoutedMarketQuoteRemoteDataSource
+import com.nexus.app.data.market.CoinGeckoCryptoDataSource
+import com.nexus.app.data.market.CoinPaprikaCryptoDataSource
 import com.nexus.app.data.market.CompositeMarketQuoteRemoteDataSource
 import com.nexus.app.data.market.FailureReason
 import com.nexus.app.data.market.HttpResponsePayload
 import com.nexus.app.data.market.MarketHttpTransport
 import com.nexus.app.data.market.MarketQuoteParsers
+import com.nexus.app.data.market.MarketQuoteRemoteDataSource
 import com.nexus.app.data.market.MarketQuoteRepository
 import com.nexus.app.data.market.MarketQuoteStore
 import com.nexus.app.data.market.PersistedMarketQuoteRecord
 import com.nexus.app.data.market.RemoteQuoteFetchResult
+import com.nexus.app.domain.model.AssetCategory
 import com.nexus.app.domain.model.MarketAssetCatalog
 import com.nexus.app.domain.model.MarketQuoteCalculations
 import com.nexus.app.domain.model.MarketQuoteSnapshot
@@ -295,5 +301,233 @@ class MarketQuoteUnitTests {
                 nowEpochMs = 1000L + MarketQuoteCalculations.DEFAULT_STALE_TTL_MS
             )
         )
+        assertEquals("R$ 5,7851", MarketQuoteCalculations.formatPrice(5.7851, AssetCategory.CURRENCY))
+        assertEquals("R$ 371.523,00", MarketQuoteCalculations.formatPrice(371523.0, AssetCategory.CRYPTO))
+    }
+
+    @Test
+    fun `AwesomeAPI batch parses USD and EUR independently and labels modality accurately`() = runBlocking {
+        val batchJson = """
+            {
+              "USDBRL": {"bid": "5.7720", "ask": "5.7740", "pctChange": "0.50", "timestamp": "1763400000"},
+              "EURBRL": {"bid": "6.3510", "ask": "6.3540", "pctChange": "-0.35", "timestamp": "1763400000"}
+            }
+        """.trimIndent()
+        val requestedUrls = mutableListOf<String>()
+        val transport = object : MarketHttpTransport {
+            override suspend fun get(url: String, headers: Map<String, String>): Result<HttpResponsePayload> {
+                requestedUrls += url
+                return Result.success(HttpResponsePayload(200, batchJson))
+            }
+        }
+        val source = AwesomeApiCurrencyDataSource(transport, clock = { 1_763_400_500_000L })
+        val results = source.fetchQuotes(MarketAssetCatalog.CURRENCY_ASSETS)
+
+        assertEquals(1, requestedUrls.size)
+        assertTrue(requestedUrls.first().contains("USD-BRL,EUR-BRL"))
+
+        val eur = (results[MarketAssetCatalog.EUR_BRL_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals(QuoteModality.COMMERCIAL, eur.modality)
+        assertEquals("Euro Comercial", eur.modality.labelFor(eur.assetCode))
+        assertEquals(6.3510, eur.price, 0.0001)
+        assertEquals(QuoteTrend.DOWN, eur.trend)
+        assertEquals("Dia", eur.variationPeriodLabel)
+    }
+
+    @Test
+    fun `BCB Olinda PTAX supports EUR-BRL via CotacaoMoedaPeriodo and labels Euro PTAX`() = runBlocking {
+        val eurPtaxJson = """
+            {
+              "value": [
+                {"cotacaoCompra": 6.3100, "cotacaoVenda": 6.3120, "dataHoraCotacao": "2026-11-16 13:06:00.0"},
+                {"cotacaoCompra": 6.3647, "cotacaoVenda": 6.3659, "dataHoraCotacao": "2026-11-17 13:07:26.015"}
+              ]
+            }
+        """.trimIndent()
+        val capturedUrls = mutableListOf<String>()
+        val transport = object : MarketHttpTransport {
+            override suspend fun get(url: String, headers: Map<String, String>): Result<HttpResponsePayload> {
+                capturedUrls += url
+                return Result.success(HttpResponsePayload(200, eurPtaxJson))
+            }
+        }
+        val bcb = BcbOlindaPtaxDataSource(
+            transport = transport,
+            clock = { 10_000L },
+            todayProvider = { LocalDate.of(2026, 11, 17) }
+        )
+        val res = bcb.fetchQuote(MarketAssetCatalog.EUR_BRL)
+        assertTrue(res is RemoteQuoteFetchResult.Success)
+        assertTrue(capturedUrls.first().contains("CotacaoMoedaPeriodo"))
+        assertTrue(capturedUrls.first().contains("@moeda='EUR'"))
+
+        val quote = (res as RemoteQuoteFetchResult.Success).quote
+        assertEquals(QuoteModality.PTAX, quote.modality)
+        assertEquals("Euro PTAX (BCB)", quote.modality.labelFor(quote.assetCode))
+        assertEquals("Diária", quote.variationPeriodLabel)
+        assertEquals(QuoteTrend.UP, quote.trend)
+    }
+
+    @Test
+    fun `CoinGecko batch fetches BTC ETH SOL in one call and falls back per failed asset to CoinPaprika`() = runBlocking {
+        val requestedUrls = mutableListOf<String>()
+        val transport = object : MarketHttpTransport {
+            override suspend fun get(url: String, headers: Map<String, String>): Result<HttpResponsePayload> {
+                requestedUrls += url
+                return when {
+                    url.contains("coingecko.com") -> Result.success(
+                        HttpResponsePayload(
+                            200,
+                            """
+                            {
+                              "bitcoin":{"brl":371523,"brl_24h_change":-0.96,"last_updated_at":1795003282},
+                              "ethereum":{"brl":10417.86,"brl_24h_change":1.20,"last_updated_at":1795003296},
+                              "solana":{"brl":0,"brl_24h_change":0}
+                            }
+                            """.trimIndent()
+                        )
+                    )
+                    url.contains("coinpaprika.com/v1/tickers/sol-solana") -> Result.success(
+                        HttpResponsePayload(
+                            200,
+                            """
+                            {
+                              "id":"sol-solana",
+                              "last_updated":"2026-11-18T11:57:12Z",
+                              "quotes":{"BRL":{"price":430.76,"percent_change_24h":1.60}}
+                            }
+                            """.trimIndent()
+                        )
+                    )
+                    else -> Result.success(HttpResponsePayload(404, "{}"))
+                }
+            }
+        }
+
+        val cryptoRoute = CompositeMarketQuoteRemoteDataSource(
+            providers = listOf(
+                CoinGeckoCryptoDataSource(transport, clock = { 50_000L }),
+                CoinPaprikaCryptoDataSource(transport, clock = { 50_000L })
+            )
+        )
+
+        val results = cryptoRoute.fetchQuotes(MarketAssetCatalog.CRYPTO_ASSETS)
+        assertEquals(2, requestedUrls.size) // 1 batch CoinGecko + 1 fallback only for SOL-BRL
+
+        val btc = (results[MarketAssetCatalog.BTC_BRL_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals("CoinGecko", btc.sourceName)
+        assertEquals(371523.0, btc.price, 0.01)
+        assertEquals(QuoteTrend.DOWN, btc.trend)
+        assertEquals("24h", btc.variationPeriodLabel)
+
+        val eth = (results[MarketAssetCatalog.ETH_BRL_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals("CoinGecko", eth.sourceName)
+        assertEquals(QuoteTrend.UP, eth.trend)
+
+        val sol = (results[MarketAssetCatalog.SOL_BRL_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals("CoinPaprika", sol.sourceName)
+        assertEquals(430.76, sol.price, 0.01)
+        assertEquals(QuoteTrend.UP, sol.trend)
+        assertEquals("24h", sol.variationPeriodLabel)
+    }
+
+    @Test
+    fun `repository isolates per-asset failures and skips fresh assets during batch auto-refresh`() = runBlocking {
+        val nowMs = 20_000_000L
+        val store = InMemoryMarketQuoteStore()
+        // Pre-seed EUR with valid cached quote that is stale (>30m) and USD with fresh quote (<15m)
+        store.saveValidQuote(
+            MarketQuoteSnapshot(
+                assetCode = MarketAssetCatalog.USD_BRL_CODE,
+                category = AssetCategory.CURRENCY,
+                baseCurrency = "USD",
+                quoteCurrency = "BRL",
+                modality = QuoteModality.COMMERCIAL,
+                price = 5.75,
+                changePercent = 0.25,
+                variationPeriodLabel = "Dia",
+                trend = QuoteTrend.UP,
+                sourceName = "AwesomeAPI",
+                sourceTimestampEpochMs = nowMs - 60_000L,
+                fetchedAtEpochMs = nowMs - 60_000L
+            )
+        )
+        store.saveValidQuote(
+            MarketQuoteSnapshot(
+                assetCode = MarketAssetCatalog.EUR_BRL_CODE,
+                category = AssetCategory.CURRENCY,
+                baseCurrency = "EUR",
+                quoteCurrency = "BRL",
+                modality = QuoteModality.PTAX,
+                price = 6.30,
+                changePercent = -0.10,
+                variationPeriodLabel = "Diária",
+                trend = QuoteTrend.DOWN,
+                sourceName = "Banco Central (PTAX)",
+                sourceTimestampEpochMs = nowMs - 3_600_000L,
+                fetchedAtEpochMs = nowMs - 3_600_000L
+            )
+        )
+
+        val requestedCodes = mutableListOf<String>()
+        val routedRemote = CategoryRoutedMarketQuoteRemoteDataSource(
+            routes = mapOf(
+                AssetCategory.CURRENCY to object : MarketQuoteRemoteDataSource {
+                    override suspend fun fetchQuote(asset: MarketAssetCatalog.AssetDescriptor): RemoteQuoteFetchResult {
+                        requestedCodes += asset.code
+                        return RemoteQuoteFetchResult.Failure(FailureReason.TIMEOUT, detail = "Timeout EUR")
+                    }
+                },
+                AssetCategory.CRYPTO to object : MarketQuoteRemoteDataSource {
+                    override suspend fun fetchQuote(asset: MarketAssetCatalog.AssetDescriptor): RemoteQuoteFetchResult {
+                        requestedCodes += asset.code
+                        return RemoteQuoteFetchResult.Success(
+                            MarketQuoteSnapshot(
+                                assetCode = asset.code,
+                                category = AssetCategory.CRYPTO,
+                                baseCurrency = asset.baseSymbol,
+                                quoteCurrency = "BRL",
+                                modality = QuoteModality.SPOT,
+                                price = 1000.0,
+                                changePercent = 2.0,
+                                variationPeriodLabel = "24h",
+                                trend = QuoteTrend.UP,
+                                sourceName = "CoinGecko",
+                                sourceTimestampEpochMs = nowMs,
+                                fetchedAtEpochMs = nowMs
+                            )
+                        )
+                    }
+                }
+            )
+        )
+
+        val repo = MarketQuoteRepository(
+            remoteDataSource = routedRemote,
+            store = store,
+            isNetworkAvailable = { true },
+            clock = { nowMs }
+        )
+
+        val states = repo.refreshAll(force = false)
+        // USD-BRL estava dentro do cooldown (1 min) e nao foi consultado de novo
+        assertFalse(MarketAssetCatalog.USD_BRL_CODE in requestedCodes)
+        assertTrue(MarketAssetCatalog.EUR_BRL_CODE in requestedCodes)
+        assertTrue(MarketAssetCatalog.BTC_BRL_CODE in requestedCodes)
+
+        // EUR falhou mas preservou o cache valido de 6.30
+        val eurState = states[MarketAssetCatalog.EUR_BRL_CODE]!!
+        assertTrue(eurState.lastRefreshFailed)
+        assertEquals(6.30, eurState.quote!!.price, 0.0001)
+
+        // Criptos atualizaram com sucesso apesar da falha do EUR
+        val btcState = states[MarketAssetCatalog.BTC_BRL_CODE]!!
+        assertFalse(btcState.lastRefreshFailed)
+        assertEquals(1000.0, btcState.quote!!.price, 0.01)
+
+        // USD continua saudavel
+        val usdState = states[MarketAssetCatalog.USD_BRL_CODE]!!
+        assertFalse(usdState.lastRefreshFailed)
+        assertEquals(5.75, usdState.quote!!.price, 0.0001)
     }
 }

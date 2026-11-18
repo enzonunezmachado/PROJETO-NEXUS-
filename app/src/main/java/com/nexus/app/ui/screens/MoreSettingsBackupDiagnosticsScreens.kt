@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -98,6 +99,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun MoreScreen(
     onOpenPlanning: () -> Unit,
+    onOpenMarket: () -> Unit = {},
     onOpenCustomizeDashboard: () -> Unit,
     onOpenQuoteLibrary: () -> Unit,
     onOpenRoutineAssistant: () -> Unit,
@@ -136,6 +138,14 @@ fun MoreScreen(
                     title = "Planejamento e Objetivos",
                     subtitle = "Objetivos pessoais, marcos, histórico de evolução e vínculo com tarefas e projetos",
                     onClick = onOpenPlanning
+                )
+            }
+            item {
+                MoreMenuItem(
+                    icon = Icons.Outlined.ShowChart,
+                    title = "Mercado",
+                    subtitle = "Moedas, criptomoedas e visão geral de cotações em BRL",
+                    onClick = onOpenMarket
                 )
             }
             item {

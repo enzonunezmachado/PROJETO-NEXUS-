@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -86,6 +87,8 @@ import com.nexus.app.ui.screens.HomeScreen
 import com.nexus.app.ui.screens.InstallmentPurchaseEditorSheet
 import com.nexus.app.ui.screens.LoanEditorSheet
 import com.nexus.app.ui.screens.LoanPaymentDialog
+import com.nexus.app.ui.screens.MarketAssetDetailScreen
+import com.nexus.app.ui.screens.MarketScreen
 import com.nexus.app.ui.screens.MoreScreen
 import com.nexus.app.ui.screens.PlanningGoalsScreen
 import com.nexus.app.ui.screens.ProjectEditorSheet
@@ -133,12 +136,16 @@ sealed interface SubRoute {
     data class Planning(val initialGoalId: String? = null) : SubRoute
     data object DashboardCustomization : SubRoute
     data object QuoteLibrary : SubRoute
+    data object Market : SubRoute
+    data class MarketAssetDetail(val assetCode: String) : SubRoute
 }
 
 private fun SubRoute.toBackSubRouteKind(): BackSubRouteKind = when (this) {
     SubRoute.None -> BackSubRouteKind.NONE
     SubRoute.MoreMenu,
     SubRoute.GlobalSearch,
+    SubRoute.Market,
+    is SubRoute.MarketAssetDetail,
     SubRoute.DashboardCustomization,
     is SubRoute.RoutineAssistant -> BackSubRouteKind.TOP_LEVEL_SUBROUTE
     is SubRoute.Planning,
@@ -228,6 +235,7 @@ private fun NexusAppRoot(
     val financeSummary by viewModel.financeSummary.collectAsStateWithLifecycle()
     val financeDashboardData by viewModel.financeDashboardData.collectAsStateWithLifecycle()
     val usdBrlQuoteState by viewModel.usdBrlQuoteState.collectAsStateWithLifecycle()
+    val marketQuoteStates by viewModel.marketQuoteStates.collectAsStateWithLifecycle()
     val filteredTransactions by viewModel.filteredTransactions.collectAsStateWithLifecycle()
     val allTransactions by viewModel.allTransactions.collectAsStateWithLifecycle()
     val financeFilter by viewModel.financeFilter.collectAsStateWithLifecycle()
@@ -487,6 +495,13 @@ private fun NexusAppRoot(
                                     )
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { navigateToSubRoute(SubRoute.Market) }) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.ShowChart,
+                                            contentDescription = "Mercado",
+                                            tint = palette.textPrimary
+                                        )
+                                    }
                                     IconButton(onClick = { navigateToSubRoute(SubRoute.GlobalSearch) }) {
                                         Icon(
                                             imageVector = Icons.Outlined.Search,
@@ -559,6 +574,7 @@ private fun NexusAppRoot(
             when (val activeRoute = subRoute) {
                 SubRoute.MoreMenu -> MoreScreen(
                     onOpenPlanning = { navigateToSubRoute(SubRoute.Planning(null)) },
+                    onOpenMarket = { navigateToSubRoute(SubRoute.Market) },
                     onOpenCustomizeDashboard = { navigateToSubRoute(SubRoute.DashboardCustomization) },
                     onOpenQuoteLibrary = { navigateToSubRoute(SubRoute.QuoteLibrary) },
                     onOpenRoutineAssistant = { navigateToSubRoute(SubRoute.RoutineAssistant(0)) },
@@ -742,6 +758,22 @@ private fun NexusAppRoot(
                     onCopied = { viewModel.emitMessage("Relatório copiado para a área de transferência") },
                     modifier = contentModifier
                 )
+                SubRoute.Market -> MarketScreen(
+                    quoteStates = marketQuoteStates,
+                    onRefreshAsset = { code -> viewModel.refreshMarketAsset(code, manual = true) },
+                    onRefreshAll = { viewModel.refreshAllMarketQuotes(manual = true) },
+                    onAutoRefreshIfStale = { viewModel.refreshAllMarketQuotes(manual = false) },
+                    onOpenAssetDetail = { code -> navigateToSubRoute(SubRoute.MarketAssetDetail(code)) },
+                    onBack = popSubRoute,
+                    modifier = contentModifier
+                )
+                is SubRoute.MarketAssetDetail -> MarketAssetDetailScreen(
+                    assetCode = activeRoute.assetCode,
+                    quoteStates = marketQuoteStates,
+                    onRefreshAsset = { code -> viewModel.refreshMarketAsset(code, manual = true) },
+                    onBack = popSubRoute,
+                    modifier = contentModifier
+                )
                 SubRoute.None -> {
                     when (currentTab) {
                         MainTab.HOME -> HomeScreen(
@@ -816,8 +848,13 @@ private fun NexusAppRoot(
                         MainTab.FINANCE -> FinanceScreen(
                             dashboardData = financeDashboardData,
                             usdBrlQuoteState = usdBrlQuoteState,
+                            marketQuoteStates = marketQuoteStates,
                             onRefreshUsdBrl = { viewModel.refreshUsdBrlQuote(manual = true) },
-                            onAutoRefreshUsdBrl = { viewModel.refreshUsdBrlQuote(manual = false) },
+                            onRefreshMarketAsset = { code -> viewModel.refreshMarketAsset(code, manual = true) },
+                            onRefreshAllMarketQuotes = { viewModel.refreshAllMarketQuotes(manual = true) },
+                            onAutoRefreshMarketQuotes = { viewModel.refreshAllMarketQuotes(manual = false) },
+                            onOpenMarket = { navigateToSubRoute(SubRoute.Market) },
+                            onOpenMarketAsset = { code -> navigateToSubRoute(SubRoute.MarketAssetDetail(code)) },
                             allTransactions = allTransactions,
                             transactions = filteredTransactions,
                             categories = categories,
