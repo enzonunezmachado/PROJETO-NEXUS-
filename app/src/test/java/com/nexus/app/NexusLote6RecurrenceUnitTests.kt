@@ -370,7 +370,7 @@ class NexusLote6RecurrenceUnitTests {
             )
         )
 
-        assertEquals(6, NexusBackupPayload.CURRENT_FORMAT_VERSION)
+        assertTrue(NexusBackupPayload.CURRENT_FORMAT_VERSION >= 6)
         val encoded = tolerantJson.encodeToString(payload)
         val decoded = tolerantJson.decodeFromString<NexusBackupPayload>(encoded)
 

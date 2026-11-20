@@ -57,6 +57,7 @@ import com.nexus.app.data.db.entity.AppointmentEntity
 import com.nexus.app.data.db.entity.CreditCardEntity
 import com.nexus.app.data.db.entity.FinancialGoalEntity
 import com.nexus.app.data.db.entity.LoanEntity
+import com.nexus.app.domain.model.MarketAssetCatalog
 import com.nexus.app.domain.model.ReminderCategory
 import com.nexus.app.domain.model.ReminderSourceType
 import com.nexus.app.domain.model.TransactionType
@@ -195,7 +196,10 @@ class MainActivity : ComponentActivity() {
             val viewModel: NexusViewModel = viewModel(
                 factory = NexusViewModel.Factory(
                     repository = appContainer.repository,
-                    marketQuoteRepository = appContainer.marketQuoteRepository
+                    marketQuoteRepository = appContainer.marketQuoteRepository,
+                    marketHistoryRepository = appContainer.marketHistoryRepository,
+                    marketWatchlistRepository = appContainer.marketWatchlistRepository,
+                    marketAlertRepository = appContainer.marketAlertRepository
                 )
             )
             val incomingIntent by incomingIntentFlow.collectAsStateWithLifecycle()
@@ -236,6 +240,9 @@ private fun NexusAppRoot(
     val financeDashboardData by viewModel.financeDashboardData.collectAsStateWithLifecycle()
     val usdBrlQuoteState by viewModel.usdBrlQuoteState.collectAsStateWithLifecycle()
     val marketQuoteStates by viewModel.marketQuoteStates.collectAsStateWithLifecycle()
+    val marketHistoryStates by viewModel.marketHistoryStates.collectAsStateWithLifecycle()
+    val marketFavoriteCodes by viewModel.marketFavoriteCodes.collectAsStateWithLifecycle()
+    val marketAlerts by viewModel.marketAlerts.collectAsStateWithLifecycle()
     val filteredTransactions by viewModel.filteredTransactions.collectAsStateWithLifecycle()
     val allTransactions by viewModel.allTransactions.collectAsStateWithLifecycle()
     val financeFilter by viewModel.financeFilter.collectAsStateWithLifecycle()
@@ -354,6 +361,7 @@ private fun NexusAppRoot(
         LaunchedEffect(incomingIntent) {
             val extrasIntent = incomingIntent ?: return@LaunchedEffect
             val openRoutine = extrasIntent.getBooleanExtra(NexusNotificationScheduler.EXTRA_OPEN_ROUTINE, false)
+            val marketAssetCode = extrasIntent.getStringExtra(NexusNotificationScheduler.EXTRA_MARKET_ASSET_CODE)
             val sourceTypeRaw = extrasIntent.getStringExtra(NexusNotificationScheduler.EXTRA_SOURCE_TYPE)
             val sourceId = extrasIntent.getStringExtra(NexusNotificationScheduler.EXTRA_SOURCE_ID)
             val sourceType = sourceTypeRaw?.let { runCatching { ReminderSourceType.valueOf(it) }.getOrNull() }
@@ -373,7 +381,12 @@ private fun NexusAppRoot(
             val widgetRecordId = extrasIntent.getStringExtra(NexusWidgetNavigation.EXTRA_WIDGET_RECORD_ID) ?: widgetRecordFromUri
             val widgetDateIso = extrasIntent.getStringExtra(NexusWidgetNavigation.EXTRA_WIDGET_DATE_ISO) ?: widgetDateFromUri
 
-            if (openRoutine || sourceType == ReminderSourceType.ROUTINE_MORNING || sourceType == ReminderSourceType.ROUTINE_NIGHT) {
+            if (!marketAssetCode.isNullOrBlank() && MarketAssetCatalog.findByCode(marketAssetCode) != null) {
+                navigateToSubRoute(SubRoute.None)
+                navigateToSubRoute(SubRoute.Market)
+                navigateToSubRoute(SubRoute.MarketAssetDetail(marketAssetCode))
+                onIntentConsumed()
+            } else if (openRoutine || sourceType == ReminderSourceType.ROUTINE_MORNING || sourceType == ReminderSourceType.ROUTINE_NIGHT) {
                 val tabIdx = if (sourceType == ReminderSourceType.ROUTINE_NIGHT) 1 else 0
                 navigateToSubRoute(SubRoute.None)
                 navigateToSubRoute(SubRoute.RoutineAssistant(tabIdx))
@@ -760,9 +773,16 @@ private fun NexusAppRoot(
                 )
                 SubRoute.Market -> MarketScreen(
                     quoteStates = marketQuoteStates,
+                    favoriteCodes = marketFavoriteCodes,
+                    alerts = marketAlerts,
                     onRefreshAsset = { code -> viewModel.refreshMarketAsset(code, manual = true) },
                     onRefreshAll = { viewModel.refreshAllMarketQuotes(manual = true) },
                     onAutoRefreshIfStale = { viewModel.refreshAllMarketQuotes(manual = false) },
+                    onToggleFavorite = viewModel::toggleMarketFavorite,
+                    onCreateAlert = viewModel::createMarketAlert,
+                    onUpdateAlert = viewModel::updateMarketAlert,
+                    onToggleAlertActive = viewModel::toggleMarketAlertActive,
+                    onDeleteAlert = viewModel::deleteMarketAlert,
                     onOpenAssetDetail = { code -> navigateToSubRoute(SubRoute.MarketAssetDetail(code)) },
                     onBack = popSubRoute,
                     modifier = contentModifier
@@ -770,7 +790,18 @@ private fun NexusAppRoot(
                 is SubRoute.MarketAssetDetail -> MarketAssetDetailScreen(
                     assetCode = activeRoute.assetCode,
                     quoteStates = marketQuoteStates,
+                    historyStates = marketHistoryStates[activeRoute.assetCode].orEmpty(),
+                    isFavorite = activeRoute.assetCode in marketFavoriteCodes,
+                    alerts = marketAlerts,
                     onRefreshAsset = { code -> viewModel.refreshMarketAsset(code, manual = true) },
+                    onLoadHistory = { code, range, manual ->
+                        viewModel.loadMarketHistory(assetCode = code, range = range, manual = manual)
+                    },
+                    onToggleFavorite = viewModel::toggleMarketFavorite,
+                    onCreateAlert = viewModel::createMarketAlert,
+                    onUpdateAlert = viewModel::updateMarketAlert,
+                    onToggleAlertActive = viewModel::toggleMarketAlertActive,
+                    onDeleteAlert = viewModel::deleteMarketAlert,
                     onBack = popSubRoute,
                     modifier = contentModifier
                 )

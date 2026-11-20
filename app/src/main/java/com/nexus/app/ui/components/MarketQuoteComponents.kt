@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.TrendingDown
 import androidx.compose.material.icons.outlined.TrendingUp
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -25,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.nexus.app.domain.model.MarketQuoteCalculations
 import com.nexus.app.domain.model.MarketQuoteUiState
 import com.nexus.app.domain.model.QuoteTrend
+import com.nexus.app.ui.market.MarketStatusSeverity
 import com.nexus.app.ui.theme.LocalNexusPalette
 
 @Composable
@@ -143,6 +147,60 @@ fun MarketStatusBannerRow(
             style = MaterialTheme.typography.labelSmall,
             color = statusTint,
             maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+fun MarketFavoriteStarButton(
+    isFavorite: Boolean,
+    assetName: String,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalNexusPalette.current
+    IconButton(
+        onClick = onToggle,
+        modifier = modifier.size(32.dp)
+    ) {
+        Icon(
+            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+            contentDescription = if (isFavorite) {
+                "Remover $assetName dos favoritos"
+            } else {
+                "Adicionar $assetName aos favoritos"
+            },
+            tint = if (isFavorite) palette.warning else palette.textSecondary,
+            modifier = Modifier.size(19.dp)
+        )
+    }
+}
+
+@Composable
+fun MarketQuoteStatusBadge(
+    label: String,
+    severity: MarketStatusSeverity,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalNexusPalette.current
+    val tint = when (severity) {
+        MarketStatusSeverity.OK -> palette.positive
+        MarketStatusSeverity.STALE, MarketStatusSeverity.WARNING -> palette.warning
+        MarketStatusSeverity.EMPTY -> palette.textSecondary
+    }
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(6.dp),
+        color = tint.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.30f))
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
     }

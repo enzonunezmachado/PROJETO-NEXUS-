@@ -23,7 +23,10 @@ import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
+import com.nexus.app.data.market.MarketAlertRepository
+import com.nexus.app.data.market.MarketHistoryRepository
 import com.nexus.app.data.market.MarketQuoteRepository
+import com.nexus.app.data.market.MarketWatchlistRepository
 import com.nexus.app.data.repository.NexusRepository
 import com.nexus.app.domain.model.AgendaItem
 import com.nexus.app.domain.model.BriefingType
@@ -45,6 +48,10 @@ import com.nexus.app.domain.model.GoalProgressMode
 import com.nexus.app.domain.model.GoalStatus
 import com.nexus.app.domain.model.GoalStatusFilter
 import com.nexus.app.domain.model.InstallmentPurchaseWithItems
+import com.nexus.app.domain.model.MarketAlertCondition
+import com.nexus.app.domain.model.MarketHistoryRange
+import com.nexus.app.domain.model.MarketHistoryUiState
+import com.nexus.app.domain.model.MarketPriceAlert
 import com.nexus.app.domain.model.MarketQuoteUiState
 import com.nexus.app.domain.model.NexusDateFormat
 import com.nexus.app.domain.model.NightReviewSnapshot
@@ -152,7 +159,10 @@ data class BackupUiState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class NexusViewModel(
     private val repository: NexusRepository,
-    private val marketQuoteRepository: MarketQuoteRepository? = null
+    private val marketQuoteRepository: MarketQuoteRepository? = null,
+    private val marketHistoryRepository: MarketHistoryRepository? = null,
+    private val marketWatchlistRepository: MarketWatchlistRepository? = null,
+    private val marketAlertRepository: MarketAlertRepository? = null
 ) : ViewModel() {
 
     private val _snackbarEvents = MutableSharedFlow<String>(extraBufferCapacity = 16)
@@ -163,6 +173,15 @@ class NexusViewModel(
 
     val marketQuoteStates: StateFlow<Map<String, MarketQuoteUiState>> =
         marketQuoteRepository?.quoteStates ?: MutableStateFlow(emptyMap())
+
+    val marketHistoryStates: StateFlow<Map<String, Map<MarketHistoryRange, MarketHistoryUiState>>> =
+        marketHistoryRepository?.historyStates ?: MutableStateFlow(emptyMap())
+
+    val marketFavoriteCodes: StateFlow<List<String>> =
+        marketWatchlistRepository?.favoriteCodes ?: MutableStateFlow(emptyList())
+
+    val marketAlerts: StateFlow<List<MarketPriceAlert>> =
+        marketAlertRepository?.alerts ?: MutableStateFlow(emptyList())
 
     init {
         // Garante geracao idempotente de recorrencias e frase do dia ao iniciar sem nunca duplicar
@@ -1547,17 +1566,124 @@ class NexusViewModel(
         }
     }
 
+    fun loadMarketHistory(
+        assetCode: String,
+        range: MarketHistoryRange,
+        manual: Boolean = false
+    ) {
+        val repo = marketHistoryRepository ?: return
+        viewModelScope.launch {
+            val state = repo.loadHistory(assetCode = assetCode, range = range, force = manual)
+            if (manual && state.lastRefreshFailed && !state.statusMessage.isNullOrBlank()) {
+                emitMessage(state.statusMessage)
+            }
+        }
+    }
+
+    fun toggleMarketFavorite(assetCode: String) {
+        marketWatchlistRepository?.toggleFavorite(assetCode)
+    }
+
+    fun createMarketAlert(
+        assetCode: String,
+        condition: MarketAlertCondition,
+        targetPrice: Double,
+        isActive: Boolean
+    ) {
+        val repo = marketAlertRepository ?: return
+        val currentQuote = marketQuoteStates.value[assetCode]?.quote
+        repo.createAlert(
+            assetCode = assetCode,
+            condition = condition,
+            targetPrice = targetPrice,
+            isActive = isActive,
+            currentQuote = currentQuote
+        ).onSuccess {
+            emitMessage(
+                if (isActive) {
+                    "Alerta criado e aguardando próxima atualização válida"
+                } else {
+                    "Alerta salvo como pausado"
+                }
+            )
+        }.onFailure {
+            emitMessage(it.message ?: "Não foi possível criar o alerta")
+        }
+    }
+
+    fun updateMarketAlert(
+        alertId: String,
+        assetCode: String,
+        condition: MarketAlertCondition,
+        targetPrice: Double,
+        isActive: Boolean
+    ) {
+        val repo = marketAlertRepository ?: return
+        val currentQuote = marketQuoteStates.value[assetCode]?.quote
+        repo.updateAlert(
+            alertId = alertId,
+            condition = condition,
+            targetPrice = targetPrice,
+            isActive = isActive,
+            currentQuote = currentQuote
+        ).onSuccess { updated ->
+            val msg = when {
+                !updated.isActive -> "Alerta atualizado e pausado"
+                updated.awaitingConditionReset -> "Alerta reativado — aguardando retorno do preço para rearmar"
+                else -> "Alerta atualizado"
+            }
+            emitMessage(msg)
+        }.onFailure {
+            emitMessage(it.message ?: "Não foi possível atualizar o alerta")
+        }
+    }
+
+    fun toggleMarketAlertActive(alertId: String, assetCode: String, active: Boolean) {
+        val repo = marketAlertRepository ?: return
+        val currentQuote = marketQuoteStates.value[assetCode]?.quote
+        repo.setAlertActive(
+            alertId = alertId,
+            active = active,
+            currentQuote = currentQuote
+        ).onSuccess { updated ->
+            val msg = when {
+                !updated.isActive -> "Alerta pausado"
+                updated.awaitingConditionReset -> "Alerta reativado — aguardando retorno do preço para rearmar"
+                else -> "Alerta ativado"
+            }
+            emitMessage(msg)
+        }.onFailure {
+            emitMessage(it.message ?: "Não foi possível alterar o alerta")
+        }
+    }
+
+    fun deleteMarketAlert(alertId: String) {
+        val repo = marketAlertRepository ?: return
+        if (repo.deleteAlert(alertId)) {
+            emitMessage("Alerta excluído")
+        }
+    }
+
     fun emitMessage(message: String) {
         _snackbarEvents.tryEmit(message)
     }
 
     class Factory(
         private val repository: NexusRepository,
-        private val marketQuoteRepository: MarketQuoteRepository? = null
+        private val marketQuoteRepository: MarketQuoteRepository? = null,
+        private val marketHistoryRepository: MarketHistoryRepository? = null,
+        private val marketWatchlistRepository: MarketWatchlistRepository? = null,
+        private val marketAlertRepository: MarketAlertRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return NexusViewModel(repository, marketQuoteRepository) as T
+            return NexusViewModel(
+                repository = repository,
+                marketQuoteRepository = marketQuoteRepository,
+                marketHistoryRepository = marketHistoryRepository,
+                marketWatchlistRepository = marketWatchlistRepository,
+                marketAlertRepository = marketAlertRepository
+            ) as T
         }
     }
 }

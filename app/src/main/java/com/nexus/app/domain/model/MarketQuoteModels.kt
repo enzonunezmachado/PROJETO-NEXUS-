@@ -21,7 +21,10 @@ enum class QuoteModality(val displayLabel: String) {
     TOURISM("Dólar Turismo"),
     PTAX("Dólar PTAX (BCB)"),
     SPOT("Mercado à Vista"),
-    REFERENCE("Taxa de Referência");
+    REFERENCE("Taxa de Referência"),
+    EXCHANGE("Pregão"),
+    DELAYED("Com atraso"),
+    INDEX("Índice");
 
     fun labelFor(assetCode: String): String = when (this) {
         COMMERCIAL -> when (assetCode) {
@@ -41,6 +44,9 @@ enum class QuoteModality(val displayLabel: String) {
         }
         SPOT -> "Spot (24h)"
         REFERENCE -> "Taxa de Referência"
+        EXCHANGE -> "Pregão"
+        DELAYED -> "Com atraso"
+        INDEX -> "Índice"
     }
 }
 
@@ -67,7 +73,10 @@ data class MarketQuoteSnapshot(
     val trend: QuoteTrend = QuoteTrend.UNKNOWN,
     val sourceName: String,
     val sourceTimestampEpochMs: Long,
-    val fetchedAtEpochMs: Long
+    val fetchedAtEpochMs: Long,
+    val exchange: String? = null,
+    val isDelayed: Boolean = false,
+    val delayNotice: String? = null
 )
 
 data class MarketQuoteUiState(
@@ -81,6 +90,14 @@ data class MarketQuoteUiState(
     val lastAttemptAtEpochMs: Long? = null
 )
 
+data class ConvertedBrlPrice(
+    val amountBrl: Double,
+    val rateUsed: Double,
+    val rateIsStale: Boolean,
+    val rateIsOffline: Boolean,
+    val rateSourceName: String
+)
+
 object MarketAssetCatalog {
     const val USD_BRL_CODE = "USD-BRL"
     const val EUR_BRL_CODE = "EUR-BRL"
@@ -88,12 +105,24 @@ object MarketAssetCatalog {
     const val ETH_BRL_CODE = "ETH-BRL"
     const val SOL_BRL_CODE = "SOL-BRL"
 
+    const val IBOV_CODE = "IBOV"
+    const val SPX_CODE = "SPX"
+    const val IXIC_CODE = "IXIC"
+
+    const val PETR4_CODE = "PETR4"
+    const val VALE3_CODE = "VALE3"
+    const val ITUB4_CODE = "ITUB4"
+    const val MELI_CODE = "MELI"
+
     data class AssetDescriptor(
         val code: String,
         val baseSymbol: String,
         val quoteSymbol: String,
         val displayName: String,
-        val category: AssetCategory
+        val category: AssetCategory,
+        val ticker: String = baseSymbol,
+        val exchange: String? = null,
+        val isPointsUnit: Boolean = (category == AssetCategory.INDEX)
     )
 
     val USD_BRL = AssetDescriptor(
@@ -136,9 +165,85 @@ object MarketAssetCatalog {
         category = AssetCategory.CRYPTO
     )
 
+    val IBOV = AssetDescriptor(
+        code = IBOV_CODE,
+        baseSymbol = "IBOV",
+        quoteSymbol = "BRL",
+        displayName = "Ibovespa",
+        category = AssetCategory.INDEX,
+        ticker = "IBOV",
+        exchange = "B3",
+        isPointsUnit = true
+    )
+
+    val SPX = AssetDescriptor(
+        code = SPX_CODE,
+        baseSymbol = "SPX",
+        quoteSymbol = "USD",
+        displayName = "S&P 500",
+        category = AssetCategory.INDEX,
+        ticker = "SPX",
+        exchange = "NYSE / S&P",
+        isPointsUnit = true
+    )
+
+    val IXIC = AssetDescriptor(
+        code = IXIC_CODE,
+        baseSymbol = "IXIC",
+        quoteSymbol = "USD",
+        displayName = "Nasdaq Composite",
+        category = AssetCategory.INDEX,
+        ticker = "IXIC",
+        exchange = "Nasdaq",
+        isPointsUnit = true
+    )
+
+    val PETR4 = AssetDescriptor(
+        code = PETR4_CODE,
+        baseSymbol = "PETR4",
+        quoteSymbol = "BRL",
+        displayName = "Petrobras",
+        category = AssetCategory.STOCK,
+        ticker = "PETR4",
+        exchange = "B3"
+    )
+
+    val VALE3 = AssetDescriptor(
+        code = VALE3_CODE,
+        baseSymbol = "VALE3",
+        quoteSymbol = "BRL",
+        displayName = "Vale",
+        category = AssetCategory.STOCK,
+        ticker = "VALE3",
+        exchange = "B3"
+    )
+
+    val ITUB4 = AssetDescriptor(
+        code = ITUB4_CODE,
+        baseSymbol = "ITUB4",
+        quoteSymbol = "BRL",
+        displayName = "Itaú Unibanco",
+        category = AssetCategory.STOCK,
+        ticker = "ITUB4",
+        exchange = "B3"
+    )
+
+    val MELI = AssetDescriptor(
+        code = MELI_CODE,
+        baseSymbol = "MELI",
+        quoteSymbol = "USD",
+        displayName = "Mercado Livre",
+        category = AssetCategory.STOCK,
+        ticker = "MELI",
+        exchange = "Nasdaq"
+    )
+
     val CURRENCY_ASSETS: List<AssetDescriptor> = listOf(USD_BRL, EUR_BRL)
     val CRYPTO_ASSETS: List<AssetDescriptor> = listOf(BTC_BRL, ETH_BRL, SOL_BRL)
-    val SUPPORTED_ASSETS: List<AssetDescriptor> = CURRENCY_ASSETS + CRYPTO_ASSETS
+    val INDEX_ASSETS: List<AssetDescriptor> = listOf(IBOV, SPX, IXIC)
+    val STOCK_ASSETS: List<AssetDescriptor> = listOf(PETR4, VALE3, ITUB4, MELI)
+    val SUPPORTED_ASSETS: List<AssetDescriptor> =
+        CURRENCY_ASSETS + CRYPTO_ASSETS + INDEX_ASSETS + STOCK_ASSETS
 
     fun findByCode(code: String): AssetDescriptor? =
         SUPPORTED_ASSETS.firstOrNull { it.code == code }
@@ -190,7 +295,25 @@ object MarketQuoteCalculations {
     }
 
     fun formatPrice(value: Double, category: AssetCategory): String {
-        if (!value.isFinite() || value <= 0.0) return "R$ --"
+        return formatPrice(value = value, category = category, currencyCode = "BRL")
+    }
+
+    fun formatPrice(value: Double, category: AssetCategory, currencyCode: String): String {
+        if (!value.isFinite() || value <= 0.0) {
+            return when {
+                category == AssetCategory.INDEX -> "-- pts"
+                currencyCode.equals("USD", ignoreCase = true) -> "US$ --"
+                currencyCode.equals("BRL", ignoreCase = true) -> "R$ --"
+                else -> "${currencyCode.uppercase()} --"
+            }
+        }
+        if (category == AssetCategory.INDEX) {
+            val formatter = NumberFormat.getNumberInstance(DateTimeUtils.LOCALE_PT_BR).apply {
+                minimumFractionDigits = 2
+                maximumFractionDigits = 2
+            }
+            return "${formatter.format(value)} pts"
+        }
         val decimals = when (category) {
             AssetCategory.CURRENCY -> 4
             AssetCategory.CRYPTO -> if (value >= 10.0) 2 else 4
@@ -200,7 +323,40 @@ object MarketQuoteCalculations {
             minimumFractionDigits = decimals
             maximumFractionDigits = decimals
         }
-        return "R$ ${formatter.format(value)}"
+        val prefix = when (currencyCode.uppercase()) {
+            "BRL" -> "R$"
+            "USD" -> "US$"
+            "EUR" -> "€"
+            else -> currencyCode.uppercase()
+        }
+        return "$prefix ${formatter.format(value)}"
+    }
+
+    fun formatEmptyPlaceholder(category: AssetCategory, currencyCode: String): String {
+        return when {
+            category == AssetCategory.INDEX -> "-- pts"
+            currencyCode.equals("USD", ignoreCase = true) -> "US$ --"
+            currencyCode.equals("BRL", ignoreCase = true) -> "R$ --"
+            else -> "${currencyCode.uppercase()} --"
+        }
+    }
+
+    fun convertUsdToBrl(
+        usdAmount: Double,
+        usdBrlState: MarketQuoteUiState?
+    ): ConvertedBrlPrice? {
+        if (!isValidPositiveRate(usdAmount)) return null
+        val fxQuote = usdBrlState?.quote ?: return null
+        if (!isValidPositiveRate(fxQuote.price)) return null
+        val converted = usdAmount * fxQuote.price
+        if (!converted.isFinite() || converted <= 0.0) return null
+        return ConvertedBrlPrice(
+            amountBrl = converted,
+            rateUsed = fxQuote.price,
+            rateIsStale = usdBrlState.isStale,
+            rateIsOffline = usdBrlState.isOffline,
+            rateSourceName = fxQuote.sourceName
+        )
     }
 
     fun formatSignedPercent(changePercent: Double): String {

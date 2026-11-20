@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,7 +23,6 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -32,13 +31,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,36 +46,66 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nexus.app.domain.model.AssetCategory
+import com.nexus.app.domain.model.MarketAlertCondition
+import com.nexus.app.domain.model.MarketAlertStatus
 import com.nexus.app.domain.model.MarketAssetCatalog
+import com.nexus.app.domain.model.MarketHistoryCalculations
+import com.nexus.app.domain.model.MarketHistoryRange
+import com.nexus.app.domain.model.MarketHistoryUiState
+import com.nexus.app.domain.model.MarketPriceAlert
 import com.nexus.app.domain.model.MarketQuoteUiState
 import com.nexus.app.ui.components.MarketChangeBadge
+import com.nexus.app.ui.components.MarketFavoriteStarButton
 import com.nexus.app.ui.components.MarketModalityBadge
+import com.nexus.app.ui.components.MarketQuoteStatusBadge
 import com.nexus.app.ui.components.MarketStatusBannerRow
 import com.nexus.app.ui.components.NexusCard
 import com.nexus.app.ui.components.SectionHeader
+import com.nexus.app.ui.components.charts.MarketHistoryChartCard
 import com.nexus.app.ui.market.MarketAssetDetailPresentation
 import com.nexus.app.ui.market.MarketAssetRowPresentation
 import com.nexus.app.ui.market.MarketFilterCategory
 import com.nexus.app.ui.market.MarketOverviewPresentation
 import com.nexus.app.ui.market.MarketPresentationMapper
 import com.nexus.app.ui.market.MarketStatusSeverity
-import com.nexus.app.ui.market.PlannedCategorySection
 import com.nexus.app.ui.theme.LocalNexusPalette
+import kotlinx.coroutines.launch
 
 @Composable
 fun MarketScreen(
     quoteStates: Map<String, MarketQuoteUiState>,
+    favoriteCodes: List<String> = emptyList(),
+    alerts: List<MarketPriceAlert> = emptyList(),
     onRefreshAsset: (String) -> Unit,
     onRefreshAll: () -> Unit,
     onAutoRefreshIfStale: () -> Unit,
+    onToggleFavorite: (String) -> Unit = {},
+    onCreateAlert: (String, MarketAlertCondition, Double, Boolean) -> Unit = { _, _, _, _ -> },
+    onUpdateAlert: (String, String, MarketAlertCondition, Double, Boolean) -> Unit = { _, _, _, _, _ -> },
+    onToggleAlertActive: (String, String, Boolean) -> Unit = { _, _, _ -> },
+    onDeleteAlert: (String) -> Unit = {},
     onOpenAssetDetail: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val palette = LocalNexusPalette.current
     var selectedFilter by remember { mutableStateOf(MarketFilterCategory.ALL) }
-    val overview = remember(quoteStates) {
-        MarketPresentationMapper.buildOverview(quoteStates)
+    var alertEditorState by remember { mutableStateOf<MarketAlertEditorState?>(null) }
+    val (hasNotificationPermission, requestNotificationPermission) =
+        rememberMarketNotificationPermissionState()
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val overview = remember(quoteStates, favoriteCodes) {
+        MarketPresentationMapper.buildOverview(
+            states = quoteStates,
+            favoriteCodes = favoriteCodes
+        )
+    }
+    val alertRows = remember(alerts, quoteStates) {
+        MarketPresentationMapper.buildAlertRows(
+            alerts = alerts,
+            states = quoteStates
+        )
     }
 
     LaunchedEffect(Unit) {
@@ -87,6 +116,7 @@ fun MarketScreen(
         TopSubScreenBar(title = "Mercado", onBack = onBack)
 
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -128,6 +158,84 @@ fun MarketScreen(
                 }
             }
 
+            if (selectedFilter == MarketFilterCategory.ALL) {
+                item(key = "mkt_section_watchlist") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(
+                            title = "Acompanhamento",
+                            trailing = if (overview.watchlist.isEmpty()) {
+                                "Sem favoritos"
+                            } else {
+                                "${overview.watchlist.size} favorito(s)"
+                            }
+                        )
+                        if (overview.watchlist.isEmpty()) {
+                            MarketWatchlistEmptyCard(
+                                onExploreAssets = {
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(4)
+                                    }
+                                }
+                            )
+                        } else {
+                            MarketWatchlistCard(
+                                rows = overview.watchlist,
+                                onOpenAssetDetail = onOpenAssetDetail,
+                                onToggleFavorite = onToggleFavorite
+                            )
+                        }
+                    }
+                }
+
+                item(key = "mkt_section_alerts") {
+                    val waitingCount = alerts.count { it.status == MarketAlertStatus.WAITING }
+                    val triggeredCount = alerts.count { it.status == MarketAlertStatus.TRIGGERED }
+                    val alertsSummary = when {
+                        alerts.isEmpty() -> "Sem alertas"
+                        triggeredCount > 0 -> "$waitingCount ativo(s) · $triggeredCount disparado(s)"
+                        else -> "$waitingCount ativo(s)"
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(
+                            title = "Alertas",
+                            trailing = alertsSummary,
+                            actionLabel = "Novo alerta",
+                            onAction = {
+                                alertEditorState = MarketAlertEditorState(
+                                    initialAssetCode = favoriteCodes.firstOrNull()
+                                        ?: MarketAssetCatalog.USD_BRL_CODE,
+                                    lockAssetSelection = false
+                                )
+                            }
+                        )
+                        MarketAlertsSectionCard(
+                            alertRows = alertRows,
+                            hasNotificationPermission = hasNotificationPermission,
+                            onRequestNotificationPermission = requestNotificationPermission,
+                            onCreateAlert = {
+                                alertEditorState = MarketAlertEditorState(
+                                    initialAssetCode = favoriteCodes.firstOrNull()
+                                        ?: MarketAssetCatalog.USD_BRL_CODE,
+                                    lockAssetSelection = false
+                                )
+                            },
+                            onEditAlert = { alert ->
+                                alertEditorState = MarketAlertEditorState(
+                                    existingAlert = alert,
+                                    initialAssetCode = alert.assetCode,
+                                    lockAssetSelection = true
+                                )
+                            },
+                            onToggleAlertActive = { alert, active ->
+                                onToggleAlertActive(alert.id, alert.assetCode, active)
+                            },
+                            onDeleteAlert = { alert -> onDeleteAlert(alert.id) },
+                            onOpenAssetDetail = onOpenAssetDetail
+                        )
+                    }
+                }
+            }
+
             if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.CURRENCY) {
                 item(key = "mkt_section_currencies") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -138,7 +246,8 @@ fun MarketScreen(
                         MarketAssetGroupCard(
                             rows = overview.currencies,
                             onOpenAssetDetail = onOpenAssetDetail,
-                            onRefreshAsset = onRefreshAsset
+                            onRefreshAsset = onRefreshAsset,
+                            onToggleFavorite = onToggleFavorite
                         )
                     }
                 }
@@ -154,30 +263,59 @@ fun MarketScreen(
                         MarketAssetGroupCard(
                             rows = overview.cryptos,
                             onOpenAssetDetail = onOpenAssetDetail,
-                            onRefreshAsset = onRefreshAsset
+                            onRefreshAsset = onRefreshAsset,
+                            onToggleFavorite = onToggleFavorite
                         )
                     }
                 }
             }
 
             if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.INDEX) {
-                val indexSection = overview.plannedSections.firstOrNull { it.category == AssetCategory.INDEX }
-                if (indexSection != null) {
-                    item(key = "mkt_section_indices") {
-                        PlannedCategoryBlock(section = indexSection)
+                item(key = "mkt_section_indices") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(
+                            title = "Índices",
+                            trailing = "${overview.indices.size} ativos · B3 e EUA"
+                        )
+                        MarketAssetGroupCard(
+                            rows = overview.indices,
+                            onOpenAssetDetail = onOpenAssetDetail,
+                            onRefreshAsset = onRefreshAsset,
+                            onToggleFavorite = onToggleFavorite
+                        )
                     }
                 }
             }
 
             if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.STOCK) {
-                val stockSection = overview.plannedSections.firstOrNull { it.category == AssetCategory.STOCK }
-                if (stockSection != null) {
-                    item(key = "mkt_section_stocks") {
-                        PlannedCategoryBlock(section = stockSection)
+                item(key = "mkt_section_stocks") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionHeader(
+                            title = "Ações",
+                            trailing = "${overview.stocks.size} ativos · B3 e Nasdaq"
+                        )
+                        MarketAssetGroupCard(
+                            rows = overview.stocks,
+                            onOpenAssetDetail = onOpenAssetDetail,
+                            onRefreshAsset = onRefreshAsset,
+                            onToggleFavorite = onToggleFavorite
+                        )
                     }
                 }
             }
         }
+    }
+
+    alertEditorState?.let { editor ->
+        MarketAlertEditorSheet(
+            editorState = editor,
+            quoteStates = quoteStates,
+            hasNotificationPermission = hasNotificationPermission,
+            onRequestNotificationPermission = requestNotificationPermission,
+            onSaveCreate = onCreateAlert,
+            onSaveUpdate = onUpdateAlert,
+            onDismiss = { alertEditorState = null }
+        )
     }
 }
 
@@ -201,7 +339,7 @@ private fun MarketOverviewSummaryCard(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${overview.loadedAssetCount}/${overview.activeAssetCount} ativos em cache · Referência BRL",
+                    text = "${overview.loadedAssetCount}/${overview.activeAssetCount} ativos em cache · Cotações reais",
                     style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
                     color = palette.textSecondary
                 )
@@ -284,10 +422,166 @@ private fun MarketOverviewSummaryCard(
 }
 
 @Composable
+private fun MarketWatchlistEmptyCard(
+    onExploreAssets: () -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "Acompanhe seus ativos principais em um só lugar. Toque na estrela de qualquer ativo na listagem abaixo para adicioná-lo aqui.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.textSecondary
+            )
+            OutlinedButton(
+                onClick = onExploreAssets,
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, palette.border),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "Ir para listagem de ativos",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.textPrimary
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarketWatchlistCard(
+    rows: List<MarketAssetRowPresentation>,
+    onOpenAssetDetail: (String) -> Unit,
+    onToggleFavorite: (String) -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        rows.forEachIndexed { index, row ->
+            if (index > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(color = palette.border)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            MarketWatchlistCompactRow(
+                row = row,
+                onOpen = { onOpenAssetDetail(row.descriptor.code) },
+                onToggleFavorite = { onToggleFavorite(row.descriptor.code) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun MarketWatchlistCompactRow(
+    row: MarketAssetRowPresentation,
+    onOpen: () -> Unit,
+    onToggleFavorite: () -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    val state = row.uiState
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onOpen)
+            .padding(vertical = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = row.descriptor.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${row.ticker} · ${row.unitOrCurrencyLabel}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.textSecondary,
+                    maxLines = 1
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                MarketQuoteStatusBadge(
+                    label = row.quoteStatusLabel,
+                    severity = row.statusSeverity
+                )
+                MarketFavoriteStarButton(
+                    isFavorite = row.isFavorite,
+                    assetName = row.descriptor.displayName,
+                    onToggle = onToggleFavorite
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (state.quote == null && state.isRefreshing) "Consultando..." else row.formattedPrice,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = if (state.quote != null) palette.textPrimary else palette.textSecondary
+                )
+                if (row.formattedConvertedBrl != null) {
+                    Text(
+                        text = "≈ ${row.formattedConvertedBrl} em BRL",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                        color = palette.textSecondary,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (row.changePercent != null) {
+                    MarketChangeBadge(
+                        changePercent = row.changePercent,
+                        trend = row.trend,
+                        periodLabel = state.quote?.variationPeriodLabel
+                    )
+                } else if (state.quote != null) {
+                    Text(
+                        text = "Var. indisp.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary
+                    )
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = "Ver detalhes de ${row.descriptor.displayName}",
+                    tint = palette.textSecondary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MarketAssetGroupCard(
     rows: List<MarketAssetRowPresentation>,
     onOpenAssetDetail: (String) -> Unit,
-    onRefreshAsset: (String) -> Unit
+    onRefreshAsset: (String) -> Unit,
+    onToggleFavorite: (String) -> Unit
 ) {
     val palette = LocalNexusPalette.current
     NexusCard(modifier = Modifier.fillMaxWidth()) {
@@ -300,7 +594,8 @@ private fun MarketAssetGroupCard(
             MarketAssetCompactRow(
                 row = row,
                 onOpen = { onOpenAssetDetail(row.descriptor.code) },
-                onRefresh = { onRefreshAsset(row.descriptor.code) }
+                onRefresh = { onRefreshAsset(row.descriptor.code) },
+                onToggleFavorite = { onToggleFavorite(row.descriptor.code) }
             )
         }
     }
@@ -310,7 +605,8 @@ private fun MarketAssetGroupCard(
 private fun MarketAssetCompactRow(
     row: MarketAssetRowPresentation,
     onOpen: () -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onToggleFavorite: () -> Unit
 ) {
     val palette = LocalNexusPalette.current
     val state = row.uiState
@@ -341,6 +637,13 @@ private fun MarketAssetCompactRow(
                     )
                     if (row.modalityLabel != null) {
                         MarketModalityBadge(label = row.modalityLabel)
+                    } else if (row.exchangeLabel != null) {
+                        Text(
+                            text = "${row.ticker} · ${row.exchangeLabel}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.textSecondary,
+                            maxLines = 1
+                        )
                     } else {
                         Text(
                             text = row.pairLabel,
@@ -349,6 +652,19 @@ private fun MarketAssetCompactRow(
                             maxLines = 1
                         )
                     }
+                }
+                if (row.descriptor.category == AssetCategory.INDEX || row.descriptor.category == AssetCategory.STOCK) {
+                    Spacer(modifier = Modifier.height(1.dp))
+                    Text(
+                        text = buildString {
+                            append(row.ticker)
+                            row.exchangeLabel?.let { append(" · $it") }
+                            append(" · ${row.originalCurrency}")
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary,
+                        maxLines = 1
+                    )
                 }
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
@@ -359,6 +675,22 @@ private fun MarketAssetCompactRow(
                     ),
                     color = if (state.quote != null) palette.textPrimary else palette.textSecondary
                 )
+                if (row.formattedConvertedBrl != null) {
+                    Text(
+                        text = "≈ ${row.formattedConvertedBrl} em BRL",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                        color = palette.textSecondary,
+                        maxLines = 1
+                    )
+                } else if (row.conversionUnavailableNote != null) {
+                    Text(
+                        text = row.conversionUnavailableNote,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.warning,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             Row(
@@ -378,6 +710,12 @@ private fun MarketAssetCompactRow(
                         color = palette.textSecondary
                     )
                 }
+
+                MarketFavoriteStarButton(
+                    isFavorite = row.isFavorite,
+                    assetName = row.descriptor.displayName,
+                    onToggle = onToggleFavorite
+                )
 
                 IconButton(
                     onClick = onRefresh,
@@ -435,6 +773,17 @@ private fun MarketAssetCompactRow(
             }
         }
 
+        if (row.delayNotice != null && state.quote != null) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = row.delayNotice,
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
         if (row.statusNote != null) {
             if (state.quote != null) {
                 MarketStatusBannerRow(state = state)
@@ -450,82 +799,56 @@ private fun MarketAssetCompactRow(
 }
 
 @Composable
-private fun PlannedCategoryBlock(section: PlannedCategorySection) {
-    val palette = LocalNexusPalette.current
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SectionHeader(
-            title = section.title,
-            trailing = "Etapa futura"
-        )
-        NexusCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = section.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textSecondary,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                MarketModalityBadge(label = "Em breve")
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            HorizontalDivider(color = palette.border)
-            Spacer(modifier = Modifier.height(8.dp))
-            section.plannedExamples.forEachIndexed { idx, item ->
-                if (idx > 0) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = item.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = palette.textPrimary
-                        )
-                        Text(
-                            text = item.tickerHint,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.textSecondary
-                        )
-                    }
-                    Text(
-                        text = item.marketHint,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.textSecondary
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun MarketAssetDetailScreen(
     assetCode: String,
     quoteStates: Map<String, MarketQuoteUiState>,
+    historyStates: Map<MarketHistoryRange, MarketHistoryUiState> = emptyMap(),
+    isFavorite: Boolean = false,
+    alerts: List<MarketPriceAlert> = emptyList(),
     onRefreshAsset: (String) -> Unit,
+    onLoadHistory: (String, MarketHistoryRange, Boolean) -> Unit = { _, _, _ -> },
+    onToggleFavorite: (String) -> Unit = {},
+    onCreateAlert: (String, MarketAlertCondition, Double, Boolean) -> Unit = { _, _, _, _ -> },
+    onUpdateAlert: (String, String, MarketAlertCondition, Double, Boolean) -> Unit = { _, _, _, _, _ -> },
+    onToggleAlertActive: (String, String, Boolean) -> Unit = { _, _, _ -> },
+    onDeleteAlert: (String) -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val palette = LocalNexusPalette.current
     val descriptor = remember(assetCode) {
         MarketAssetCatalog.findByCode(assetCode) ?: MarketAssetCatalog.USD_BRL
     }
+    var alertEditorState by remember { mutableStateOf<MarketAlertEditorState?>(null) }
+    val (hasNotificationPermission, requestNotificationPermission) =
+        rememberMarketNotificationPermissionState()
+    val supportedRanges = remember(descriptor.code) {
+        MarketHistoryCalculations.supportedRangesFor(descriptor.code)
+    }
+    var selectedRange by remember(descriptor.code) {
+        mutableStateOf(MarketHistoryCalculations.defaultRangeFor(descriptor.code))
+    }
+    val activeHistoryState = historyStates[selectedRange]
+
+    LaunchedEffect(descriptor.code, selectedRange) {
+        onLoadHistory(descriptor.code, selectedRange, false)
+    }
+
     val state = quoteStates[descriptor.code] ?: MarketQuoteUiState(assetCode = descriptor.code)
-    val detail = remember(descriptor, state) {
-        MarketPresentationMapper.buildDetail(descriptor, state)
+    val usdBrlState = quoteStates[MarketAssetCatalog.USD_BRL_CODE]
+    val detail = remember(descriptor, state, usdBrlState, activeHistoryState, isFavorite) {
+        MarketPresentationMapper.buildDetail(
+            descriptor = descriptor,
+            state = state,
+            usdBrlState = usdBrlState,
+            historyState = activeHistoryState,
+            isFavorite = isFavorite
+        )
+    }
+    val assetAlertRows = remember(alerts, quoteStates, descriptor.code) {
+        MarketPresentationMapper.buildAlertRows(
+            alerts = alerts.filter { it.assetCode == descriptor.code },
+            states = quoteStates
+        )
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -539,12 +862,46 @@ fun MarketAssetDetailScreen(
             item(key = "detail_hero") {
                 MarketAssetDetailHeroCard(
                     detail = detail,
-                    onRefresh = { onRefreshAsset(descriptor.code) }
+                    onRefresh = { onRefreshAsset(descriptor.code) },
+                    onToggleFavorite = { onToggleFavorite(descriptor.code) }
                 )
             }
 
-            item(key = "detail_history_slot") {
-                MarketHistoryChartSlot(detail = detail)
+            item(key = "detail_history_chart") {
+                MarketHistoryChartCard(
+                    descriptor = descriptor,
+                    selectedRange = selectedRange,
+                    supportedRanges = supportedRanges,
+                    historyState = activeHistoryState,
+                    onSelectRange = { range -> selectedRange = range },
+                    onRefreshRange = { onLoadHistory(descriptor.code, selectedRange, true) }
+                )
+            }
+
+            item(key = "detail_alerts") {
+                MarketAssetAlertsCard(
+                    descriptor = descriptor,
+                    alertRows = assetAlertRows,
+                    hasNotificationPermission = hasNotificationPermission,
+                    onRequestNotificationPermission = requestNotificationPermission,
+                    onCreateAlertForAsset = {
+                        alertEditorState = MarketAlertEditorState(
+                            initialAssetCode = descriptor.code,
+                            lockAssetSelection = true
+                        )
+                    },
+                    onEditAlert = { alert ->
+                        alertEditorState = MarketAlertEditorState(
+                            existingAlert = alert,
+                            initialAssetCode = alert.assetCode,
+                            lockAssetSelection = true
+                        )
+                    },
+                    onToggleAlertActive = { alert, active ->
+                        onToggleAlertActive(alert.id, alert.assetCode, active)
+                    },
+                    onDeleteAlert = { alert -> onDeleteAlert(alert.id) }
+                )
             }
 
             item(key = "detail_metadata") {
@@ -552,12 +909,25 @@ fun MarketAssetDetailScreen(
             }
         }
     }
+
+    alertEditorState?.let { editor ->
+        MarketAlertEditorSheet(
+            editorState = editor,
+            quoteStates = quoteStates,
+            hasNotificationPermission = hasNotificationPermission,
+            onRequestNotificationPermission = requestNotificationPermission,
+            onSaveCreate = onCreateAlert,
+            onSaveUpdate = onUpdateAlert,
+            onDismiss = { alertEditorState = null }
+        )
+    }
 }
 
 @Composable
 private fun MarketAssetDetailHeroCard(
     detail: MarketAssetDetailPresentation,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onToggleFavorite: () -> Unit
 ) {
     val palette = LocalNexusPalette.current
     val state = detail.uiState
@@ -570,7 +940,7 @@ private fun MarketAssetDetailHeroCard(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
@@ -578,30 +948,44 @@ private fun MarketAssetDetailHeroCard(
                     style = MaterialTheme.typography.labelMedium,
                     color = palette.textSecondary
                 )
+                if (detail.exchangeLabel != null) {
+                    MarketModalityBadge(label = detail.exchangeLabel)
+                }
                 MarketModalityBadge(label = detail.categoryLabel)
                 if (detail.modalityLabel != null) {
                     MarketModalityBadge(label = detail.modalityLabel)
                 }
             }
 
-            IconButton(
-                onClick = onRefresh,
-                enabled = !state.isRefreshing,
-                modifier = Modifier.size(36.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                if (state.isRefreshing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = palette.highlight
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Outlined.Refresh,
-                        contentDescription = "Atualizar ${detail.descriptor.displayName}",
-                        tint = palette.highlight,
-                        modifier = Modifier.size(20.dp)
-                    )
+                MarketFavoriteStarButton(
+                    isFavorite = detail.isFavorite,
+                    assetName = detail.descriptor.displayName,
+                    onToggle = onToggleFavorite
+                )
+
+                IconButton(
+                    onClick = onRefresh,
+                    enabled = !state.isRefreshing,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    if (state.isRefreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = palette.highlight
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = "Atualizar ${detail.descriptor.displayName}",
+                            tint = palette.highlight,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
@@ -635,6 +1019,41 @@ private fun MarketAssetDetailHeroCard(
                     color = palette.textSecondary
                 )
             }
+        }
+
+        if (detail.formattedConvertedBrl != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Conversão aproximada: ${detail.formattedConvertedBrl}",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Medium,
+                    fontFeatureSettings = "tnum"
+                ),
+                color = palette.textPrimary
+            )
+            detail.convertedBrlDetailNote?.let { note ->
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                    color = palette.textSecondary
+                )
+            }
+        } else if (detail.convertedBrlDetailNote != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = detail.convertedBrlDetailNote,
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.warning
+            )
+        }
+
+        if (detail.delayNotice != null && state.quote != null) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = detail.delayNotice,
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.textSecondary
+            )
         }
 
         if (detail.formattedBidPrice != null || detail.formattedAskPrice != null || detail.formattedPreviousClose != null) {
@@ -709,56 +1128,6 @@ private fun DetailMiniMetric(
 }
 
 @Composable
-private fun MarketHistoryChartSlot(detail: MarketAssetDetailPresentation) {
-    val palette = LocalNexusPalette.current
-    NexusCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Histórico e Evolução",
-                style = MaterialTheme.typography.titleMedium,
-                color = palette.textPrimary
-            )
-            MarketModalityBadge(label = "Sem histórico")
-        }
-        Spacer(modifier = Modifier.height(10.dp))
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(10.dp),
-            color = palette.surfaceElevated,
-            border = BorderStroke(1.dp, palette.border)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ShowChart,
-                        contentDescription = null,
-                        tint = palette.textSecondary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Text(
-                        text = detail.historicalStatusMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = palette.textSecondary
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun MarketAssetDetailMetadataCard(detail: MarketAssetDetailPresentation) {
     val palette = LocalNexusPalette.current
     NexusCard(modifier = Modifier.fillMaxWidth()) {
@@ -768,11 +1137,32 @@ private fun MarketAssetDetailMetadataCard(detail: MarketAssetDetailPresentation)
             color = palette.textPrimary
         )
         Spacer(modifier = Modifier.height(10.dp))
-        DetailMetadataRow(label = "Ativo", value = "${detail.descriptor.displayName} (${detail.pairLabel})")
+        DetailMetadataRow(label = "Ativo", value = detail.descriptor.displayName)
         DetailMetadataDivider()
-        DetailMetadataRow(label = "Moeda de referência", value = detail.referenceCurrencyLabel)
+        DetailMetadataRow(label = "Ticker / Código", value = detail.ticker)
+        if (detail.exchangeLabel != null) {
+            DetailMetadataDivider()
+            DetailMetadataRow(label = "Bolsa / Mercado", value = detail.exchangeLabel)
+        }
         DetailMetadataDivider()
-        DetailMetadataRow(label = "Modalidade", value = detail.modalityLabel ?: "Não aplicável / Aguardando coleta")
+        DetailMetadataRow(label = "Moeda original", value = detail.originalCurrencyLabel)
+        if (detail.formattedConvertedBrl != null || detail.convertedBrlDetailNote != null) {
+            DetailMetadataDivider()
+            DetailMetadataRow(
+                label = "Valor em BRL",
+                value = detail.formattedConvertedBrl ?: "Indisponível (sem câmbio USD/BRL)"
+            )
+        }
+        DetailMetadataDivider()
+        DetailMetadataRow(
+            label = "Modalidade",
+            value = buildString {
+                append(detail.modalityLabel ?: "Não aplicável / Aguardando coleta")
+                if (detail.isDelayed && detail.delayNotice != null) {
+                    append(" · ${detail.delayNotice}")
+                }
+            }
+        )
         DetailMetadataDivider()
         DetailMetadataRow(
             label = "Variação",

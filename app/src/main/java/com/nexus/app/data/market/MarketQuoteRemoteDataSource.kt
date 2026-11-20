@@ -23,6 +23,8 @@ import java.net.URL
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -99,6 +101,15 @@ object MarketQuoteParsers {
     private val json = Json { ignoreUnknownKeys = true }
     private val saoPauloDateTimeFormatter =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US)
+    private val nasdaqDateTimeFormatter =
+        DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a", Locale.US)
+    private val nasdaqDateOnlyFormatter =
+        DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US)
+    private val cnbcDateOnlyFormatter =
+        DateTimeFormatter.ofPattern("MM/dd/yy", Locale.US)
+    private val cnbcIsoDateFormatter =
+        DateTimeFormatter.ISO_LOCAL_DATE
+    private val zoneNewYork: ZoneId = ZoneId.of("America/New_York")
 
     private val coinGeckoIdByAssetCode = mapOf(
         MarketAssetCatalog.BTC_BRL_CODE to "bitcoin",
@@ -437,6 +448,368 @@ object MarketQuoteParsers {
         )
     }
 
+    /**
+     * Analisa resposta pública oficial da B3 (/mds/api/v1/instrumentQuotation/{symbol})
+     * para IBOV ou ações B3 (PETR4, VALE3, ITUB4). Feed público gratuito possui atraso (~15 min).
+     */
+    fun parseB3InstrumentQuotation(
+        jsonBody: String,
+        asset: MarketAssetCatalog.AssetDescriptor,
+        fetchedAtEpochMs: Long
+    ): RemoteQuoteFetchResult {
+        val root = runCatching { json.parseToJsonElement(jsonBody) }.getOrNull() as? JsonObject
+            ?: return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Resposta JSON inválida da B3"
+            )
+        val statusCode = ((root["BizSts"] as? JsonObject)?.get("cd") as? JsonPrimitive)?.contentOrNull
+        if (!statusCode.equals("OK", ignoreCase = true)) {
+            return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Status inválido da B3 para ${asset.ticker}"
+            )
+        }
+        val tradArray = root["Trad"] as? JsonArray
+            ?: return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Dados de negociação ausentes na B3 para ${asset.ticker}"
+            )
+        val firstTrad = tradArray.firstOrNull() as? JsonObject
+            ?: return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Nenhuma cotação listada na B3 para ${asset.ticker}"
+            )
+        val scty = firstTrad["scty"] as? JsonObject
+            ?: return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Estrutura scty ausente na B3 para ${asset.ticker}"
+            )
+        val qtn = scty["SctyQtn"] as? JsonObject
+            ?: return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Estrutura SctyQtn ausente na B3 para ${asset.ticker}"
+            )
+        val price = parseDoubleField(qtn, "curPrc")
+        if (!MarketQuoteCalculations.isValidPositiveRate(price)) {
+            return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Preço inválido na B3 para ${asset.ticker}"
+            )
+        }
+        val validPrice = price!!
+        val pctChange = parseDoubleField(qtn, "prcFlcn")?.takeIf { it.isFinite() }
+        val previousClose = pctChange?.let { pct ->
+            val factor = 1.0 + (pct / 100.0)
+            if (factor > 0.0) (validPrice / factor).takeIf { it.isFinite() && it > 0.0 } else null
+        }
+        val msgDateTime = ((root["Msg"] as? JsonObject)?.get("dtTm") as? JsonPrimitive)?.contentOrNull?.trim()
+        val sourceTimestampMs = msgDateTime?.let(::parseSaoPauloTimestamp) ?: fetchedAtEpochMs
+
+        return RemoteQuoteFetchResult.Success(
+            MarketQuoteSnapshot(
+                assetCode = asset.code,
+                category = asset.category,
+                baseCurrency = asset.ticker,
+                quoteCurrency = asset.quoteSymbol,
+                modality = QuoteModality.DELAYED,
+                price = validPrice,
+                previousClose = previousClose,
+                changePercent = pctChange,
+                variationPeriodLabel = if (pctChange != null) "Dia" else null,
+                trend = MarketQuoteCalculations.computeTrend(pctChange),
+                sourceName = "B3 (Cotação Pública)",
+                sourceTimestampEpochMs = sourceTimestampMs,
+                fetchedAtEpochMs = fetchedAtEpochMs,
+                exchange = "B3",
+                isDelayed = true,
+                delayNotice = "Feed público da B3 com atraso aproximado de 15 min"
+            )
+        )
+    }
+
+    /**
+     * Analisa resposta em lote da brapi.dev (/api/quote/PETR4,VALE3,ITUB4) para ações B3 gratuitas.
+     */
+    fun parseBrapiBatch(
+        jsonBody: String,
+        assets: List<MarketAssetCatalog.AssetDescriptor>,
+        fetchedAtEpochMs: Long
+    ): Map<String, RemoteQuoteFetchResult> {
+        val root = runCatching { json.parseToJsonElement(jsonBody) }.getOrNull() as? JsonObject
+            ?: return assets.associate { asset ->
+                asset.code to RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.INVALID_RESPONSE,
+                    detail = "Resposta JSON inválida da brapi.dev"
+                )
+            }
+        val resultsArray = root["results"] as? JsonArray
+            ?: return assets.associate { asset ->
+                asset.code to RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.INVALID_RESPONSE,
+                    detail = "Campo results ausente na resposta da brapi.dev"
+                )
+            }
+        val bySymbol = resultsArray.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val sym = (obj["symbol"] as? JsonPrimitive)?.contentOrNull?.trim()?.uppercase()
+                ?: return@mapNotNull null
+            sym to obj
+        }.toMap()
+
+        return assets.associate { asset ->
+            val obj = bySymbol[asset.ticker.uppercase()]
+            if (obj == null) {
+                asset.code to RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.INVALID_RESPONSE,
+                    detail = "Ativo ${asset.ticker} ausente na resposta da brapi.dev"
+                )
+            } else {
+                val price = parseDoubleField(obj, "regularMarketPrice")
+                if (!MarketQuoteCalculations.isValidPositiveRate(price)) {
+                    asset.code to RemoteQuoteFetchResult.Failure(
+                        reason = FailureReason.INVALID_RESPONSE,
+                        detail = "Preço inválido na brapi.dev para ${asset.ticker}"
+                    )
+                } else {
+                    val validPrice = price!!
+                    val currency = (obj["currency"] as? JsonPrimitive)?.contentOrNull?.trim()
+                        ?.takeIf { it.isNotEmpty() } ?: asset.quoteSymbol
+                    val prevClose = parseDoubleField(obj, "regularMarketPreviousClose")
+                        ?.takeIf { MarketQuoteCalculations.isValidPositiveRate(it) }
+                    val pctChange = parseDoubleField(obj, "regularMarketChangePercent")
+                        ?.takeIf { it.isFinite() }
+                        ?: MarketQuoteCalculations.computeChangePercent(validPrice, prevClose)
+                    val timeRaw = (obj["regularMarketTime"] as? JsonPrimitive)?.contentOrNull?.trim()
+                    val sourceTs = timeRaw?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() }
+                        ?: fetchedAtEpochMs
+
+                    asset.code to RemoteQuoteFetchResult.Success(
+                        MarketQuoteSnapshot(
+                            assetCode = asset.code,
+                            category = asset.category,
+                            baseCurrency = asset.ticker,
+                            quoteCurrency = currency,
+                            modality = QuoteModality.EXCHANGE,
+                            price = validPrice,
+                            previousClose = prevClose,
+                            changePercent = pctChange,
+                            variationPeriodLabel = if (pctChange != null) "Dia" else null,
+                            trend = MarketQuoteCalculations.computeTrend(pctChange),
+                            sourceName = "brapi.dev (B3)",
+                            sourceTimestampEpochMs = sourceTs,
+                            fetchedAtEpochMs = fetchedAtEpochMs,
+                            exchange = "B3",
+                            isDelayed = false,
+                            delayNotice = null
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Analisa lote da CNBC Quote Webservice (.SPX, .IXIC, MELI, .BVSP).
+     */
+    fun parseCnbcBatch(
+        jsonBody: String,
+        assets: List<MarketAssetCatalog.AssetDescriptor>,
+        symbolForAsset: (MarketAssetCatalog.AssetDescriptor) -> String?,
+        fetchedAtEpochMs: Long
+    ): Map<String, RemoteQuoteFetchResult> {
+        val root = runCatching { json.parseToJsonElement(jsonBody) }.getOrNull() as? JsonObject
+            ?: return assets.associate { asset ->
+                asset.code to RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.INVALID_RESPONSE,
+                    detail = "Resposta JSON inválida da CNBC"
+                )
+            }
+        val quoteResult = root["FormattedQuoteResult"] as? JsonObject
+        val quotesArray = quoteResult?.get("FormattedQuote") as? JsonArray
+            ?: return assets.associate { asset ->
+                asset.code to RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.INVALID_RESPONSE,
+                    detail = "FormattedQuote ausente na resposta da CNBC"
+                )
+            }
+        val bySymbol = quotesArray.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val sym = (obj["symbol"] as? JsonPrimitive)?.contentOrNull?.trim()?.uppercase()
+                ?: return@mapNotNull null
+            sym to obj
+        }.toMap()
+
+        return assets.associate { asset ->
+            val providerSym = symbolForAsset(asset)?.uppercase()
+            val obj = providerSym?.let { bySymbol[it] }
+            if (obj == null) {
+                asset.code to RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.UNSUPPORTED_ASSET,
+                    detail = "Ativo ${asset.ticker} não retornado pela CNBC"
+                )
+            } else {
+                val lastRaw = (obj["last"] as? JsonPrimitive)?.contentOrNull
+                val price = parseUsNumericText(lastRaw)
+                if (!MarketQuoteCalculations.isValidPositiveRate(price)) {
+                    asset.code to RemoteQuoteFetchResult.Failure(
+                        reason = FailureReason.INVALID_RESPONSE,
+                        detail = "Cotação inválida na CNBC para ${asset.ticker}"
+                    )
+                } else {
+                    val validPrice = price!!
+                    val pctRaw = (obj["change_pct"] as? JsonPrimitive)?.contentOrNull
+                    val pctChange = parseUsChangePercent(pctRaw)
+                    val netChange = parseUsChangeValue((obj["change"] as? JsonPrimitive)?.contentOrNull)
+                    val prevDayClosing = parseUsNumericText(
+                        (obj["previous_day_closing"] as? JsonPrimitive)?.contentOrNull
+                    )?.takeIf { MarketQuoteCalculations.isValidPositiveRate(it) }
+                    val computedPrev = netChange?.let { delta ->
+                        (validPrice - delta).takeIf { MarketQuoteCalculations.isValidPositiveRate(it) }
+                    } ?: prevDayClosing
+
+                    val currencyCode = (obj["currencyCode"] as? JsonPrimitive)?.contentOrNull?.trim()
+                        ?.takeIf { it.isNotEmpty() } ?: asset.quoteSymbol
+                    val rawExchange = (obj["exchange"] as? JsonPrimitive)?.contentOrNull?.trim()
+                    val resolvedExchange = normalizeExchangeName(rawExchange, asset.exchange)
+                    val realTime = (obj["realTime"] as? JsonPrimitive)?.contentOrNull.equals("true", ignoreCase = true)
+                    val marketStatus = (obj["curmktstatus"] as? JsonPrimitive)?.contentOrNull?.trim()
+                    val isDelayedQuote = !realTime || marketStatus.equals("PRE_MKT", ignoreCase = true) ||
+                        marketStatus.equals("POST_MKT", ignoreCase = true)
+                    val delayNotice = when {
+                        !realTime -> "Dados com atraso ou último fechamento"
+                        marketStatus.equals("PRE_MKT", ignoreCase = true) -> "Pré-mercado · referência último fechamento"
+                        marketStatus.equals("POST_MKT", ignoreCase = true) -> "Pós-mercado · referência último fechamento"
+                        else -> null
+                    }
+                    val modality = when {
+                        isDelayedQuote -> QuoteModality.DELAYED
+                        asset.category == AssetCategory.INDEX -> QuoteModality.INDEX
+                        else -> QuoteModality.EXCHANGE
+                    }
+
+                    val timeZoneTag = (obj["timeZone"] as? JsonPrimitive)?.contentOrNull?.trim()
+                    val lastTimeDate = (obj["last_timedate"] as? JsonPrimitive)?.contentOrNull?.trim()
+                    val lastTimeIso = (obj["last_time"] as? JsonPrimitive)?.contentOrNull?.trim()
+                    val sourceTs = parseCnbcTimestamp(
+                        lastTimeDate = lastTimeDate,
+                        lastTimeIso = lastTimeIso,
+                        timeZoneTag = timeZoneTag
+                    ) ?: fetchedAtEpochMs
+
+                    asset.code to RemoteQuoteFetchResult.Success(
+                        MarketQuoteSnapshot(
+                            assetCode = asset.code,
+                            category = asset.category,
+                            baseCurrency = asset.ticker,
+                            quoteCurrency = currencyCode,
+                            modality = modality,
+                            price = validPrice,
+                            previousClose = computedPrev,
+                            changePercent = pctChange,
+                            variationPeriodLabel = if (pctChange != null) "Dia" else null,
+                            trend = MarketQuoteCalculations.computeTrend(pctChange),
+                            sourceName = "CNBC Market",
+                            sourceTimestampEpochMs = sourceTs,
+                            fetchedAtEpochMs = fetchedAtEpochMs,
+                            exchange = resolvedExchange,
+                            isDelayed = isDelayedQuote,
+                            delayNotice = delayNotice
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Analisa resposta pública da Nasdaq (/api/quote/{symbol}/info?assetclass={type})
+     * usada como fallback para IXIC (COMP) e MELI.
+     */
+    fun parseNasdaqInfo(
+        jsonBody: String,
+        asset: MarketAssetCatalog.AssetDescriptor,
+        fetchedAtEpochMs: Long
+    ): RemoteQuoteFetchResult {
+        val root = runCatching { json.parseToJsonElement(jsonBody) }.getOrNull() as? JsonObject
+            ?: return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Resposta JSON inválida da Nasdaq"
+            )
+        val data = root["data"] as? JsonObject
+            ?: return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Campo data ausente na Nasdaq para ${asset.ticker}"
+            )
+        val primary = data["primaryData"] as? JsonObject
+            ?: return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Dados primários ausentes na Nasdaq para ${asset.ticker}"
+            )
+        val price = parseUsNumericText((primary["lastSalePrice"] as? JsonPrimitive)?.contentOrNull)
+        if (!MarketQuoteCalculations.isValidPositiveRate(price)) {
+            return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.INVALID_RESPONSE,
+                detail = "Preço inválido na Nasdaq para ${asset.ticker}"
+            )
+        }
+        val validPrice = price!!
+        val pctChange = parseUsChangePercent((primary["percentageChange"] as? JsonPrimitive)?.contentOrNull)
+        val keyStats = data["keyStats"] as? JsonObject
+        val prevCloseFromStats = ((keyStats?.get("previousclose") as? JsonObject)
+            ?.get("value") as? JsonPrimitive)?.contentOrNull?.let(::parseUsNumericText)
+            ?.takeIf { MarketQuoteCalculations.isValidPositiveRate(it) }
+        val netChange = parseUsChangeValue((primary["netChange"] as? JsonPrimitive)?.contentOrNull)
+        val prevClose = prevCloseFromStats ?: netChange?.let { delta ->
+            (validPrice - delta).takeIf { MarketQuoteCalculations.isValidPositiveRate(it) }
+        }
+        val bidPrice = parseUsNumericText((primary["bidPrice"] as? JsonPrimitive)?.contentOrNull)
+            ?.takeIf { MarketQuoteCalculations.isValidPositiveRate(it) }
+        val askPrice = parseUsNumericText((primary["askPrice"] as? JsonPrimitive)?.contentOrNull)
+            ?.takeIf { MarketQuoteCalculations.isValidPositiveRate(it) }
+        val isRealTime = (primary["isRealTime"] as? JsonPrimitive)?.contentOrNull.equals("true", ignoreCase = true)
+        val marketStatus = (data["marketStatus"] as? JsonPrimitive)?.contentOrNull?.trim()
+        val rawExchange = (data["exchange"] as? JsonPrimitive)?.contentOrNull?.trim()
+        val resolvedExchange = normalizeExchangeName(rawExchange, asset.exchange)
+        val lastTradeTs = (primary["lastTradeTimestamp"] as? JsonPrimitive)?.contentOrNull?.trim()
+        val sourceTs = lastTradeTs?.let(::parseNasdaqTimestamp) ?: fetchedAtEpochMs
+
+        val isDelayedQuote = !isRealTime
+        val modality = when {
+            isDelayedQuote -> QuoteModality.DELAYED
+            asset.category == AssetCategory.INDEX -> QuoteModality.INDEX
+            else -> QuoteModality.EXCHANGE
+        }
+        val delayNotice = when {
+            !isRealTime -> "Cotação pública Nasdaq (fechamento ou atraso)"
+            !marketStatus.isNullOrBlank() && !marketStatus.equals("Market Open", ignoreCase = true) ->
+                "Status Nasdaq: $marketStatus"
+            else -> null
+        }
+
+        return RemoteQuoteFetchResult.Success(
+            MarketQuoteSnapshot(
+                assetCode = asset.code,
+                category = asset.category,
+                baseCurrency = asset.ticker,
+                quoteCurrency = asset.quoteSymbol,
+                modality = modality,
+                price = validPrice,
+                bidPrice = bidPrice,
+                askPrice = askPrice,
+                previousClose = prevClose,
+                changePercent = pctChange,
+                variationPeriodLabel = if (pctChange != null) "Dia" else null,
+                trend = MarketQuoteCalculations.computeTrend(pctChange),
+                sourceName = "Nasdaq",
+                sourceTimestampEpochMs = sourceTs,
+                fetchedAtEpochMs = fetchedAtEpochMs,
+                exchange = resolvedExchange,
+                isDelayed = isDelayedQuote,
+                delayNotice = delayNotice
+            )
+        )
+    }
+
     internal fun parseSaoPauloTimestamp(raw: String): Long? {
         val normalized = raw.trim().replace('T', ' ')
         val withoutFraction = normalized.substringBefore('.').trim()
@@ -446,6 +819,91 @@ object MarketQuoteParsers {
             val ldt = LocalDateTime.parse(candidate, saoPauloDateTimeFormatter)
             ldt.atZone(DateTimeUtils.ZONE_SAO_PAULO).toInstant().toEpochMilli()
         }.getOrNull()
+    }
+
+    internal fun parseUsNumericText(raw: String?): Double? {
+        val text = raw?.trim() ?: return null
+        if (text.isEmpty() || text.equals("null", ignoreCase = true) ||
+            text.equals("N/A", ignoreCase = true) || text.equals("NA", ignoreCase = true) ||
+            text.equals("UNCH", ignoreCase = true)
+        ) {
+            return null
+        }
+        val cleaned = text
+            .replace("$", "")
+            .replace("US$", "")
+            .replace("R$", "")
+            .replace(",", "")
+            .replace("%", "")
+            .replace(" ", "")
+        return cleaned.toDoubleOrNull()?.takeIf { it.isFinite() }
+    }
+
+    internal fun parseUsChangePercent(raw: String?): Double? {
+        val text = raw?.trim() ?: return null
+        if (text.equals("UNCH", ignoreCase = true)) return 0.0
+        return parseUsNumericText(text)
+    }
+
+    internal fun parseUsChangeValue(raw: String?): Double? {
+        val text = raw?.trim() ?: return null
+        if (text.equals("UNCH", ignoreCase = true)) return 0.0
+        return parseUsNumericText(text)
+    }
+
+    private fun parseCnbcTimestamp(
+        lastTimeDate: String?,
+        lastTimeIso: String?,
+        timeZoneTag: String?
+    ): Long? {
+        val zone = when {
+            timeZoneTag.equals("BET", ignoreCase = true) ||
+                timeZoneTag.equals("BRT", ignoreCase = true) -> DateTimeUtils.ZONE_SAO_PAULO
+            else -> zoneNewYork
+        }
+        if (!lastTimeDate.isNullOrBlank()) {
+            val dateToken = lastTimeDate.trim().substringBefore(' ').trim()
+            val parsedDate = runCatching { LocalDate.parse(dateToken, cnbcDateOnlyFormatter) }.getOrNull()
+            if (parsedDate != null) {
+                return parsedDate.atTime(LocalTime.NOON).atZone(zone).toInstant().toEpochMilli()
+            }
+        }
+        if (!lastTimeIso.isNullOrBlank()) {
+            val isoParsed = runCatching { Instant.parse(lastTimeIso.trim()).toEpochMilli() }.getOrNull()
+            if (isoParsed != null) return isoParsed
+            val dateOnly = runCatching { LocalDate.parse(lastTimeIso.trim(), cnbcIsoDateFormatter) }.getOrNull()
+            if (dateOnly != null) {
+                return dateOnly.atTime(LocalTime.NOON).atZone(zone).toInstant().toEpochMilli()
+            }
+        }
+        return null
+    }
+
+    private fun parseNasdaqTimestamp(raw: String): Long? {
+        val cleaned = raw
+            .replace("Closed at ", "", ignoreCase = true)
+            .replace(" ET", "", ignoreCase = true)
+            .replace(" EST", "", ignoreCase = true)
+            .replace(" EDT", "", ignoreCase = true)
+            .trim()
+        runCatching { LocalDateTime.parse(cleaned, nasdaqDateTimeFormatter) }.getOrNull()?.let { ldt ->
+            return ldt.atZone(zoneNewYork).toInstant().toEpochMilli()
+        }
+        runCatching { LocalDate.parse(cleaned, nasdaqDateOnlyFormatter) }.getOrNull()?.let { date ->
+            return date.atTime(LocalTime.NOON).atZone(zoneNewYork).toInstant().toEpochMilli()
+        }
+        return null
+    }
+
+    private fun normalizeExchangeName(rawExchange: String?, fallback: String?): String? {
+        val trimmed = rawExchange?.trim()?.takeIf { it.isNotEmpty() } ?: return fallback
+        return when {
+            trimmed.equals("INDEX", ignoreCase = true) -> fallback ?: "Índice"
+            trimmed.contains("Sao Paulo", ignoreCase = true) -> "B3"
+            trimmed.equals("NASDAQ", ignoreCase = true) -> "Nasdaq"
+            trimmed.startsWith("NASDAQ", ignoreCase = true) -> trimmed
+            else -> trimmed
+        }
     }
 
     private fun parseDoubleField(obj: JsonObject, key: String): Double? {
@@ -848,6 +1306,285 @@ class CategoryRoutedMarketQuoteRemoteDataSource(
         buildMap {
             deferred.awaitAll().forEach { putAll(it) }
         }
+    }
+}
+
+/**
+ * Fonte oficial pública da B3 (/mds/api/v1/instrumentQuotation/{symbol}) para IBOV e ações B3 (fallback).
+ */
+class B3QuoteDataSource(
+    private val transport: MarketHttpTransport,
+    private val clock: () -> Long = DateTimeUtils::nowEpochMillis,
+    private val supportedCodes: Set<String> = DEFAULT_SUPPORTED_CODES
+) : MarketQuoteRemoteDataSource {
+
+    override fun supports(asset: MarketAssetCatalog.AssetDescriptor): Boolean =
+        asset.code in supportedCodes && asset.code in SYMBOL_PATH_BY_CODE
+
+    override suspend fun fetchQuote(asset: MarketAssetCatalog.AssetDescriptor): RemoteQuoteFetchResult {
+        val symbolPath = SYMBOL_PATH_BY_CODE[asset.code]
+        if (symbolPath == null || !supports(asset)) {
+            return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.UNSUPPORTED_ASSET,
+                detail = "Ativo não suportado pela fonte pública B3: ${asset.code}"
+            )
+        }
+        val url = "https://cotacao.b3.com.br/mds/api/v1/instrumentQuotation/$symbolPath"
+        val response = transport.get(url).getOrElse { err ->
+            return mapExceptionToFailure(err, "B3")
+        }
+        return when (response.statusCode) {
+            in 200..299 -> MarketQuoteParsers.parseB3InstrumentQuotation(response.body, asset, clock())
+            429 -> RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.RATE_LIMITED,
+                httpStatusCode = 429,
+                detail = "Limite temporário de requisições da B3 atingido"
+            )
+            else -> RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.HTTP_ERROR,
+                httpStatusCode = response.statusCode,
+                detail = "Erro HTTP ${response.statusCode} ao consultar B3"
+            )
+        }
+    }
+
+    override suspend fun fetchQuotes(
+        assets: List<MarketAssetCatalog.AssetDescriptor>
+    ): Map<String, RemoteQuoteFetchResult> = coroutineScope {
+        assets.map { asset ->
+            async { asset.code to fetchQuote(asset) }
+        }.awaitAll().toMap()
+    }
+
+    companion object {
+        private val SYMBOL_PATH_BY_CODE = mapOf(
+            MarketAssetCatalog.IBOV_CODE to "ibov",
+            MarketAssetCatalog.PETR4_CODE to "PETR4",
+            MarketAssetCatalog.VALE3_CODE to "VALE3",
+            MarketAssetCatalog.ITUB4_CODE to "ITUB4"
+        )
+        val DEFAULT_SUPPORTED_CODES: Set<String> = SYMBOL_PATH_BY_CODE.keys
+    }
+}
+
+/**
+ * Fonte gratuita sem chave para ações brasileiras liberadas na brapi.dev (PETR4, VALE3, ITUB4) em lote único.
+ */
+class BrapiB3StockDataSource(
+    private val transport: MarketHttpTransport,
+    private val clock: () -> Long = DateTimeUtils::nowEpochMillis
+) : MarketQuoteRemoteDataSource {
+
+    override fun supports(asset: MarketAssetCatalog.AssetDescriptor): Boolean =
+        asset.category == AssetCategory.STOCK && asset.code in KEYLESS_B3_STOCKS
+
+    override suspend fun fetchQuote(asset: MarketAssetCatalog.AssetDescriptor): RemoteQuoteFetchResult {
+        if (!supports(asset)) {
+            return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.UNSUPPORTED_ASSET,
+                detail = "Ativo exige autenticação na brapi.dev ou não pertence à lista gratuita: ${asset.code}"
+            )
+        }
+        return fetchQuotes(listOf(asset))[asset.code] ?: RemoteQuoteFetchResult.Failure(
+            reason = FailureReason.INVALID_RESPONSE,
+            detail = "Resposta vazia da brapi.dev"
+        )
+    }
+
+    override suspend fun fetchQuotes(
+        assets: List<MarketAssetCatalog.AssetDescriptor>
+    ): Map<String, RemoteQuoteFetchResult> {
+        val supported = assets.filter { supports(it) }
+        val unsupported = assets.filterNot { supports(it) }.associate { asset ->
+            asset.code to RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.UNSUPPORTED_ASSET,
+                detail = "Ativo não disponível sem chave na brapi.dev: ${asset.code}"
+            )
+        }
+        if (supported.isEmpty()) return unsupported
+
+        val symbolsParam = supported.joinToString(",") { it.ticker }
+        val url = "https://brapi.dev/api/quote/$symbolsParam"
+        val response = transport.get(url).getOrElse { err ->
+            val failure = mapExceptionToFailure(err, "brapi.dev")
+            return unsupported + supported.associate { it.code to failure }
+        }
+        val parsed = when (response.statusCode) {
+            in 200..299 -> MarketQuoteParsers.parseBrapiBatch(response.body, supported, clock())
+            429 -> {
+                val failure = RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.RATE_LIMITED,
+                    httpStatusCode = 429,
+                    detail = "Limite temporário de requisições da brapi.dev atingido"
+                )
+                supported.associate { it.code to failure }
+            }
+            else -> {
+                val failure = RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.HTTP_ERROR,
+                    httpStatusCode = response.statusCode,
+                    detail = "Erro HTTP ${response.statusCode} ao consultar brapi.dev"
+                )
+                supported.associate { it.code to failure }
+            }
+        }
+        return unsupported + parsed
+    }
+
+    companion object {
+        private val KEYLESS_B3_STOCKS = setOf(
+            MarketAssetCatalog.PETR4_CODE,
+            MarketAssetCatalog.VALE3_CODE,
+            MarketAssetCatalog.ITUB4_CODE
+        )
+    }
+}
+
+/**
+ * Fonte pública gratuita em lote para índices globais e ações dos EUA (SPX, IXIC, MELI e fallback IBOV).
+ */
+class CnbcMarketDataSource(
+    private val transport: MarketHttpTransport,
+    private val clock: () -> Long = DateTimeUtils::nowEpochMillis,
+    private val supportedCodes: Set<String> = DEFAULT_SUPPORTED_CODES
+) : MarketQuoteRemoteDataSource {
+
+    override fun supports(asset: MarketAssetCatalog.AssetDescriptor): Boolean =
+        asset.code in supportedCodes && asset.code in CNBC_SYMBOL_BY_CODE
+
+    override suspend fun fetchQuote(asset: MarketAssetCatalog.AssetDescriptor): RemoteQuoteFetchResult {
+        if (!supports(asset)) {
+            return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.UNSUPPORTED_ASSET,
+                detail = "Ativo não habilitado na fonte CNBC: ${asset.code}"
+            )
+        }
+        return fetchQuotes(listOf(asset))[asset.code] ?: RemoteQuoteFetchResult.Failure(
+            reason = FailureReason.INVALID_RESPONSE,
+            detail = "Resposta vazia da CNBC"
+        )
+    }
+
+    override suspend fun fetchQuotes(
+        assets: List<MarketAssetCatalog.AssetDescriptor>
+    ): Map<String, RemoteQuoteFetchResult> {
+        val supported = assets.filter { supports(it) }
+        val unsupported = assets.filterNot { supports(it) }.associate { asset ->
+            asset.code to RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.UNSUPPORTED_ASSET,
+                detail = "Ativo não habilitado na fonte CNBC: ${asset.code}"
+            )
+        }
+        if (supported.isEmpty()) return unsupported
+
+        val symbolsParam = supported.mapNotNull { CNBC_SYMBOL_BY_CODE[it.code] }.joinToString("%7C")
+        val url = "https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol" +
+            "?symbols=$symbolsParam&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1"
+        val headers = mapOf(
+            "User-Agent" to BROWSER_USER_AGENT,
+            "Accept" to "application/json, text/plain, */*"
+        )
+        val response = transport.get(url, headers = headers).getOrElse { err ->
+            val failure = mapExceptionToFailure(err, "CNBC Market")
+            return unsupported + supported.associate { it.code to failure }
+        }
+        val parsed = when (response.statusCode) {
+            in 200..299 -> MarketQuoteParsers.parseCnbcBatch(
+                jsonBody = response.body,
+                assets = supported,
+                symbolForAsset = { CNBC_SYMBOL_BY_CODE[it.code] },
+                fetchedAtEpochMs = clock()
+            )
+            429 -> {
+                val failure = RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.RATE_LIMITED,
+                    httpStatusCode = 429,
+                    detail = "Limite temporário de requisições da CNBC atingido"
+                )
+                supported.associate { it.code to failure }
+            }
+            else -> {
+                val failure = RemoteQuoteFetchResult.Failure(
+                    reason = FailureReason.HTTP_ERROR,
+                    httpStatusCode = response.statusCode,
+                    detail = "Erro HTTP ${response.statusCode} ao consultar CNBC Market"
+                )
+                supported.associate { it.code to failure }
+            }
+        }
+        return unsupported + parsed
+    }
+
+    companion object {
+        private const val BROWSER_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+        private val CNBC_SYMBOL_BY_CODE = mapOf(
+            MarketAssetCatalog.SPX_CODE to ".SPX",
+            MarketAssetCatalog.IXIC_CODE to ".IXIC",
+            MarketAssetCatalog.MELI_CODE to "MELI",
+            MarketAssetCatalog.IBOV_CODE to ".BVSP"
+        )
+        val DEFAULT_SUPPORTED_CODES: Set<String> = CNBC_SYMBOL_BY_CODE.keys
+    }
+}
+
+/**
+ * Fonte pública oficial da Nasdaq usada como fallback para IXIC (COMP) e MELI.
+ */
+class NasdaqPublicDataSource(
+    private val transport: MarketHttpTransport,
+    private val clock: () -> Long = DateTimeUtils::nowEpochMillis
+) : MarketQuoteRemoteDataSource {
+
+    override fun supports(asset: MarketAssetCatalog.AssetDescriptor): Boolean =
+        asset.code in TARGET_BY_CODE
+
+    override suspend fun fetchQuote(asset: MarketAssetCatalog.AssetDescriptor): RemoteQuoteFetchResult {
+        val target = TARGET_BY_CODE[asset.code]
+            ?: return RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.UNSUPPORTED_ASSET,
+                detail = "Ativo não suportado pela API pública da Nasdaq: ${asset.code}"
+            )
+        val url = "https://api.nasdaq.com/api/quote/${target.first}/info?assetclass=${target.second}"
+        val headers = mapOf(
+            "User-Agent" to BROWSER_USER_AGENT,
+            "Accept" to "application/json, text/plain, */*",
+            "Origin" to "https://www.nasdaq.com",
+            "Referer" to "https://www.nasdaq.com/"
+        )
+        val response = transport.get(url, headers = headers).getOrElse { err ->
+            return mapExceptionToFailure(err, "Nasdaq")
+        }
+        return when (response.statusCode) {
+            in 200..299 -> MarketQuoteParsers.parseNasdaqInfo(response.body, asset, clock())
+            429 -> RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.RATE_LIMITED,
+                httpStatusCode = 429,
+                detail = "Limite temporário de requisições da Nasdaq atingido"
+            )
+            else -> RemoteQuoteFetchResult.Failure(
+                reason = FailureReason.HTTP_ERROR,
+                httpStatusCode = response.statusCode,
+                detail = "Erro HTTP ${response.statusCode} ao consultar Nasdaq"
+            )
+        }
+    }
+
+    override suspend fun fetchQuotes(
+        assets: List<MarketAssetCatalog.AssetDescriptor>
+    ): Map<String, RemoteQuoteFetchResult> = coroutineScope {
+        assets.map { asset ->
+            async { asset.code to fetchQuote(asset) }
+        }.awaitAll().toMap()
+    }
+
+    companion object {
+        private const val BROWSER_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+        private val TARGET_BY_CODE = mapOf(
+            MarketAssetCatalog.IXIC_CODE to ("COMP" to "index"),
+            MarketAssetCatalog.MELI_CODE to ("MELI" to "stocks")
+        )
     }
 }
 

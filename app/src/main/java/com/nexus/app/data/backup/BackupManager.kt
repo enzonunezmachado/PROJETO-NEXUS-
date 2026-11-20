@@ -31,6 +31,8 @@ import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
 import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.data.db.entity.TransactionEntity
+import com.nexus.app.data.market.MarketAlertRepository
+import com.nexus.app.data.market.MarketWatchlistRepository
 import com.nexus.app.domain.model.BriefingType
 import com.nexus.app.domain.model.CategoryScope
 import com.nexus.app.domain.model.EventCostType
@@ -38,6 +40,12 @@ import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.FinancialStatus
 import com.nexus.app.domain.model.GoalProgressMode
 import com.nexus.app.domain.model.GoalStatus
+import com.nexus.app.domain.model.MarketAlertCondition
+import com.nexus.app.domain.model.MarketAlertRules
+import com.nexus.app.domain.model.MarketAlertStatus
+import com.nexus.app.domain.model.MarketAssetCatalog
+import com.nexus.app.domain.model.MarketPriceAlert
+import com.nexus.app.domain.model.MarketQuoteCalculations
 import com.nexus.app.domain.model.NexusDateFormat
 import com.nexus.app.domain.model.PaymentMethod
 import com.nexus.app.domain.model.ProjectStatus
@@ -59,7 +67,11 @@ import kotlinx.serialization.json.jsonObject
 import java.util.Locale
 import java.util.UUID
 
-class BackupManager(private val database: NexusDatabase) {
+class BackupManager(
+    private val database: NexusDatabase,
+    private val marketWatchlistRepository: MarketWatchlistRepository? = null,
+    private val marketAlertRepository: MarketAlertRepository? = null
+) {
 
     private val tolerantJson = Json {
         ignoreUnknownKeys = true
@@ -516,9 +528,40 @@ class BackupManager(private val database: NexusDatabase) {
                     createdAt = it.createdAt,
                     updatedAt = it.updatedAt
                 )
-            }
+            },
+            marketConfig = exportMarketConfig()
         )
         return tolerantJson.encodeToString(payload)
+    }
+
+    private fun exportMarketConfig(): MarketBackupConfigDto? {
+        if (marketWatchlistRepository == null && marketAlertRepository == null) return null
+        val favorites = marketWatchlistRepository?.favoriteCodes?.value
+        val alerts = marketAlertRepository?.alerts?.value?.map { alert ->
+            val descriptor = MarketAssetCatalog.findByCode(alert.assetCode)
+            MarketPriceAlertBackupDto(
+                id = alert.id,
+                assetCode = alert.assetCode,
+                condition = alert.condition.name,
+                targetPrice = alert.targetPrice,
+                currencyOrUnit = descriptor?.let { MarketAlertRules.unitLabelFor(it) }.orEmpty(),
+                isActive = alert.isActive,
+                status = alert.status.name,
+                createdAtEpochMs = alert.createdAtEpochMs,
+                updatedAtEpochMs = alert.updatedAtEpochMs,
+                triggeredAtEpochMs = alert.triggeredAtEpochMs,
+                triggeredPrice = alert.triggeredPrice,
+                triggeredQuoteSource = alert.triggeredQuoteSource,
+                triggeredQuoteTimestampEpochMs = alert.triggeredQuoteTimestampEpochMs,
+                awaitingConditionReset = alert.awaitingConditionReset,
+                lastEvaluatedQuoteFetchedAtEpochMs = alert.lastEvaluatedQuoteFetchedAtEpochMs
+            )
+        }
+        return MarketBackupConfigDto(
+            configVersion = MarketBackupConfigDto.CURRENT_MARKET_CONFIG_VERSION,
+            favoriteAssetCodes = favorites,
+            priceAlerts = alerts
+        )
     }
 
     suspend fun exportFinancialCsv(): String {
@@ -588,7 +631,7 @@ class BackupManager(private val database: NexusDatabase) {
                 "reminders", "routineSettings", "briefingHistory",
                 "personalizationSettings", "quotes", "personalGoals",
                 "goalMilestones", "goalProgressLogs",
-                "recurrences", "recurrenceExceptions"
+                "recurrences", "recurrenceExceptions", "marketConfig"
             )
             if (rootKeys.none { it in recognizedKeys }) {
                 return BackupValidationResult.Invalid("Este JSON não parece ser um backup válido do NEXUS.")
@@ -611,6 +654,10 @@ class BackupManager(private val database: NexusDatabase) {
                     append("Blocos extras (${unknownTopKeys.joinToString(", ")}) serão ignorados.")
                 }
             }.ifBlank { null }
+
+            val now = DateTimeUtils.nowEpochMillis()
+            val previewFavorites = payload.marketConfig?.favoriteAssetCodes?.let { sanitizeFavoriteCodes(it) }
+            val previewAlerts = payload.marketConfig?.priceAlerts?.let { sanitizePriceAlerts(it, now) }
 
             BackupValidationResult.Valid(
                 BackupPreview(
@@ -645,6 +692,10 @@ class BackupManager(private val database: NexusDatabase) {
                     goalProgressLogsCount = payload.goalProgressLogs.size,
                     recurrencesCount = payload.recurrences.size,
                     recurrenceExceptionsCount = payload.recurrenceExceptions.size,
+                    marketFavoritesCount = previewFavorites?.size ?: 0,
+                    marketAlertsCount = previewAlerts?.size ?: 0,
+                    includesMarketConfig = payload.marketConfig != null &&
+                        (previewFavorites != null || previewAlerts != null),
                     compatibilityNotice = notice
                 )
             )
@@ -1226,6 +1277,13 @@ class BackupManager(private val database: NexusDatabase) {
             .distinctBy { it.id }
             .distinctBy { it.recurrenceId to it.occurrenceDateIso }
 
+        // Valida e sanitiza configurações do Mercado ANTES de iniciar qualquer escrita.
+        // Campo ausente (null) preserva os dados locais existentes; lista explicitamente vazia ([]) substitui.
+        val validatedMarketFavorites: List<String>? =
+            payload.marketConfig?.favoriteAssetCodes?.let { sanitizeFavoriteCodes(it) }
+        val validatedMarketAlerts: List<MarketPriceAlert>? =
+            payload.marketConfig?.priceAlerts?.let { sanitizePriceAlerts(it, now) }
+
         database.withTransaction {
             // Limpa na ordem inversa das chaves estrangeiras
             database.goalProgressLogDao().deleteAll()
@@ -1286,6 +1344,9 @@ class BackupManager(private val database: NexusDatabase) {
             database.briefingHistoryDao().insertAll(briefingHistoryEntities)
         }
 
+        val (appliedFavoritesCount, appliedAlertsCount, marketApplied) =
+            applyMarketConfigWithRollback(validatedMarketFavorites, validatedMarketAlerts)
+
         return RestoreSummary(
             settingsRestored = settingsEntities.size,
             categoriesRestored = categoryEntities.size,
@@ -1313,7 +1374,160 @@ class BackupManager(private val database: NexusDatabase) {
             goalMilestonesRestored = goalMilestoneEntities.size,
             goalProgressLogsRestored = goalProgressLogEntities.size,
             recurrencesRestored = taskRecurrenceEntities.size,
-            recurrenceExceptionsRestored = recurrenceExceptionEntities.size
+            recurrenceExceptionsRestored = recurrenceExceptionEntities.size,
+            marketFavoritesRestored = appliedFavoritesCount,
+            marketAlertsRestored = appliedAlertsCount,
+            marketConfigApplied = marketApplied
         )
+    }
+
+    private fun applyMarketConfigWithRollback(
+        validatedFavorites: List<String>?,
+        validatedAlerts: List<MarketPriceAlert>?
+    ): Triple<Int, Int, Boolean> {
+        val watchlistRepo = marketWatchlistRepository
+        val alertRepo = marketAlertRepository
+        if (watchlistRepo == null && alertRepo == null) {
+            return Triple(0, 0, false)
+        }
+
+        val previousFavorites = watchlistRepo?.favoriteCodes?.value
+        var favoritesApplied = false
+        var restoredFavoritesCount = 0
+        var restoredAlertsCount = 0
+
+        try {
+            if (validatedFavorites != null && watchlistRepo != null) {
+                restoredFavoritesCount = watchlistRepo.replaceAllFavorites(validatedFavorites).size
+                favoritesApplied = true
+            }
+            if (validatedAlerts != null && alertRepo != null) {
+                restoredAlertsCount = alertRepo.replaceAllAlerts(validatedAlerts).size
+            }
+        } catch (ex: Exception) {
+            if (favoritesApplied && watchlistRepo != null && previousFavorites != null) {
+                runCatching { watchlistRepo.replaceAllFavorites(previousFavorites) }
+            }
+            throw ex
+        }
+
+        val applied = (validatedFavorites != null && watchlistRepo != null) ||
+            (validatedAlerts != null && alertRepo != null)
+        return Triple(restoredFavoritesCount, restoredAlertsCount, applied)
+    }
+
+    companion object {
+        fun sanitizeFavoriteCodes(codes: List<String>): List<String> =
+            codes
+                .map { it.trim() }
+                .filter { MarketAssetCatalog.findByCode(it) != null }
+                .distinct()
+
+        fun sanitizePriceAlerts(
+            dtos: List<MarketPriceAlertBackupDto>,
+            fallbackNowEpochMs: Long
+        ): List<MarketPriceAlert> {
+            return dtos.mapNotNull { dto ->
+                val code = dto.assetCode.trim()
+                val descriptor = MarketAssetCatalog.findByCode(code) ?: return@mapNotNull null
+                val condition = runCatching {
+                    MarketAlertCondition.valueOf(dto.condition.trim())
+                }.getOrNull() ?: return@mapNotNull null
+
+                if (!MarketQuoteCalculations.isValidPositiveRate(dto.targetPrice)) {
+                    return@mapNotNull null
+                }
+
+                val declaredUnit = dto.currencyOrUnit.trim()
+                if (declaredUnit.isNotEmpty()) {
+                    val expectedUnit = MarketAlertRules.unitLabelFor(descriptor)
+                    val matchesUnit = declaredUnit.equals(expectedUnit, ignoreCase = true) ||
+                        (!descriptor.isPointsUnit && declaredUnit.equals(descriptor.quoteSymbol, ignoreCase = true))
+                    if (!matchesUnit) return@mapNotNull null
+                }
+
+                val id = dto.id.trim().ifBlank { UUID.randomUUID().toString() }
+                val createdAt = if (dto.createdAtEpochMs > 0L) dto.createdAtEpochMs else fallbackNowEpochMs
+                val updatedAt = when {
+                    dto.updatedAtEpochMs >= createdAt -> dto.updatedAtEpochMs
+                    dto.updatedAtEpochMs > 0L -> dto.updatedAtEpochMs
+                    else -> createdAt
+                }
+
+                val parsedStatus = runCatching {
+                    MarketAlertStatus.valueOf(dto.status.trim())
+                }.getOrNull()
+
+                // Regra segura para estados inválidos/inconsistentes:
+                // - Status desconhecido -> PAUSED (evita disparo indevido após restauração).
+                // - WAITING com isActive=false -> PAUSED (respeita inatividade sem notificar).
+                val resolvedStatus = when {
+                    parsedStatus == null -> MarketAlertStatus.PAUSED
+                    parsedStatus == MarketAlertStatus.WAITING && !dto.isActive -> MarketAlertStatus.PAUSED
+                    else -> parsedStatus
+                }
+
+                val validTriggeredAt = dto.triggeredAtEpochMs?.takeIf { it > 0L }
+                val validTriggeredPrice = dto.triggeredPrice?.takeIf {
+                    MarketQuoteCalculations.isValidPositiveRate(it)
+                }
+                val validTriggeredSource = dto.triggeredQuoteSource?.trim()?.takeIf { it.isNotEmpty() }
+                val validTriggeredQuoteTs = dto.triggeredQuoteTimestampEpochMs?.takeIf { it > 0L }
+                val validLastEvaluatedTs = dto.lastEvaluatedQuoteFetchedAtEpochMs?.takeIf { it > 0L }
+
+                when (resolvedStatus) {
+                    MarketAlertStatus.TRIGGERED -> MarketPriceAlert(
+                        id = id,
+                        assetCode = descriptor.code,
+                        condition = condition,
+                        targetPrice = dto.targetPrice,
+                        isActive = false,
+                        status = MarketAlertStatus.TRIGGERED,
+                        createdAtEpochMs = createdAt,
+                        updatedAtEpochMs = updatedAt,
+                        triggeredAtEpochMs = validTriggeredAt ?: updatedAt,
+                        triggeredPrice = validTriggeredPrice,
+                        triggeredQuoteSource = validTriggeredSource,
+                        triggeredQuoteTimestampEpochMs = validTriggeredQuoteTs,
+                        awaitingConditionReset = false,
+                        lastEvaluatedQuoteFetchedAtEpochMs = validLastEvaluatedTs
+                    )
+
+                    MarketAlertStatus.PAUSED -> MarketPriceAlert(
+                        id = id,
+                        assetCode = descriptor.code,
+                        condition = condition,
+                        targetPrice = dto.targetPrice,
+                        isActive = false,
+                        status = MarketAlertStatus.PAUSED,
+                        createdAtEpochMs = createdAt,
+                        updatedAtEpochMs = updatedAt,
+                        triggeredAtEpochMs = validTriggeredAt,
+                        triggeredPrice = validTriggeredPrice,
+                        triggeredQuoteSource = validTriggeredSource,
+                        triggeredQuoteTimestampEpochMs = validTriggeredQuoteTs,
+                        awaitingConditionReset = false,
+                        lastEvaluatedQuoteFetchedAtEpochMs = validLastEvaluatedTs
+                    )
+
+                    MarketAlertStatus.WAITING -> MarketPriceAlert(
+                        id = id,
+                        assetCode = descriptor.code,
+                        condition = condition,
+                        targetPrice = dto.targetPrice,
+                        isActive = true,
+                        status = MarketAlertStatus.WAITING,
+                        createdAtEpochMs = createdAt,
+                        updatedAtEpochMs = updatedAt,
+                        triggeredAtEpochMs = validTriggeredAt,
+                        triggeredPrice = validTriggeredPrice,
+                        triggeredQuoteSource = validTriggeredSource,
+                        triggeredQuoteTimestampEpochMs = validTriggeredQuoteTs,
+                        awaitingConditionReset = dto.awaitingConditionReset,
+                        lastEvaluatedQuoteFetchedAtEpochMs = validLastEvaluatedTs
+                    )
+                }
+            }.distinctBy { it.id }
+        }
     }
 }

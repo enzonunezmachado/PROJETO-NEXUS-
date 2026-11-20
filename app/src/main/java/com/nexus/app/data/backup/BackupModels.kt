@@ -34,12 +34,43 @@ data class NexusBackupPayload(
     val goalMilestones: List<GoalMilestoneBackupDto> = emptyList(),
     val goalProgressLogs: List<GoalProgressLogBackupDto> = emptyList(),
     val recurrences: List<TaskRecurrenceBackupDto> = emptyList(),
-    val recurrenceExceptions: List<RecurrenceExceptionBackupDto> = emptyList()
+    val recurrenceExceptions: List<RecurrenceExceptionBackupDto> = emptyList(),
+    val marketConfig: MarketBackupConfigDto? = null
 ) {
     companion object {
-        const val CURRENT_FORMAT_VERSION = 6
+        const val CURRENT_FORMAT_VERSION = 7
     }
 }
+
+@Serializable
+data class MarketBackupConfigDto(
+    val configVersion: Int = CURRENT_MARKET_CONFIG_VERSION,
+    val favoriteAssetCodes: List<String>? = null,
+    val priceAlerts: List<MarketPriceAlertBackupDto>? = null
+) {
+    companion object {
+        const val CURRENT_MARKET_CONFIG_VERSION = 1
+    }
+}
+
+@Serializable
+data class MarketPriceAlertBackupDto(
+    val id: String = "",
+    val assetCode: String = "",
+    val condition: String = "",
+    val targetPrice: Double = 0.0,
+    val currencyOrUnit: String = "",
+    val isActive: Boolean = true,
+    val status: String = "WAITING",
+    val createdAtEpochMs: Long = 0L,
+    val updatedAtEpochMs: Long = 0L,
+    val triggeredAtEpochMs: Long? = null,
+    val triggeredPrice: Double? = null,
+    val triggeredQuoteSource: String? = null,
+    val triggeredQuoteTimestampEpochMs: Long? = null,
+    val awaitingConditionReset: Boolean = false,
+    val lastEvaluatedQuoteFetchedAtEpochMs: Long? = null
+)
 
 @Serializable
 data class SettingsBackupDto(
@@ -514,6 +545,9 @@ data class BackupPreview(
     val goalProgressLogsCount: Int = 0,
     val recurrencesCount: Int = 0,
     val recurrenceExceptionsCount: Int = 0,
+    val marketFavoritesCount: Int = 0,
+    val marketAlertsCount: Int = 0,
+    val includesMarketConfig: Boolean = false,
     val compatibilityNotice: String? = null
 ) {
     val totalRecords: Int
@@ -524,7 +558,8 @@ data class BackupPreview(
             auditHistoryCount + errorLogsCount + remindersCount +
             routineSettingsCount + briefingHistoryCount + personalizationSettingsCount +
             quotesCount + personalGoalsCount + goalMilestonesCount + goalProgressLogsCount +
-            recurrencesCount + recurrenceExceptionsCount
+            recurrencesCount + recurrenceExceptionsCount +
+            marketFavoritesCount + marketAlertsCount
 }
 
 sealed interface BackupValidationResult {
@@ -559,7 +594,10 @@ data class RestoreSummary(
     val goalMilestonesRestored: Int = 0,
     val goalProgressLogsRestored: Int = 0,
     val recurrencesRestored: Int = 0,
-    val recurrenceExceptionsRestored: Int = 0
+    val recurrenceExceptionsRestored: Int = 0,
+    val marketFavoritesRestored: Int = 0,
+    val marketAlertsRestored: Int = 0,
+    val marketConfigApplied: Boolean = false
 ) {
     val totalRestored: Int
         get() = settingsRestored + categoriesRestored + projectsRestored + eventsRestored +
@@ -569,5 +607,6 @@ data class RestoreSummary(
             auditHistoryRestored + errorLogsRestored + remindersRestored +
             routineSettingsRestored + briefingHistoryRestored + personalizationSettingsRestored +
             quotesRestored + personalGoalsRestored + goalMilestonesRestored + goalProgressLogsRestored +
-            recurrencesRestored + recurrenceExceptionsRestored
+            recurrencesRestored + recurrenceExceptionsRestored +
+            marketFavoritesRestored + marketAlertsRestored
 }

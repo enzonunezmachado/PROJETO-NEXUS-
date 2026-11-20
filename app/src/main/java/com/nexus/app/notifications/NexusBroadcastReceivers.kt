@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.nexus.app.NexusApplication
+import com.nexus.app.data.market.MarketQuoteSyncScheduler
 import com.nexus.app.domain.model.BriefingType
 import com.nexus.app.widgets.NexusWidgetUpdater
 import kotlinx.coroutines.CoroutineScope
@@ -95,6 +96,7 @@ class NexusBootReceiver : BroadcastReceiver() {
                 NexusNotificationChannels.ensureChannelsCreated(context.applicationContext)
                 app.container.repository.rescheduleAllReminders()
                 app.container.notificationScheduler.enqueuePeriodicSyncWorker()
+                MarketQuoteSyncScheduler.enqueuePeriodicSync(context.applicationContext)
                 NexusWidgetUpdater.updateAllWidgets(context.applicationContext)
             } catch (ex: Exception) {
                 app.container.repository.logError("NexusBootReceiver", ex)

@@ -12,6 +12,7 @@ object NexusNotificationChannels {
     const val CHANNEL_FINANCE = "nexus_finance"
     const val CHANNEL_EVENTS = "nexus_events"
     const val CHANNEL_ROUTINE = "nexus_routine"
+    const val CHANNEL_MARKET_ALERTS = "nexus_market_alerts"
 
     fun ensureChannelsCreated(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -47,6 +48,14 @@ object NexusNotificationChannels {
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Briefing diário da manhã e revisão noturna do NEXUS."
+            },
+            NotificationChannel(
+                CHANNEL_MARKET_ALERTS,
+                "Alertas de Mercado",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alertas locais de preço atingido para ativos monitorados no Mercado."
+                enableVibration(true)
             }
         )
         manager.createNotificationChannels(channels)

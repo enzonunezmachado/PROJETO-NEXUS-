@@ -20,6 +20,10 @@ import com.nexus.app.core.DateTimeUtils
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
 import com.nexus.app.domain.model.BriefingType
+import com.nexus.app.domain.model.MarketAlertRules
+import com.nexus.app.domain.model.MarketAssetCatalog
+import com.nexus.app.domain.model.MarketPriceAlert
+import com.nexus.app.domain.model.MarketQuoteSnapshot
 import com.nexus.app.domain.model.ReminderCategory
 import com.nexus.app.domain.model.ReminderSourceType
 import com.nexus.app.domain.rules.ReminderRules
@@ -276,6 +280,52 @@ class NexusNotificationScheduler(private val context: Context) {
         return true
     }
 
+    @SuppressLint("MissingPermission")
+    fun showMarketAlertNotification(
+        alert: MarketPriceAlert,
+        observedQuote: MarketQuoteSnapshot
+    ): Boolean {
+        if (!hasNotificationPermission()) return false
+        val descriptor = MarketAssetCatalog.findByCode(alert.assetCode) ?: return false
+        if (!MarketAlertRules.isQuoteCompatibleWithAsset(observedQuote, descriptor)) return false
+
+        NexusNotificationChannels.ensureChannelsCreated(appContext)
+        val notifId = marketAlertNotificationIdFor(alert.id)
+        val openIntent = Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_MARKET_ASSET_CODE, descriptor.code)
+        }
+        val contentPendingIntent = PendingIntent.getActivity(
+            appContext,
+            notifId,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val observedFormatted = MarketAlertRules.formatValueForAsset(observedQuote.price, descriptor)
+        val targetFormatted = MarketAlertRules.formatValueForAsset(alert.targetPrice, descriptor)
+        val conditionText = alert.condition.shortLabel.lowercase()
+        val bodyText =
+            "${descriptor.ticker} atingiu $observedFormatted ($conditionText $targetFormatted · ${observedQuote.sourceName})."
+
+        val notification = NotificationCompat.Builder(
+            appContext,
+            NexusNotificationChannels.CHANNEL_MARKET_ALERTS
+        )
+            .setSmallIcon(R.drawable.ic_notification_nexus)
+            .setContentTitle("Alerta de Mercado · ${descriptor.displayName}")
+            .setContentText(bodyText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(contentPendingIntent)
+            .build()
+
+        NotificationManagerCompat.from(appContext).notify(notifId, notification)
+        return true
+    }
+
     fun enqueuePeriodicSyncWorker() {
         val workRequest = PeriodicWorkRequestBuilder<NexusReminderSyncWorker>(
             15,
@@ -341,6 +391,7 @@ class NexusNotificationScheduler(private val context: Context) {
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
         const val EXTRA_OPEN_ROUTINE = "extra_open_routine"
         const val EXTRA_BRIEFING_TYPE = "extra_briefing_type"
+        const val EXTRA_MARKET_ASSET_CODE = "extra_market_asset_code"
 
         const val ROUTINE_MORNING_SOURCE_ID = "nexus_routine_morning"
         const val ROUTINE_NIGHT_SOURCE_ID = "nexus_routine_night"
@@ -350,6 +401,8 @@ class NexusNotificationScheduler(private val context: Context) {
 
         fun requestCodeFor(id: String): Int = (id.hashCode() and 0x7FFFFFFF)
         fun notificationIdFor(id: String): Int = ((id.hashCode() and 0x00FFFFFF) + 1000)
+        fun marketAlertNotificationIdFor(alertId: String): Int =
+            ((alertId.hashCode() and 0x00FFFFFF) + 2_000_000)
 
         /**
          * Calcula o horario de disparo do lembrete.

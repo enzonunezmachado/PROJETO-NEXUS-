@@ -4,8 +4,11 @@ import android.app.Application
 import com.nexus.app.core.GlobalErrorHandler
 import com.nexus.app.data.backup.BackupManager
 import com.nexus.app.data.db.NexusDatabase
+import com.nexus.app.data.market.MarketAlertRepository
+import com.nexus.app.data.market.MarketHistoryRepository
 import com.nexus.app.data.market.MarketQuoteRepository
 import com.nexus.app.data.market.MarketQuoteSyncScheduler
+import com.nexus.app.data.market.MarketWatchlistRepository
 import com.nexus.app.data.repository.NexusRepository
 import com.nexus.app.notifications.NexusNotificationChannels
 import com.nexus.app.notifications.NexusNotificationScheduler
@@ -17,15 +20,38 @@ class AppContainer(application: Application) {
     }
 
     val backupManager: BackupManager by lazy {
-        BackupManager(database)
+        BackupManager(
+            database = database,
+            marketWatchlistRepository = marketWatchlistRepository,
+            marketAlertRepository = marketAlertRepository
+        )
     }
 
     val notificationScheduler: NexusNotificationScheduler by lazy {
         NexusNotificationScheduler(application)
     }
 
+    val marketAlertRepository: MarketAlertRepository by lazy {
+        MarketAlertRepository.createDefault(application) { event ->
+            notificationScheduler.showMarketAlertNotification(
+                alert = event.alert,
+                observedQuote = event.observedQuote
+            )
+        }
+    }
+
     val marketQuoteRepository: MarketQuoteRepository by lazy {
-        MarketQuoteRepository.createDefault(application)
+        MarketQuoteRepository.createDefault(application) { freshQuotes ->
+            marketAlertRepository.evaluateQuotes(freshQuotes)
+        }
+    }
+
+    val marketHistoryRepository: MarketHistoryRepository by lazy {
+        MarketHistoryRepository.createDefault(application)
+    }
+
+    val marketWatchlistRepository: MarketWatchlistRepository by lazy {
+        MarketWatchlistRepository.createDefault(application)
     }
 
     val repository: NexusRepository by lazy {

@@ -2,8 +2,11 @@ package com.nexus.app
 
 import com.nexus.app.data.market.AwesomeApiCurrencyDataSource
 import com.nexus.app.data.market.AwesomeApiUsdBrlDataSource
+import com.nexus.app.data.market.B3QuoteDataSource
 import com.nexus.app.data.market.BcbOlindaPtaxDataSource
+import com.nexus.app.data.market.BrapiB3StockDataSource
 import com.nexus.app.data.market.CategoryRoutedMarketQuoteRemoteDataSource
+import com.nexus.app.data.market.CnbcMarketDataSource
 import com.nexus.app.data.market.CoinGeckoCryptoDataSource
 import com.nexus.app.data.market.CoinPaprikaCryptoDataSource
 import com.nexus.app.data.market.CompositeMarketQuoteRemoteDataSource
@@ -14,12 +17,14 @@ import com.nexus.app.data.market.MarketQuoteParsers
 import com.nexus.app.data.market.MarketQuoteRemoteDataSource
 import com.nexus.app.data.market.MarketQuoteRepository
 import com.nexus.app.data.market.MarketQuoteStore
+import com.nexus.app.data.market.NasdaqPublicDataSource
 import com.nexus.app.data.market.PersistedMarketQuoteRecord
 import com.nexus.app.data.market.RemoteQuoteFetchResult
 import com.nexus.app.domain.model.AssetCategory
 import com.nexus.app.domain.model.MarketAssetCatalog
 import com.nexus.app.domain.model.MarketQuoteCalculations
 import com.nexus.app.domain.model.MarketQuoteSnapshot
+import com.nexus.app.domain.model.MarketQuoteUiState
 import com.nexus.app.domain.model.QuoteModality
 import com.nexus.app.domain.model.QuoteTrend
 import kotlinx.coroutines.runBlocking
@@ -529,5 +534,205 @@ class MarketQuoteUnitTests {
         val usdState = states[MarketAssetCatalog.USD_BRL_CODE]!!
         assertFalse(usdState.lastRefreshFailed)
         assertEquals(5.75, usdState.quote!!.price, 0.0001)
+    }
+
+    @Test
+    fun `parseB3InstrumentQuotation parses official delayed IBOV index points and daily change`() {
+        val b3Json = """
+            {"BizSts":{"cd":"OK"},"Msg":{"dtTm":"2026-11-18 09:38:29"},"Trad":[{"scty":{"SctyQtn":{"curPrc":169816.64,"prcFlcn":0.31},"mkt":{"nm":"Indices"},"symb":"IBOV","desc":"IBOVESPA"}}]}
+        """.trimIndent()
+
+        val result = MarketQuoteParsers.parseB3InstrumentQuotation(
+            jsonBody = b3Json,
+            asset = MarketAssetCatalog.IBOV,
+            fetchedAtEpochMs = 1_795_000_000_000L
+        )
+        assertTrue(result is RemoteQuoteFetchResult.Success)
+        val quote = (result as RemoteQuoteFetchResult.Success).quote
+
+        assertEquals(MarketAssetCatalog.IBOV_CODE, quote.assetCode)
+        assertEquals(AssetCategory.INDEX, quote.category)
+        assertEquals("IBOV", quote.baseCurrency)
+        assertEquals("BRL", quote.quoteCurrency)
+        assertEquals("B3", quote.exchange)
+        assertEquals(QuoteModality.DELAYED, quote.modality)
+        assertTrue(quote.isDelayed)
+        assertEquals(169816.64, quote.price, 0.01)
+        assertEquals(0.31, quote.changePercent ?: 0.0, 0.001)
+        assertEquals(QuoteTrend.UP, quote.trend)
+        assertEquals("B3 (Cotação Pública)", quote.sourceName)
+    }
+
+    @Test
+    fun `parseBrapiBatch parses PETR4 VALE3 and ITUB4 in BRL cleanly`() {
+        val brapiJson = """
+            {
+              "results": [
+                {"symbol":"PETR4","currency":"BRL","regularMarketPrice":43.98,"regularMarketChangePercent":-0.09,"regularMarketPreviousClose":44.02,"regularMarketTime":"2026-11-18T12:37:30.000Z"},
+                {"symbol":"VALE3","currency":"BRL","regularMarketPrice":60.34,"regularMarketChangePercent":-0.59,"regularMarketPreviousClose":60.70,"regularMarketTime":"2026-11-18T12:37:30.000Z"},
+                {"symbol":"ITUB4","currency":"BRL","regularMarketPrice":40.89,"regularMarketChangePercent":-0.99,"regularMarketPreviousClose":41.30,"regularMarketTime":"2026-11-18T12:37:30.000Z"}
+              ]
+            }
+        """.trimIndent()
+
+        val results = MarketQuoteParsers.parseBrapiBatch(
+            jsonBody = brapiJson,
+            assets = listOf(MarketAssetCatalog.PETR4, MarketAssetCatalog.VALE3, MarketAssetCatalog.ITUB4),
+            fetchedAtEpochMs = 1_795_000_000_000L
+        )
+
+        val petr4 = (results[MarketAssetCatalog.PETR4_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals(43.98, petr4.price, 0.001)
+        assertEquals("BRL", petr4.quoteCurrency)
+        assertEquals("B3", petr4.exchange)
+        assertEquals(QuoteModality.EXCHANGE, petr4.modality)
+        assertEquals(-0.09, petr4.changePercent ?: 0.0, 0.001)
+        assertEquals(QuoteTrend.DOWN, petr4.trend)
+
+        val vale3 = (results[MarketAssetCatalog.VALE3_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals(60.34, vale3.price, 0.001)
+
+        val itub4 = (results[MarketAssetCatalog.ITUB4_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals(40.89, itub4.price, 0.001)
+    }
+
+    @Test
+    fun `parseCnbcBatch and Nasdaq fallback handle SPX IXIC and MELI with US formatting`() {
+        val cnbcJson = """
+            {
+              "FormattedQuoteResult": {
+                "FormattedQuote": [
+                  {"symbol":".SPX","last":"7,340.53","last_timedate":"11/17/26 EST","last_time":"2026-11-17","change":"-76.06","change_pct":"-1.03%","previous_day_closing":"7,340.53","currencyCode":"USD","exchange":"INDEX","realTime":"true","curmktstatus":"REG_MKT","timeZone":"EST"},
+                  {"symbol":".IXIC","last":"24,328.383","last_timedate":"11/17/26 EST","last_time":"2026-11-17","change":"-181.375","change_pct":"-0.74%","previous_day_closing":"24,328.383","currencyCode":"USD","exchange":"NASDAQ","realTime":"true","curmktstatus":"REG_MKT","timeZone":"EST"},
+                  {"symbol":"MELI","last":"1,436.83","last_timedate":"11/17/26 EST","last_time":"2026-11-17","change":"-25.29","change_pct":"-1.73%","previous_day_closing":"1,436.83","currencyCode":"USD","exchange":"NASDAQ","realTime":"true","curmktstatus":"PRE_MKT","timeZone":"EST"}
+                ]
+              }
+            }
+        """.trimIndent()
+
+        val nasdaqMeliJson = """
+            {
+              "data": {
+                "symbol": "MELI",
+                "exchange": "NASDAQ-GS",
+                "marketStatus": "Pre-Market",
+                "primaryData": {
+                  "lastSalePrice": "${'$'}1,446.00",
+                  "netChange": "+9.17",
+                  "percentageChange": "+0.64%",
+                  "lastTradeTimestamp": "Nov 18, 2026 7:38 AM ET",
+                  "isRealTime": true,
+                  "bidPrice": "${'$'}1,439.68",
+                  "askPrice": "${'$'}1,448.70"
+                },
+                "keyStats": {
+                  "previousclose": {"value": "1,436.83"}
+                }
+              }
+            }
+        """.trimIndent()
+
+        val cnbcTransport = object : MarketHttpTransport {
+            override suspend fun get(url: String, headers: Map<String, String>): Result<HttpResponsePayload> {
+                return Result.success(HttpResponsePayload(200, cnbcJson))
+            }
+        }
+        val cnbcSource = CnbcMarketDataSource(cnbcTransport, clock = { 1_795_000_000_000L })
+        val cnbcResults = runBlocking {
+            cnbcSource.fetchQuotes(listOf(MarketAssetCatalog.SPX, MarketAssetCatalog.IXIC, MarketAssetCatalog.MELI))
+        }
+
+        val spx = (cnbcResults[MarketAssetCatalog.SPX_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals(7340.53, spx.price, 0.01)
+        assertEquals(-1.03, spx.changePercent ?: 0.0, 0.01)
+        assertEquals("USD", spx.quoteCurrency)
+        assertEquals("NYSE / S&P", spx.exchange)
+        assertEquals(7416.59, spx.previousClose ?: 0.0, 0.01)
+
+        val ixic = (cnbcResults[MarketAssetCatalog.IXIC_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals(24328.383, ixic.price, 0.001)
+        assertEquals("Nasdaq", ixic.exchange)
+
+        val meliCnbc = (cnbcResults[MarketAssetCatalog.MELI_CODE] as RemoteQuoteFetchResult.Success).quote
+        assertEquals(1436.83, meliCnbc.price, 0.01)
+        assertTrue(meliCnbc.isDelayed)
+        assertEquals("USD", meliCnbc.quoteCurrency)
+
+        val nasdaqTransport = object : MarketHttpTransport {
+            override suspend fun get(url: String, headers: Map<String, String>): Result<HttpResponsePayload> {
+                assertTrue(url.contains("/quote/MELI/info?assetclass=stocks"))
+                assertEquals("https://www.nasdaq.com", headers["Origin"])
+                return Result.success(HttpResponsePayload(200, nasdaqMeliJson))
+            }
+        }
+        val nasdaqResult = runBlocking {
+            NasdaqPublicDataSource(nasdaqTransport, clock = { 1_795_000_000_000L })
+                .fetchQuote(MarketAssetCatalog.MELI)
+        }
+        assertTrue(nasdaqResult is RemoteQuoteFetchResult.Success)
+        val meliNasdaq = (nasdaqResult as RemoteQuoteFetchResult.Success).quote
+        assertEquals(1446.00, meliNasdaq.price, 0.01)
+        assertEquals(0.64, meliNasdaq.changePercent ?: 0.0, 0.01)
+        assertEquals(1439.68, meliNasdaq.bidPrice ?: 0.0, 0.01)
+        assertEquals("NASDAQ-GS", meliNasdaq.exchange)
+        assertEquals("Nasdaq", meliNasdaq.sourceName)
+    }
+
+    @Test
+    fun `stock route falls back from brapi to B3 when brapi hits rate limit`() = runBlocking {
+        val transport = object : MarketHttpTransport {
+            override suspend fun get(url: String, headers: Map<String, String>): Result<HttpResponsePayload> {
+                return when {
+                    url.contains("brapi.dev") -> Result.success(HttpResponsePayload(429, "{}"))
+                    url.contains("cotacao.b3.com.br") -> Result.success(
+                        HttpResponsePayload(
+                            200,
+                            """{"BizSts":{"cd":"OK"},"Msg":{"dtTm":"2026-11-18 10:00:00"},"Trad":[{"scty":{"SctyQtn":{"curPrc":44.10,"prcFlcn":0.25},"symb":"PETR4"}}]}"""
+                        )
+                    )
+                    else -> Result.success(HttpResponsePayload(404, ""))
+                }
+            }
+        }
+        val stockRoute = CompositeMarketQuoteRemoteDataSource(
+            providers = listOf(
+                BrapiB3StockDataSource(transport),
+                B3QuoteDataSource(transport)
+            )
+        )
+
+        val result = stockRoute.fetchQuote(MarketAssetCatalog.PETR4)
+        assertTrue(result is RemoteQuoteFetchResult.Success)
+        val quote = (result as RemoteQuoteFetchResult.Success).quote
+        assertEquals("B3 (Cotação Pública)", quote.sourceName)
+        assertEquals(44.10, quote.price, 0.001)
+        assertTrue(quote.isDelayed)
+    }
+
+    @Test
+    fun `convertUsdToBrl requires valid USD BRL quote and formats index points vs USD stocks cleanly`() {
+        assertNull(MarketQuoteCalculations.convertUsdToBrl(1436.83, null))
+        assertNull(MarketQuoteCalculations.convertUsdToBrl(1436.83, MarketQuoteUiState(assetCode = MarketAssetCatalog.USD_BRL_CODE, quote = null)))
+
+        val fxState = MarketQuoteUiState(
+            assetCode = MarketAssetCatalog.USD_BRL_CODE,
+            quote = MarketQuoteSnapshot(
+                assetCode = MarketAssetCatalog.USD_BRL_CODE,
+                category = AssetCategory.CURRENCY,
+                baseCurrency = "USD",
+                quoteCurrency = "BRL",
+                modality = QuoteModality.COMMERCIAL,
+                price = 5.50,
+                sourceName = "AwesomeAPI",
+                sourceTimestampEpochMs = 1_000L,
+                fetchedAtEpochMs = 1_000L
+            )
+        )
+        val converted = MarketQuoteCalculations.convertUsdToBrl(1000.0, fxState)
+        assertNotNull(converted)
+        assertEquals(5500.0, converted!!.amountBrl, 0.01)
+        assertEquals("169.816,64 pts", MarketQuoteCalculations.formatPrice(169816.64, AssetCategory.INDEX, "BRL"))
+        assertEquals("US$ 1.436,83", MarketQuoteCalculations.formatPrice(1436.83, AssetCategory.STOCK, "USD"))
+        assertEquals("R$ 43,98", MarketQuoteCalculations.formatPrice(43.98, AssetCategory.STOCK, "BRL"))
     }
 }

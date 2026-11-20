@@ -21,7 +21,8 @@ class MarketQuoteRepository(
     private val store: MarketQuoteStore,
     private val isNetworkAvailable: () -> Boolean,
     private val clock: () -> Long = DateTimeUtils::nowEpochMillis,
-    private val supportedAssets: List<MarketAssetCatalog.AssetDescriptor> = MarketAssetCatalog.SUPPORTED_ASSETS
+    private val supportedAssets: List<MarketAssetCatalog.AssetDescriptor> = MarketAssetCatalog.SUPPORTED_ASSETS,
+    private val onValidQuotesSaved: ((Map<String, MarketQuoteSnapshot>) -> Unit)? = null
 ) {
     private val assetMutexes = ConcurrentHashMap<String, Mutex>()
     private val stateWriteLock = Any()
@@ -99,6 +100,10 @@ class MarketQuoteRepository(
             val result = remoteDataSource.fetchQuote(asset)
             val finalState = applyFetchResult(asset.code, cachedQuote, result, now)
             updateSingleState(asset.code, finalState)
+            val savedQuote = finalState.quote
+            if (!finalState.lastRefreshFailed && !finalState.isOffline && !finalState.isStale && savedQuote != null) {
+                onValidQuotesSaved?.invoke(mapOf(asset.code to savedQuote))
+            }
             finalState
         }
     }
@@ -159,15 +164,24 @@ class MarketQuoteRepository(
 
             val results = remoteDataSource.fetchQuotes(lockedDueAssets)
             val finishedAt = clock()
+            val savedQuotes = mutableMapOf<String, MarketQuoteSnapshot>()
             val resolvedUpdates = lockedDueAssets.associate { asset ->
                 val cachedQuote = store.loadRecord(asset.code)?.lastValidQuote
                 val fetchResult = results[asset.code] ?: RemoteQuoteFetchResult.Failure(
                     reason = FailureReason.INVALID_RESPONSE,
                     detail = "Sem resposta para ${asset.code}"
                 )
-                asset.code to applyFetchResult(asset.code, cachedQuote, fetchResult, finishedAt)
+                val resolvedState = applyFetchResult(asset.code, cachedQuote, fetchResult, finishedAt)
+                val freshQuote = resolvedState.quote
+                if (!resolvedState.lastRefreshFailed && !resolvedState.isOffline && !resolvedState.isStale && freshQuote != null) {
+                    savedQuotes[asset.code] = freshQuote
+                }
+                asset.code to resolvedState
             }
             updateBatchStates(resolvedUpdates)
+            if (savedQuotes.isNotEmpty()) {
+                onValidQuotesSaved?.invoke(savedQuotes)
+            }
         } finally {
             lockedDueAssets.forEach { asset ->
                 runCatching { mutexFor(asset.code).unlock() }
@@ -364,7 +378,10 @@ class MarketQuoteRepository(
     }
 
     companion object {
-        fun createDefault(context: Context): MarketQuoteRepository {
+        fun createDefault(
+            context: Context,
+            onValidQuotesSaved: ((Map<String, MarketQuoteSnapshot>) -> Unit)? = null
+        ): MarketQuoteRepository {
             val appContext = context.applicationContext
             val transport = HttpsUrlConnectionTransport()
             val currencyRoute = CompositeMarketQuoteRemoteDataSource(
@@ -379,16 +396,54 @@ class MarketQuoteRepository(
                     CoinPaprikaCryptoDataSource(transport)
                 )
             )
+            val indexRoute = CompositeMarketQuoteRemoteDataSource(
+                providers = listOf(
+                    B3QuoteDataSource(
+                        transport = transport,
+                        supportedCodes = setOf(MarketAssetCatalog.IBOV_CODE)
+                    ),
+                    CnbcMarketDataSource(
+                        transport = transport,
+                        supportedCodes = setOf(
+                            MarketAssetCatalog.SPX_CODE,
+                            MarketAssetCatalog.IXIC_CODE,
+                            MarketAssetCatalog.IBOV_CODE
+                        )
+                    ),
+                    NasdaqPublicDataSource(transport)
+                )
+            )
+            val stockRoute = CompositeMarketQuoteRemoteDataSource(
+                providers = listOf(
+                    BrapiB3StockDataSource(transport),
+                    CnbcMarketDataSource(
+                        transport = transport,
+                        supportedCodes = setOf(MarketAssetCatalog.MELI_CODE)
+                    ),
+                    B3QuoteDataSource(
+                        transport = transport,
+                        supportedCodes = setOf(
+                            MarketAssetCatalog.PETR4_CODE,
+                            MarketAssetCatalog.VALE3_CODE,
+                            MarketAssetCatalog.ITUB4_CODE
+                        )
+                    ),
+                    NasdaqPublicDataSource(transport)
+                )
+            )
             val remote = CategoryRoutedMarketQuoteRemoteDataSource(
                 routes = mapOf(
                     AssetCategory.CURRENCY to currencyRoute,
-                    AssetCategory.CRYPTO to cryptoRoute
+                    AssetCategory.CRYPTO to cryptoRoute,
+                    AssetCategory.INDEX to indexRoute,
+                    AssetCategory.STOCK to stockRoute
                 )
             )
             return MarketQuoteRepository(
                 remoteDataSource = remote,
                 store = SharedPreferencesMarketQuoteStore(appContext),
-                isNetworkAvailable = { checkNetworkConnected(appContext) }
+                isNetworkAvailable = { checkNetworkConnected(appContext) },
+                onValidQuotesSaved = onValidQuotesSaved
             )
         }
 

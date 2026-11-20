@@ -1158,7 +1158,14 @@ fun BackupScreen(
                                 appendLine("Transações: ${summary.transactionsRestored} · Empréstimos: ${summary.loansRestored}")
                                 appendLine("Orçamentos: ${summary.budgetsRestored} · Metas: ${summary.financialGoalsRestored}")
                                 appendLine("Lembretes: ${summary.remindersRestored} · Rotina: ${summary.routineSettingsRestored} · Briefings: ${summary.briefingHistoryRestored}")
-                                append("Auditoria: ${summary.auditHistoryRestored} · Logs de erro: ${summary.errorLogsRestored}")
+                                appendLine("Auditoria: ${summary.auditHistoryRestored} · Logs de erro: ${summary.errorLogsRestored}")
+                                append(
+                                    if (summary.marketConfigApplied) {
+                                        "Mercado: ${summary.marketFavoritesRestored} favorito(s) · ${summary.marketAlertsRestored} alerta(s)"
+                                    } else {
+                                        "Mercado: configurações locais preservadas (ausente no backup)"
+                                    }
+                                )
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = palette.textPrimary
@@ -1213,6 +1220,14 @@ fun BackupScreen(
                     Text("• Orçamentos: ${preview.budgetsCount} · Metas: ${preview.financialGoalsCount}", color = palette.textSecondary)
                     Text("• Lembretes: ${preview.remindersCount} · Rotina: ${preview.routineSettingsCount} · Briefings: ${preview.briefingHistoryCount}", color = palette.textSecondary)
                     Text("• Auditoria: ${preview.auditHistoryCount} · Logs: ${preview.errorLogsCount}", color = palette.textSecondary)
+                    Text(
+                        text = if (preview.includesMarketConfig) {
+                            "• Mercado: ${preview.marketFavoritesCount} favorito(s) · ${preview.marketAlertsCount} alerta(s)"
+                        } else {
+                            "• Mercado: não incluído neste backup (favoritos e alertas locais preservados)"
+                        },
+                        color = palette.textSecondary
+                    )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Os dados atuais serão substituídos de forma atômica.",
