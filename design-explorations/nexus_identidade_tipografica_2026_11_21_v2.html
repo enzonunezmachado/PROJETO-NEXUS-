@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEXUS — Iteração 2: Refinamento do N (Kinetik Cut) &amp; Home Compacta</title>
+  <style>
+    :root {
+      --bg-page: #050505;
+      --bg-surface: #0C0C0C;
+      --bg-elevated: #121212;
+      --border: #242424;
+      --text-primary: #F2F2F2;
+      --text-secondary: #9A9A9A;
+      --highlight: #FFFFFF;
+      --danger: #E5484D;
+      --warning: #E5A000;
+      --info: #4C8BF5;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 1260px;
+      margin: 0 auto;
+      padding: 28px 20px 72px;
+    }
+
+    .isolation-banner {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--highlight);
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .isolation-banner strong {
+      font-size: 13px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--highlight);
+      display: block;
+    }
+    .isolation-banner span {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn {
+      appearance: none;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .btn:hover { border-color: #4A4A4A; }
+    .btn.active {
+      background: var(--highlight);
+      color: #050505;
+      border-color: var(--highlight);
+      font-weight: 600;
+    }
+
+    header.board-header {
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    header.board-header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    header.board-header p {
+      margin: 0;
+      color: var(--text-secondary);
+      max-width: 860px;
+      font-size: 14px;
+    }
+
+    section { margin-bottom: 48px; }
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 6px;
+      color: var(--highlight);
+    }
+    .section-desc {
+      margin: 0 0 18px;
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      max-width: 880px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+    .card-elevated {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+
+    .meta-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 8px;
+      margin-bottom: 10px;
+    }
+    .meta-tag.rejected {
+      color: var(--danger);
+      border-color: rgba(229, 72, 77, 0.45);
+    }
+    .meta-tag.approved {
+      color: var(--highlight);
+      border-color: rgba(255, 255, 255, 0.35);
+    }
+
+    /* Wordmark & N blocks */
+    .alt-block {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px;
+      margin-bottom: 22px;
+    }
+    .alt-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .alt-header h3 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .alt-header span {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .isolated-wordmark-row {
+      display: grid;
+      grid-template-columns: minmax(170px, 220px) 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    @media (max-width: 720px) {
+      .isolated-wordmark-row { grid-template-columns: 1fr; }
+    }
+
+    .specimen-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 12px;
+    }
+
+    .specimen {
+      border-radius: 12px;
+      padding: 20px 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 118px;
+    }
+    .specimen.dark {
+      background: #050505;
+      border: 1px solid #242424;
+      color: #F2F2F2;
+    }
+    .specimen.light {
+      background: #FFFFFF;
+      border: 1px solid #DCDCDC;
+      color: #111111;
+    }
+    .specimen-caption {
+      font-size: 11px;
+      opacity: 0.65;
+      letter-spacing: 0.04em;
+    }
+
+    .scale-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 26px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      margin: 14px 0;
+    }
+    .scale-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .scale-item small {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .critique-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .critique-grid div {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .critique-grid strong {
+      display: block;
+      color: var(--text-primary);
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+
+    /* App Icon Showcase */
+    .icon-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .icon-stage {
+      background: radial-gradient(circle at 50% 40%, #191919 0%, #090909 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+    }
+    .android-icon-squircle {
+      width: 96px;
+      height: 96px;
+      border-radius: 24px;
+      background: #050505;
+      border: 1px solid #2A2A2A;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+    }
+    .android-icon-circle {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: #050505;
+      border: 1px solid #2A2A2A;
+      display: grid;
+      place-items: center;
+    }
+    .android-icon-small {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: #050505;
+      border: 1px solid #2A2A2A;
+      display: grid;
+      place-items: center;
+    }
+    .icon-size-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    /* Mobile UI Prototypes */
+    .phone-frame {
+      border-radius: 26px;
+      border: 1px solid var(--border);
+      background: var(--bg-page);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      max-width: 390px;
+      width: 100%;
+    }
+    .phone-frame.theme-light {
+      background: #F6F6F6;
+      color: #111111;
+      border-color: #DCDCDC;
+    }
+
+    .phone-status {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 16px 4px;
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      background: #0C0C0C;
+      color: #9A9A9A;
+    }
+    .phone-frame.theme-light .phone-status {
+      background: #FFFFFF;
+      color: #5A5A5A;
+    }
+
+    .phone-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px 10px;
+      background: #0C0C0C;
+      border-bottom: 1px solid #242424;
+      color: #F2F2F2;
+    }
+    .phone-frame.theme-light .phone-topbar {
+      background: #FFFFFF;
+      border-bottom-color: #DCDCDC;
+      color: #111111;
+    }
+    .topbar-brand { display: flex; align-items: center; gap: 8px; }
+    .topbar-icons { display: flex; align-items: center; gap: 12px; opacity: 0.85; }
+    .topbar-icons svg { width: 18px; height: 18px; }
+
+    .phone-body {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .nx-card {
+      background: #0C0C0C;
+      border: 1px solid #242424;
+      border-radius: 14px;
+      padding: 13px;
+    }
+    .nx-card.elevated { background: #121212; }
+    .phone-frame.theme-light .nx-card {
+      background: #FFFFFF;
+      border-color: #DCDCDC;
+    }
+    .phone-frame.theme-light .nx-card.elevated { background: #EDEDED; }
+
+    .nx-alert {
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #121212;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .phone-frame.theme-light .nx-alert { background: #EDEDED; }
+    .nx-alert.danger { border: 1px solid rgba(229, 72, 77, 0.55); }
+    .nx-alert.warning { border: 1px solid rgba(229, 160, 0, 0.55); }
+    .phone-frame.theme-light .nx-alert.danger { border-color: rgba(198, 40, 40, 0.55); }
+    .phone-frame.theme-light .nx-alert.warning { border-color: rgba(178, 106, 0, 0.55); }
+
+    .nx-alert-title { font-size: 12.5px; font-weight: 600; color: #F2F2F2; }
+    .nx-alert-sub { font-size: 11px; color: #9A9A9A; }
+    .phone-frame.theme-light .nx-alert-title { color: #111111; }
+    .phone-frame.theme-light .nx-alert-sub { color: #5A5A5A; }
+
+    .greeting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    /* Saudação compacta e horizontal conforme preferência na v2 */
+    .greeting-v2 {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 20.5px;
+      line-height: 1.24;
+      letter-spacing: -0.015em;
+      font-weight: 600;
+      margin: 0 0 2px;
+    }
+    .greeting-v1-wide {
+      font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+      font-size: 20.5px;
+      line-height: 1.24;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      margin: 0 0 2px;
+    }
+    .greeting-date { font-size: 12px; color: #9A9A9A; }
+    .greeting-quote {
+      margin-top: 6px;
+      font-size: 11.5px;
+      font-style: italic;
+      color: #9A9A9A;
+    }
+    .phone-frame.theme-light .greeting-date,
+    .phone-frame.theme-light .greeting-quote { color: #5A5A5A; }
+
+    .section-hdr {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .section-hdr-title {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+    }
+    .section-hdr-action {
+      font-size: 11.5px;
+      color: #4C8BF5;
+      font-weight: 500;
+    }
+    .phone-frame.theme-light .section-hdr-action { color: #1A73E8; }
+
+    .kpi-label { font-size: 11.5px; color: #9A9A9A; margin-bottom: 2px; }
+    .phone-frame.theme-light .kpi-label { color: #5A5A5A; }
+    .kpi-value {
+      font-size: 19px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+    }
+    .kpi-sub {
+      font-size: 11px;
+      color: #9A9A9A;
+      font-variant-numeric: tabular-nums;
+    }
+    .phone-frame.theme-light .kpi-sub { color: #5A5A5A; }
+
+    .agenda-strip {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .agenda-day {
+      border-radius: 8px;
+      padding: 5px 2px;
+      font-size: 10.5px;
+      font-variant-numeric: tabular-nums;
+      color: #9A9A9A;
+    }
+    .agenda-day.selected {
+      background: #FFFFFF;
+      color: #050505;
+      font-weight: 700;
+    }
+    .phone-frame.theme-light .agenda-day { color: #5A5A5A; }
+    .phone-frame.theme-light .agenda-day.selected {
+      background: #000000;
+      color: #FFFFFF;
+    }
+    .agenda-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 0;
+      border-top: 1px solid #242424;
+      font-size: 12px;
+    }
+    .phone-frame.theme-light .agenda-item { border-top-color: #DCDCDC; }
+    .agenda-time {
+      font-variant-numeric: tabular-nums;
+      color: #9A9A9A;
+      font-size: 11px;
+      min-width: 40px;
+    }
+    .phone-frame.theme-light .agenda-time { color: #5A5A5A; }
+
+    .phone-bottombar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      border-top: 1px solid #242424;
+      background: #0C0C0C;
+      padding: 8px 4px;
+      text-align: center;
+      font-size: 10px;
+      color: #9A9A9A;
+    }
+    .phone-bottombar .active-tab { color: #FFFFFF; font-weight: 600; }
+    .phone-frame.theme-light .phone-bottombar {
+      background: #FFFFFF;
+      border-top-color: #DCDCDC;
+      color: #5A5A5A;
+    }
+    .phone-frame.theme-light .phone-bottombar .active-tab { color: #000000; }
+
+    .home-preview-layout {
+      display: grid;
+      grid-template-columns: minmax(310px, 390px) 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 860px) {
+      .home-preview-layout { grid-template-columns: 1fr; }
+    }
+
+    .spec-list {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 13.5px;
+      color: var(--text-secondary);
+    }
+    .spec-list li { margin-bottom: 8px; }
+    .spec-list strong { color: var(--text-primary); }
+
+    .launcher-dock {
+      background: #141414;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 14px;
+    }
+    .launcher-app-tile {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-primary);
+    }
+
+    .diff-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="isolation-banner">
+      <div>
+        <strong>Iteração 2 (Protótipo Isolado) — NEXUS-AI-2026-11-21-ROTACAO-IDENTIDADE-01</strong>
+        <span>Arquivo autônomo em <code>design-explorations/</code>. Iteração 1 (<code>nexus_identidade_tipografica_2026_11_21.html</code>) preservada intacta; app Android de produção inalterado.</span>
+      </div>
+      <div class="toolbar">
+        <button class="btn active" id="btn-theme-dark" onclick="setPreviewTheme('dark')">Tema Escuro (#050505)</button>
+        <button class="btn" id="btn-theme-light" onclick="setPreviewTheme('light')">Tema Claro (#F6F6F6)</button>
+      </div>
+    </div>
+
+    <header class="board-header">
+      <h1>NEXUS — Refinamento da Kinetik Cut (Redesenho do N + Home Compacta)</h1>
+      <p>
+        Mantém intactas as letras <strong>E, X, U, S</strong> aprovadas da Proposta 1 (Kinetik Cut) e apresenta <strong>três novas construções unificadas para a letra N</strong>
+        — com diagonal contínua, cortes arquitetônicos bem resolvidos e prévia como símbolo do ícone do aplicativo — além da combinação solicitada para a <strong>Home</strong>.
+      </p>
+    </header>
+
+    <!-- 1. COMPARAÇÃO DIRETA V1 vs V2 -->
+    <section>
+      <h2 class="section-title">1. Evolução da Iteração 1 → Iteração 2 (O que mudou)</h2>
+      <p class="section-desc">
+        Comparação objetiva entre o que foi descartado da primeira exploração e as correções aplicadas nesta segunda iteração.
+      </p>
+
+      <div class="diff-row">
+        <div class="card">
+          <span class="meta-tag rejected">Iteração 1 — Rejeitado no N</span>
+          <div style="display:flex; align-items:center; gap:16px; margin:8px 0 10px;">
+            <div style="background:#050505; border:1px solid #242424; border-radius:10px; padding:12px;">
+              <svg width="48" height="48" viewBox="10 8 48 48" fill="#F2F2F2">
+                <path d="M12,54 V10 H24.5 L34.8,28.1 L28.2,34.7 L21.5,22.9 V54 Z"/>
+                <path d="M56,10 V54 H43.5 L33.2,35.9 L39.8,29.3 L46.5,41.1 V10 Z"/>
+              </svg>
+            </div>
+            <div style="font-size:13px; color:var(--text-secondary);">
+              A fenda transversal no meio cortava a diagonal ao meio, passando sensação de duas peças soltas se aproximando.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="meta-tag approved">Iteração 2 — Direção do Novo N</span>
+          <div style="font-size:13px; color:var(--text-secondary);">
+            Nas três alternativas abaixo, a <strong style="color:var(--text-primary);">diagonal central permanece 100% contínua e estruturalmente conectada</strong> às duas hastes verticais. Os cortes migram para chanfros de vértice, degraus de encaixe e terminais angulares que conversam com <code>E</code>, <code>X</code>, <code>U</code> e <code>S</code>.
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="meta-tag approved">Iteração 2 — Home Combinada</span>
+          <div style="font-size:13px; color:var(--text-secondary);">
+            <strong style="color:var(--text-primary);">Saudação compacta da amostra 2:</strong> <code>"Boa tarde, Gabriel Ferreira"</code> em uma composição horizontal enxuta (nome ao lado da saudação, sem tracking excessivo da amostra 1 e sem quebra vertical da amostra 3) + títulos de seção em escrita convencional (sem caixa alta integral).
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. TRÊS NOVAS ALTERNATIVAS DE N + INTEGRAÇÃO NO WORDMARK -->
+    <section>
+      <h2 class="section-title">2. Três Novas Alternativas da Letra N &amp; Integração em "NEXUS"</h2>
+      <p class="section-desc">
+        Todas as letras <strong>E, X, U, S</strong> foram preservadas da Kinetik Cut original. Cada bloco mostra o <strong>N isolado</strong>, o <strong>wordmark NEXUS completo</strong> em
+        Preto no Branco e Branco no Preto, e a <strong>escala de legibilidade</strong> (30px, 19px TopBar, 13px micro).
+      </p>
+
+      <div id="alternatives-container"></div>
+    </section>
+
+    <!-- 3. PRÉVIA DO N COMO ÍCONE DO APLICATIVO ANDROID -->
+    <section>
+      <h2 class="section-title">3. Relação Wordmark ↔ Ícone do Aplicativo (Símbolo N Isolado)</h2>
+      <p class="section-desc">
+        O <strong>N</strong> escolhido será também o símbolo do ícone do NEXUS (branco sobre fundo preto, composição quadrada Android). Abaixo estão as três alternativas avaliadas como emblema autônomo — sem alterar <code>ic_launcher_nexus.xml</code> nesta etapa.
+      </p>
+
+      <div class="grid-3" id="icon-grid"></div>
+    </section>
+
+    <!-- 4. APLICAÇÃO NA HOME CONFORME PREFERÊNCIAS COMBINADAS -->
+    <section>
+      <h2 class="section-title">4. Aplicação na Home — Composição Compacta Combinada</h2>
+      <p class="section-desc">
+        Prévia interativa combinando todas as preferências informadas. Selecione qual alternativa do N deseja inspecionar na TopBar e no ícone associado à tela:
+      </p>
+
+      <div class="toolbar" style="margin-bottom: 18px;">
+        <button class="btn active" id="btn-ui-1" onclick="selectActiveN(1)">Testar Alternativa N-1 (Monólito Chanfrado)</button>
+        <button class="btn" id="btn-ui-2" onclick="selectActiveN(2)">Testar Alternativa N-2 (Ponte em Degrau)</button>
+        <button class="btn" id="btn-ui-3" onclick="selectActiveN(3)">Testar Alternativa N-3 (Lâmina &amp; Entalhe)</button>
+      </div>
+
+      <div class="home-preview-layout">
+        <!-- PHONE PREVIEW V2 -->
+        <div class="phone-frame" id="phone-v2">
+          <div class="phone-status"><span>14:32</span><span>NEXUS Preview v2 · 100%</span></div>
+          <div class="phone-topbar">
+            <div class="topbar-brand" id="v2-topbar-wm"></div>
+            <div class="topbar-icons">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 17 9 11 13 15 21 7"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+            </div>
+          </div>
+          <div class="phone-body">
+            <!-- Saudação com espaçamento agradável da v1 #2, nome ao lado, sem quebra vertical -->
+            <div class="greeting-row">
+              <div>
+                <h3 class="greeting-v2">Boa tarde, Gabriel Ferreira</h3>
+                <div class="greeting-date">Sábado, 21/11/2026</div>
+                <div class="greeting-quote">"A disciplina silenciosa vence a pressa."</div>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9A9A9A" stroke-width="1.7" style="flex-shrink:0; margin-top:4px;">
+                <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/>
+              </svg>
+            </div>
+
+            <!-- Alertas semânticos preservados -->
+            <div class="nx-alert danger">
+              <span style="color:#E5484D; font-weight:700; font-size:15px;">!</span>
+              <div>
+                <div class="nx-alert-title">Atenção financeira</div>
+                <div class="nx-alert-sub">Contas vencidas: R$ 420,00 · 1 fatura em atraso</div>
+              </div>
+            </div>
+            <div class="nx-alert warning">
+              <span style="color:#E5A000; font-weight:700; font-size:14px;">▲</span>
+              <div>
+                <div class="nx-alert-title">Conflito de horário hoje</div>
+                <div class="nx-alert-sub">2 compromisso(s) com sobreposição na Agenda.</div>
+              </div>
+            </div>
+
+            <!-- Demais blocos da Home conforme Proposta 1 (escrita convencional, sem CAIXA ALTA) -->
+            <div class="nx-card elevated">
+              <div class="section-hdr">
+                <span class="section-hdr-title">Tarefas do mês</span>
+                <span class="section-hdr-action">Ver todas</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:12px; font-variant-numeric:tabular-nums;">
+                <span>14 concluídas · 5 em andamento</span>
+                <span style="color:#E5484D; font-weight:600;">2 atrasadas</span>
+              </div>
+            </div>
+
+            <div class="nx-card elevated">
+              <div class="kpi-label">Resultado do mês (realizado)</div>
+              <div class="kpi-value">R$ 1.840,00</div>
+              <div class="kpi-sub">Saldo informado: R$ 2.310,00</div>
+            </div>
+
+            <div class="nx-card">
+              <div class="section-hdr">
+                <span class="section-hdr-title">Agenda · Semana</span>
+                <span class="section-hdr-action">Hoje</span>
+              </div>
+              <div class="agenda-strip">
+                <div class="agenda-day">Seg<br/>16</div>
+                <div class="agenda-day">Ter<br/>17</div>
+                <div class="agenda-day">Qua<br/>18</div>
+                <div class="agenda-day">Qui<br/>19</div>
+                <div class="agenda-day">Sex<br/>20</div>
+                <div class="agenda-day selected">Sáb<br/>21</div>
+                <div class="agenda-day">Dom<br/>22</div>
+              </div>
+              <div class="agenda-item"><span class="agenda-time">14:00</span><span style="flex:1;">Entrega placa celular cliente</span></div>
+              <div class="agenda-item"><span class="agenda-time">16:30</span><span style="flex:1;">Estudo Sistemas Embarcados</span></div>
+            </div>
+          </div>
+          <div class="phone-bottombar">
+            <span>Tarefas</span><span>Agenda</span><span class="active-tab">Início</span><span>Finanças</span><span>Eventos</span>
+          </div>
+        </div>
+
+        <!-- DETALHAMENTO + COMPARAÇÃO DA SAUDADÃO V1 vs V2 -->
+        <div>
+          <div class="card" style="margin-bottom:16px;">
+            <span class="meta-tag approved">Checklist da Composição Aplicada</span>
+            <ul class="spec-list">
+              <li><strong>TopBar limpa (zero verde):</strong> apenas o wordmark Kinetik Cut com a alternativa de <code>N</code> selecionada em <code>19–20px</code>, acompanhado do ícone branco-no-preto correspondente abaixo.</li>
+              <li><strong>Saudação horizontal compacta:</strong> <code>"Boa tarde, Gabriel Ferreira"</code> com espaçamento natural e fechado (<code>letter-spacing: -0.015em</code>), mantendo o nome ao lado da saudação sem aumentar a altura vertical da Home.</li>
+              <li><strong>Títulos de seção em escrita convencional:</strong> <code>"Tarefas do mês"</code>, <code>"Resultado do mês (realizado)"</code> e <code>"Agenda · Semana"</code> preservam maiúsculas e minúsculas naturais (sem caixa alta integral).</li>
+              <li><strong>Leitura funcional e alertas preservados:</strong> números tabulares (<code>tnum</code>) + alertas semânticos <strong>vermelho</strong> (vencimentos/atrasos) e <strong>amarelo</strong> (conflito na Agenda).</li>
+            </ul>
+
+            <div class="launcher-dock">
+              <div class="launcher-app-tile">
+                <div class="android-icon-circle" id="v2-paired-icon" style="width:54px; height:54px; border-radius:14px;"></div>
+                <span>NEXUS (Novo)</span>
+              </div>
+              <div style="width:1px; height:48px; background:var(--border);"></div>
+              <div class="launcher-app-tile" style="opacity:0.75;">
+                <div class="android-icon-circle" style="width:54px; height:54px; border-radius:14px;">
+                  <svg width="34" height="34" viewBox="0 0 108 108">
+                    <path d="M34,74V34L74,74V34" fill="none" stroke="#F2F2F2" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+                <span>Atual (Ref.)</span>
+              </div>
+              <div style="font-size:12px; color:var(--text-secondary); flex:1;">
+                Comparação rápida do ícone no launcher Android lado a lado com o ícone atual (<code>ic_launcher_nexus.xml</code>, preservado sem edição).
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <span class="meta-tag">Comparação Visual da Saudação: v1 → v2</span>
+            <div style="display:flex; flex-direction:column; gap:10px; font-size:13px;">
+              <div class="card-elevated" style="padding:12px 14px;">
+                <div style="font-size:11px; color:var(--danger); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.04em;">v1 — Hierarquia 1 (espaçamento excessivo: +0.06em)</div>
+                <div class="greeting-v1-wide" style="font-size:18px;">Boa tarde, Gabriel Ferreira</div>
+              </div>
+              <div class="card-elevated" style="padding:12px 14px;">
+                <div style="font-size:11px; color:var(--danger); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.04em;">v1 — Hierarquia 3 (quebra vertical em 2 linhas, ocupa mais altura)</div>
+                <div style="font-size:13px; letter-spacing:0.08em; text-transform:uppercase; opacity:0.86;">BOA TARDE,</div>
+                <div class="greeting-v2" style="font-size:19px;">Gabriel Ferreira</div>
+              </div>
+              <div class="card-elevated" style="padding:12px 14px; border-color:rgba(255,255,255,0.4);">
+                <div style="font-size:11px; color:var(--highlight); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.04em;">v2 — Combinada (horizontal compacta, espaçamento natural -0.015em)</div>
+                <div class="greeting-v2" style="font-size:19px;">Boa tarde, Gabriel Ferreira</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // Letras E, X, U, S preservadas exatamente da Proposta 1 (Kinetik Cut)
+    const SHARED_EXUS = [
+      // E
+      "M74,10 H83.5 V54 H74 Z",
+      "M87,10 H118 V18.5 H87 Z",
+      "M87,27.8 H112 L108.5,36.2 H87 Z",
+      "M87,45.5 H118 V54 H87 Z",
+      // X
+      "M136,10 H147.5 L182,54 H170.5 Z",
+      "M170.5,10 H182 L166.9,29.1 L161.2,21.8 Z",
+      "M156.8,42.2 L151.1,34.9 L136,54 H147.5 Z",
+      // U
+      "M200,10 H209.5 V40.5 Q209.5,45.5 214.5,45.5 H229.5 Q234.5,45.5 234.5,40.5 V10 H244 V42 Q244,54 232,54 H212 Q200,54 200,42 Z",
+      // S
+      "M306,10 H274 Q262,10 262,22 V25.5 Q262,36 274,36 H292.5 Q296.5,36 296.5,40 V41.5 Q296.5,45.5 292.5,45.5 H265.5 L262,54 H294 Q306,54 306,42 V38.5 Q306,28 294,28 H275.5 Q271.5,28 271.5,24 V22.5 Q271.5,18.5 275.5,18.5 H302.5 Z"
+    ];
+
+    const N_ALTERNATIVES = {
+      1: {
+        id: 1,
+        title: "Alternativa N-1 — Monólito Chanfrado (Bevel & Vertex Flow)",
+        subtitle: "Sólido contínuo · Chanfros a 45° + terminais em ângulo do S",
+        path: "M12,54 L12,17 L19,10 H24.8 L44.8,38.6 H46.5 V13.5 L56,10 V47 L49,54 H43.2 L23.2,25.4 H21.5 V50.5 Z",
+        notes: {
+          construcao: "Silhueta única e contínua sem quebras internas. A diagonal liga ambas as hastes com espessura óptica calibrada (~10.1u), enquanto os vértices externos recebem chanfros a 45° e as extremidades internas repetem o corte angular do S.",
+          equilibrio: "Transmite dinamismo e continuidade fluida; os micro-degraus internos nos encontros em V evitam acúmulo escuro ao reduzir para 14–18px.",
+          icone: "Em formato isolado (96px a 24px), a combinação de cantos chanfrados externos e pontas internas diagonais cria silhueta própria sem depender de recortes profundos."
+        }
+      },
+      2: {
+        id: 2,
+        title: "Alternativa N-2 — Ponte em Degrau (Stepped Bridge)",
+        subtitle: "Colunas verticais íntegras + diagonal contínua recuada 4.5u",
+        path: "M12,54 V10 H21.5 V14.5 L46.5,36.5 V10 H56 V54 H46.5 V49.5 L21.5,27.5 V54 Z",
+        notes: {
+          construcao: "As duas colunas verticais preservam altura total (10–54) com topos e bases ortogonais (90°). A diagonal contínua encaixa-se 4.5u recuada do topo esquerdo e da base direita, gerando dois degraus arquitetônicos simétricos.",
+          equilibrio: "Conversa diretamente com o ritmo ortogonal e os recortes retangulares do E; oferece altíssima nitidez e legibilidade mesmo abaixo de 13px.",
+          icone: "Funciona com firmeza arquitetônica em quadrado Android: os degraus superior esquerdo e inferior direito assinam a geometria mesmo em escalas muito pequenas."
+        }
+      },
+      3: {
+        id: 3,
+        title: "Alternativa N-3 — Lâmina & Entalhe de Ombro (Notched Shoulder)",
+        subtitle: "Entalhe em L nos cantos externos + pontas chanfradas a 45°",
+        path: "M12,54 L12,15 H16 V10 H24.5 L46.5,40.5 V19.5 L56,10 V49 H52 V54 H43.5 L21.5,23.5 V44.5 Z",
+        notes: {
+          construcao: "Diagonal 100% contínua com dois recursos geométricos combinados: pontas inferiores/superiores internas cortadas a 45° (ecoando o ângulo do X) e dois entalhes escalonados em L nos cantos externos superior esquerdo e inferior direito.",
+          equilibrio: "Mais marcante e autoral que o N-1 nos ombros externos; mantém peso estrutural forte na barra superior, embora os entalhes de 4u×5u suavizem abaixo de 12px.",
+          icone: "Assinatura visual muito distinta como ícone isolado — os entalhes em degrau nos ombros externos diferenciam o emblema imediatamente de um N tipográfico comum."
+        }
+      }
+    };
+
+    function renderNSvg(altId, sizePx) {
+      const alt = N_ALTERNATIVES[altId];
+      return `<svg width="${sizePx}" height="${sizePx}" viewBox="6 4 56 56" fill="currentColor" aria-label="Letra N Alternativa ${altId}">
+        <path d="${alt.path}"/>
+      </svg>`;
+    }
+
+    function renderWordmarkSvg(altId, heightPx) {
+      const alt = N_ALTERNATIVES[altId];
+      const w = Math.round((heightPx / 64) * 318);
+      const exus = SHARED_EXUS.map(d => `<path d="${d}"/>`).join("");
+      return `<svg width="${w}" height="${heightPx}" viewBox="0 0 318 64" fill="currentColor" aria-label="NEXUS Alternativa ${altId}">
+        <path d="${alt.path}"/>
+        ${exus}
+      </svg>`;
+    }
+
+    function renderAlternatives() {
+      const container = document.getElementById("alternatives-container");
+      container.innerHTML = [1, 2, 3].map(id => {
+        const alt = N_ALTERNATIVES[id];
+        return `
+          <div class="alt-block">
+            <div class="alt-header">
+              <h3>${alt.title}</h3>
+              <span>${alt.subtitle}</span>
+            </div>
+
+            <div class="isolated-wordmark-row">
+              <!-- N isolado P&B / B&P -->
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <div class="specimen dark" style="min-height:96px; padding:14px;">
+                  ${renderNSvg(id, 54)}
+                  <span class="specimen-caption">N isolado · Branco/Preto</span>
+                </div>
+                <div class="specimen light" style="min-height:96px; padding:14px;">
+                  ${renderNSvg(id, 54)}
+                  <span class="specimen-caption">N isolado · Preto/Branco</span>
+                </div>
+              </div>
+
+              <!-- Wordmark NEXUS completo -->
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <div class="specimen dark" style="min-height:96px; padding:16px;">
+                  ${renderWordmarkSvg(id, 46)}
+                  <span class="specimen-caption">Wordmark NEXUS · Branco (#F2F2F2) sobre Preto (#050505)</span>
+                </div>
+                <div class="specimen light" style="min-height:96px; padding:16px;">
+                  ${renderWordmarkSvg(id, 46)}
+                  <span class="specimen-caption">Wordmark NEXUS · Preto (#111111) sobre Branco (#FFFFFF)</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="scale-strip">
+              <div class="scale-item">
+                <div style="color:var(--text-primary);">${renderWordmarkSvg(id, 30)}</div>
+                <small>30px (Splash / Sobre)</small>
+              </div>
+              <div class="scale-item">
+                <div style="color:var(--text-primary);">${renderWordmarkSvg(id, 19)}</div>
+                <small>19px (TopBar Android)</small>
+              </div>
+              <div class="scale-item">
+                <div style="color:var(--text-primary);">${renderWordmarkSvg(id, 13)}</div>
+                <small>13px (Micro-escala limite)</small>
+              </div>
+            </div>
+
+            <div class="critique-grid">
+              <div><strong>Construção Geométrica</strong>${alt.notes.construcao}</div>
+              <div><strong>Integração com E, X, U, S</strong>${alt.notes.equilibrio}</div>
+              <div><strong>Comportamento como Símbolo</strong>${alt.notes.icone}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderIconGrid() {
+      const grid = document.getElementById("icon-grid");
+      grid.innerHTML = [1, 2, 3].map(id => {
+        const alt = N_ALTERNATIVES[id];
+        return `
+          <div class="icon-card">
+            <div>
+              <span class="meta-tag">Símbolo N-${id}</span>
+              <h3 style="margin:0; font-size:15px; font-weight:600;">${alt.title.split("—")[1].trim()}</h3>
+            </div>
+            <div class="icon-stage">
+              <div class="icon-size-col">
+                <div class="android-icon-squircle" style="color:#F2F2F2;">
+                  ${renderNSvg(id, 52)}
+                </div>
+                <span>96px · Quadrado Adaptativo</span>
+              </div>
+              <div class="icon-size-col">
+                <div class="android-icon-circle" style="color:#F2F2F2;">
+                  ${renderNSvg(id, 34)}
+                </div>
+                <span>64px · Circular</span>
+              </div>
+              <div class="icon-size-col">
+                <div class="android-icon-small" style="color:#F2F2F2;">
+                  ${renderNSvg(id, 21)}
+                </div>
+                <span>38px · Launcher</span>
+              </div>
+            </div>
+            <div style="font-size:12.5px; color:var(--text-secondary);">
+              <strong style="color:var(--text-primary);">Paridade com o wordmark:</strong>
+              a proporção interna de haste e diagonal do ícone é idêntica à primeira letra de <code>NEXUS</code>, garantindo reconhecimento imediato sem depender do texto completo.
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function selectActiveN(id) {
+      [1, 2, 3].forEach(k => {
+        document.getElementById(`btn-ui-${k}`).classList.toggle("active", k === id);
+      });
+      document.getElementById("v2-topbar-wm").innerHTML = renderWordmarkSvg(id, 19);
+      document.getElementById("v2-paired-icon").innerHTML = `<span style="color:#F2F2F2; display:grid; place-items:center;">${renderNSvg(id, 30)}</span>`;
+    }
+
+    function setPreviewTheme(mode) {
+      const isLight = mode === "light";
+      document.getElementById("btn-theme-dark").classList.toggle("active", !isLight);
+      document.getElementById("btn-theme-light").classList.toggle("active", isLight);
+      document.getElementById("phone-v2").classList.toggle("theme-light", isLight);
+    }
+
+    renderAlternatives();
+    renderIconGrid();
+    selectActiveN(1);
+  </script>
+</body>
+</html>

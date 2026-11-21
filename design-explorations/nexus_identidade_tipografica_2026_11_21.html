@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEXUS — Exploração Isolada: Identidade Tipográfica &amp; Hierarquia (COR-001)</title>
+  <style>
+    :root {
+      --bg-page: #050505;
+      --bg-surface: #0C0C0C;
+      --bg-elevated: #121212;
+      --border: #242424;
+      --text-primary: #F2F2F2;
+      --text-secondary: #9A9A9A;
+      --highlight: #FFFFFF;
+      --danger: #E5484D;
+      --warning: #E5A000;
+      --info: #4C8BF5;
+      --positive-neutral: #D4D8DF;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 28px 20px 64px;
+    }
+
+    .isolation-banner {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--highlight);
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .isolation-banner strong {
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--highlight);
+      display: block;
+    }
+    .isolation-banner span {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .btn {
+      appearance: none;
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .btn:hover { border-color: #4A4A4A; }
+    .btn.active {
+      background: var(--highlight);
+      color: #050505;
+      border-color: var(--highlight);
+      font-weight: 600;
+    }
+
+    header.board-header {
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    header.board-header h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    header.board-header p {
+      margin: 0;
+      color: var(--text-secondary);
+      max-width: 820px;
+      font-size: 14px;
+    }
+
+    section {
+      margin-bottom: 44px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 6px;
+      color: var(--highlight);
+    }
+    .section-desc {
+      margin: 0 0 18px;
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      max-width: 840px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+    .card-elevated {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+
+    .meta-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px 8px;
+      margin-bottom: 10px;
+    }
+    .meta-tag.warn {
+      color: var(--danger);
+      border-color: rgba(229, 72, 77, 0.45);
+    }
+    .meta-tag.ok {
+      color: var(--highlight);
+      border-color: rgba(255, 255, 255, 0.35);
+    }
+
+    /* Diagnostic COR-001 TopBar comparison */
+    .topbar-sim {
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+    }
+    .topbar-sim.light {
+      background: #FFFFFF;
+      border-color: #DCDCDC;
+      color: #111111;
+    }
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .topbar-icons {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      opacity: 0.85;
+    }
+    .topbar-icons svg { width: 18px; height: 18px; }
+
+    .icon-compatibility-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .launcher-box {
+      width: 68px;
+      height: 68px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      flex-shrink: 0;
+      background: #050505;
+      display: grid;
+      place-items: center;
+    }
+
+    /* Wordmark Cards */
+    .wordmark-block {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .wordmark-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .wordmark-header h3 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .wordmark-header span {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .specimen-pair {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .specimen {
+      border-radius: 12px;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      min-height: 128px;
+    }
+    .specimen.dark {
+      background: #050505;
+      border: 1px solid #242424;
+      color: #F2F2F2;
+    }
+    .specimen.light {
+      background: #FFFFFF;
+      border: 1px solid #DCDCDC;
+      color: #111111;
+    }
+    .specimen-caption {
+      font-size: 11px;
+      opacity: 0.65;
+      letter-spacing: 0.04em;
+    }
+
+    .scale-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 24px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+    .scale-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .scale-item small {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .critique-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .critique-grid div {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .critique-grid strong {
+      display: block;
+      color: var(--text-primary);
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+
+    /* Mobile UI Prototypes */
+    .phone-frame {
+      border-radius: 26px;
+      border: 1px solid var(--border);
+      background: var(--bg-page);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+    .phone-frame.theme-light {
+      background: #F6F6F6;
+      color: #111111;
+      border-color: #DCDCDC;
+    }
+
+    .phone-status {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 16px 4px;
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      background: #0C0C0C;
+      color: #9A9A9A;
+    }
+    .phone-frame.theme-light .phone-status {
+      background: #FFFFFF;
+      color: #5A5A5A;
+    }
+
+    .phone-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px 10px;
+      background: #0C0C0C;
+      border-bottom: 1px solid #242424;
+      color: #F2F2F2;
+    }
+    .phone-frame.theme-light .phone-topbar {
+      background: #FFFFFF;
+      border-bottom-color: #DCDCDC;
+      color: #111111;
+    }
+
+    .phone-body {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .nx-card {
+      background: #0C0C0C;
+      border: 1px solid #242424;
+      border-radius: 14px;
+      padding: 13px;
+    }
+    .nx-card.elevated { background: #121212; }
+    .phone-frame.theme-light .nx-card {
+      background: #FFFFFF;
+      border-color: #DCDCDC;
+    }
+    .phone-frame.theme-light .nx-card.elevated {
+      background: #EDEDED;
+    }
+
+    .nx-alert {
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #121212;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .phone-frame.theme-light .nx-alert {
+      background: #EDEDED;
+    }
+    .nx-alert.danger { border: 1px solid rgba(229, 72, 77, 0.55); }
+    .nx-alert.warning { border: 1px solid rgba(229, 160, 0, 0.55); }
+    .phone-frame.theme-light .nx-alert.danger { border-color: rgba(198, 40, 40, 0.55); }
+    .phone-frame.theme-light .nx-alert.warning { border-color: rgba(178, 106, 0, 0.55); }
+
+    .nx-alert-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #F2F2F2;
+    }
+    .nx-alert-sub {
+      font-size: 11px;
+      color: #9A9A9A;
+    }
+    .phone-frame.theme-light .nx-alert-title { color: #111111; }
+    .phone-frame.theme-light .nx-alert-sub { color: #5A5A5A; }
+
+    /* Typographic accent simulations (monochrome, zero green) */
+    .accent-type-geo {
+      font-family: "Space Grotesk", "Eurostile", "Bank Gothic", "Segoe UI", system-ui, sans-serif;
+      letter-spacing: 0.04em;
+      font-weight: 600;
+      text-transform: none;
+    }
+    .accent-type-editorial {
+      font-family: "Instrument Serif", "Didot", "Bodoni MT", "Georgia", serif;
+      letter-spacing: -0.01em;
+      font-weight: 600;
+    }
+    .accent-section-caps {
+      font-size: 13px;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .standard-ui-text {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      letter-spacing: -0.015em;
+      font-weight: 600;
+    }
+
+    .greeting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .greeting-title {
+      font-size: 21px;
+      line-height: 1.24;
+      margin: 0 0 2px;
+    }
+    .greeting-date {
+      font-size: 12px;
+      color: #9A9A9A;
+    }
+    .greeting-quote {
+      margin-top: 6px;
+      font-size: 11.5px;
+      font-style: italic;
+      color: #9A9A9A;
+    }
+    .phone-frame.theme-light .greeting-date,
+    .phone-frame.theme-light .greeting-quote {
+      color: #5A5A5A;
+    }
+
+    .kpi-label {
+      font-size: 11.5px;
+      color: #9A9A9A;
+      margin-bottom: 2px;
+    }
+    .phone-frame.theme-light .kpi-label { color: #5A5A5A; }
+    .kpi-value {
+      font-size: 19px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+    }
+    .kpi-sub {
+      font-size: 11px;
+      color: #9A9A9A;
+      font-variant-numeric: tabular-nums;
+    }
+    .phone-frame.theme-light .kpi-sub { color: #5A5A5A; }
+
+    .section-hdr {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .section-hdr-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .section-hdr-action {
+      font-size: 11.5px;
+      color: #4C8BF5;
+      font-weight: 500;
+    }
+    .phone-frame.theme-light .section-hdr-action { color: #1A73E8; }
+
+    .agenda-strip {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .agenda-day {
+      border-radius: 8px;
+      padding: 5px 2px;
+      font-size: 10.5px;
+      font-variant-numeric: tabular-nums;
+      color: #9A9A9A;
+    }
+    .agenda-day.selected {
+      background: #FFFFFF;
+      color: #050505;
+      font-weight: 700;
+    }
+    .phone-frame.theme-light .agenda-day { color: #5A5A5A; }
+    .phone-frame.theme-light .agenda-day.selected {
+      background: #000000;
+      color: #FFFFFF;
+    }
+
+    .agenda-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 0;
+      border-top: 1px solid #242424;
+      font-size: 12px;
+    }
+    .phone-frame.theme-light .agenda-item { border-top-color: #DCDCDC; }
+    .agenda-time {
+      font-variant-numeric: tabular-nums;
+      color: #9A9A9A;
+      font-size: 11px;
+      min-width: 40px;
+    }
+    .phone-frame.theme-light .agenda-time { color: #5A5A5A; }
+
+    .phone-bottombar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      border-top: 1px solid #242424;
+      background: #0C0C0C;
+      padding: 8px 4px;
+      text-align: center;
+      font-size: 10px;
+      color: #9A9A9A;
+    }
+    .phone-bottombar .active-tab {
+      color: #FFFFFF;
+      font-weight: 600;
+    }
+    .phone-frame.theme-light .phone-bottombar {
+      background: #FFFFFF;
+      border-top-color: #DCDCDC;
+      color: #5A5A5A;
+    }
+    .phone-frame.theme-light .phone-bottombar .active-tab { color: #000000; }
+
+    .hierarchy-meta {
+      padding: 14px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-surface);
+      font-size: 12.5px;
+      color: var(--text-secondary);
+    }
+    .phone-frame.theme-light .hierarchy-meta {
+      background: #FFFFFF;
+      border-top-color: #DCDCDC;
+      color: #5A5A5A;
+    }
+    .hierarchy-meta strong {
+      display: block;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+    .phone-frame.theme-light .hierarchy-meta strong { color: #111111; }
+
+    .rec-badge {
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      border: 1px solid currentColor;
+      border-radius: 5px;
+      padding: 1px 6px;
+      margin-bottom: 6px;
+    }
+
+    table.compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    table.compare-table th, table.compare-table td {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    table.compare-table th {
+      background: var(--bg-elevated);
+      color: var(--highlight);
+      font-weight: 600;
+    }
+    table.compare-table td { color: var(--text-secondary); }
+    table.compare-table td strong { color: var(--text-primary); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="isolation-banner">
+      <div>
+        <strong>Protótipo Exploratório Isolado — NEXUS-AI-2026-11-21-ROTACAO-IDENTIDADE-01</strong>
+        <span>Artefato autônomo fora de <code>app/src/</code> e <code>docs/</code>. Nenhuma alteração definitiva aplicada ao aplicativo Android.</span>
+      </div>
+      <div class="toolbar">
+        <button class="btn active" id="btn-theme-dark" onclick="setPreviewTheme('dark')">Simular Tema Escuro (#050505)</button>
+        <button class="btn" id="btn-theme-light" onclick="setPreviewTheme('light')">Simular Tema Claro (#F6F6F6)</button>
+      </div>
+    </div>
+
+    <header class="board-header">
+      <h1>Exploração da Identidade Tipográfica NEXUS (COR-001)</h1>
+      <p>
+        Estudo monocromático P&amp;B (<strong>zero verde</strong> na marca e na tipografia de identidade), preservando o ícone atual do aplicativo
+        (<code>ic_launcher_nexus.xml</code>), os alertas semânticos da Home (<strong>vermelho</strong> para atrasos/vencimentos e
+        <strong>amarelo</strong> para conflito de horário) e a clareza da Agenda.
+      </p>
+    </header>
+
+    <!-- 1. DIAGNÓSTICO COR-001 E COMPATIBILIDADE COM ÍCONE -->
+    <section>
+      <h2 class="section-title">1. Diagnóstico do COR-001 &amp; Compatibilidade com o Ícone Atual</h2>
+      <p class="section-desc">
+        Em <code>MainActivity.kt:493-509</code>, a TopBar renderiza <code>NexusMonogramIcon(tint = palette.accentNeon)</code> seguido do texto <code>"NEXUS"</code>,
+        criando redundância visual (<em>[N verde] NEXUS</em>) e quebrando a sobriedade monocromática da marca. Abaixo está a comparação direta e a convivência com o ícone branco-no-preto preservado.
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <span class="meta-tag warn">Atual — COR-001 (Redundância + Verde)</span>
+          <div style="font-size:13px; color:var(--text-secondary);">
+            <code>NexusMonogramIcon</code> em <code>#7CFFB2</code> (Dark) / <code>#0E9F63</code> (Light) ao lado do wordmark <code>NEXUS</code>.
+          </div>
+          <div class="topbar-sim">
+            <div class="topbar-brand">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M4.3 20.6V3.4L19.7 20.6V3.4" stroke="#7CFFB2" stroke-width="3.6" stroke-linecap="square" stroke-linejoin="miter"/>
+              </svg>
+              <span style="font-weight:600; font-size:16px; letter-spacing:1.6px; color:#FFFFFF;">NEXUS</span>
+            </div>
+            <div class="topbar-icons">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 17 9 11 13 15 21 7"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="meta-tag ok">Direção Proposta — Wordmark Monocromático + Ícone Preservado</span>
+          <div style="font-size:13px; color:var(--text-secondary);">
+            Remoção do monograma verde na TopBar; aplicação direta do wordmark geométrico monocromático, em sintonia com o ícone atual <code>ic_launcher_nexus.xml</code>.
+          </div>
+          <div class="icon-compatibility-row">
+            <div class="launcher-box" title="ic_launcher_nexus.xml intacto (#050505 + #F2F2F2)">
+              <svg width="56" height="56" viewBox="0 0 108 108">
+                <rect width="108" height="108" fill="#050505"/>
+                <path d="M34,74V34L74,74V34" fill="none" stroke="#F2F2F2" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <div style="flex:1; min-width:210px;">
+              <div style="font-size:12px; color:var(--text-secondary); margin-bottom:6px;">
+                Launcher <code>ic_launcher_nexus.xml</code> intacto (#F2F2F2 sobre #050505) harmoniza com qualquer wordmark P&amp;B de cortes geométricos:
+              </div>
+              <div class="topbar-sim" id="compat-topbar-preview">
+                <div class="topbar-brand" id="compat-topbar-wordmark"></div>
+                <div class="topbar-icons">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 17 9 11 13 15 21 7"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
+                  <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. TRÊS PROPOSTAS ORIGINAIS DE WORDMARK -->
+    <section>
+      <h2 class="section-title">2. Três Propostas Originais de Wordmark "NEXUS" (P&amp;B Estrito)</h2>
+      <p class="section-desc">
+        Geometrias vetoriais autorais com cortes, segmentos e espaços negativos intencionais — sem derivação de outras marcas e sem qualquer elemento verde.
+        Clique em uma proposta para testá-la na TopBar dos protótipos de tela abaixo.
+      </p>
+
+      <div class="toolbar" style="margin-bottom: 18px;">
+        <button class="btn active" id="btn-wm-1" onclick="selectWordmark(1)">Testar na UI: Proposta 1 (Geométrica)</button>
+        <button class="btn" id="btn-wm-2" onclick="selectWordmark(2)">Testar na UI: Proposta 2 (Editorial)</button>
+        <button class="btn" id="btn-wm-3" onclick="selectWordmark(3)">Testar na UI: Proposta 3 (Segmentada)</button>
+      </div>
+
+      <!-- PROPOSTA 1 -->
+      <div class="wordmark-block">
+        <div class="wordmark-header">
+          <h3>Proposta 1 — Geométrica Contemporânea ("Kinetik Cut")</h3>
+          <span>Recomendada para TopBar &amp; Identidade Principal</span>
+        </div>
+        <div class="specimen-pair">
+          <div class="specimen dark">
+            <svg width="260" height="52" viewBox="0 0 318 64" fill="currentColor" aria-label="NEXUS Proposta 1 Branco no Preto">
+              <!-- N com corte diagonal de 45 graus -->
+              <path d="M12,54 V10 H24.5 L34.8,28.1 L28.2,34.7 L21.5,22.9 V54 Z"/>
+              <path d="M56,10 V54 H43.5 L33.2,35.9 L39.8,29.3 L46.5,41.1 V10 Z"/>
+              <!-- E com abertura arquitetural -->
+              <path d="M74,10 H83.5 V54 H74 Z"/>
+              <path d="M87,10 H118 V18.5 H87 Z"/>
+              <path d="M87,27.8 H112 L108.5,36.2 H87 Z"/>
+              <path d="M87,45.5 H118 V54 H87 Z"/>
+              <!-- X com diagonal opositora aberta por espaço negativo -->
+              <path d="M136,10 H147.5 L182,54 H170.5 Z"/>
+              <path d="M170.5,10 H182 L166.9,29.1 L161.2,21.8 Z"/>
+              <path d="M156.8,42.2 L151.1,34.9 L136,54 H147.5 Z"/>
+              <!-- U sólido geométrico -->
+              <path d="M200,10 H209.5 V40.5 Q209.5,45.5 214.5,45.5 H229.5 Q234.5,45.5 234.5,40.5 V10 H244 V42 Q244,54 232,54 H212 Q200,54 200,42 Z"/>
+              <!-- S angular com terminais chanfrados -->
+              <path d="M306,10 H274 Q262,10 262,22 V25.5 Q262,36 274,36 H292.5 Q296.5,36 296.5,40 V41.5 Q296.5,45.5 292.5,45.5 H265.5 L262,54 H294 Q306,54 306,42 V38.5 Q306,28 294,28 H275.5 Q271.5,28 271.5,24 V22.5 Q271.5,18.5 275.5,18.5 H302.5 Z"/>
+            </svg>
+            <span class="specimen-caption">Branco (#F2F2F2) sobre Preto (#050505)</span>
+          </div>
+          <div class="specimen light">
+            <svg width="260" height="52" viewBox="0 0 318 64" fill="currentColor" aria-label="NEXUS Proposta 1 Preto no Branco">
+              <path d="M12,54 V10 H24.5 L34.8,28.1 L28.2,34.7 L21.5,22.9 V54 Z"/>
+              <path d="M56,10 V54 H43.5 L33.2,35.9 L39.8,29.3 L46.5,41.1 V10 Z"/>
+              <path d="M74,10 H83.5 V54 H74 Z"/>
+              <path d="M87,10 H118 V18.5 H87 Z"/>
+              <path d="M87,27.8 H112 L108.5,36.2 H87 Z"/>
+              <path d="M87,45.5 H118 V54 H87 Z"/>
+              <path d="M136,10 H147.5 L182,54 H170.5 Z"/>
+              <path d="M170.5,10 H182 L166.9,29.1 L161.2,21.8 Z"/>
+              <path d="M156.8,42.2 L151.1,34.9 L136,54 H147.5 Z"/>
+              <path d="M200,10 H209.5 V40.5 Q209.5,45.5 214.5,45.5 H229.5 Q234.5,45.5 234.5,40.5 V10 H244 V42 Q244,54 232,54 H212 Q200,54 200,42 Z"/>
+              <path d="M306,10 H274 Q262,10 262,22 V25.5 Q262,36 274,36 H292.5 Q296.5,36 296.5,40 V41.5 Q296.5,45.5 292.5,45.5 H265.5 L262,54 H294 Q306,54 306,42 V38.5 Q306,28 294,28 H275.5 Q271.5,28 271.5,24 V22.5 Q271.5,18.5 275.5,18.5 H302.5 Z"/>
+            </svg>
+            <span class="specimen-caption">Preto (#111111) sobre Branco (#FFFFFF)</span>
+          </div>
+        </div>
+        <div class="scale-strip" id="scale-1"></div>
+        <div class="critique-grid">
+          <div><strong>Geometria</strong>Monolinear (~9.5u em caixa de 44u), com fenda diagonal de 45° no <em>N</em>, barras desacopladas no <em>E</em> e cruzamento vazado no <em>X</em>.</div>
+          <div><strong>Legibilidade em Tamanhos Pequenos</strong>Excelente até ~14px de altura (TopBar oficial usa 16–18px). Abaixo de 11px, o espaço entre haste e barras do <em>E</em> começa a fechar em telas de baixa densidade.</div>
+          <div><strong>Personalidade &amp; Compatibilidade</strong>Precisão técnica sem frieza excessiva; conversa diretamente com o monograma angular <em>N</em> de <code>ic_launcher_nexus.xml</code>.</div>
+        </div>
+      </div>
+
+      <!-- PROPOSTA 2 -->
+      <div class="wordmark-block">
+        <div class="wordmark-header">
+          <h3>Proposta 2 — Editorial Sofisticada ("Precision Contrast")</h3>
+          <span>Direção Alto Contraste Arquitetônico</span>
+        </div>
+        <div class="specimen-pair">
+          <div class="specimen dark">
+            <svg width="266" height="52" viewBox="0 0 326 64" fill="currentColor" aria-label="NEXUS Proposta 2 Branco no Preto">
+              <!-- N alto contraste: hastes finas + diagonal larga -->
+              <path d="M12,10 H16.5 V54 H12 Z"/>
+              <path d="M53.5,10 H58 V54 H53.5 Z"/>
+              <path d="M16.5,10 H27.5 L53.5,54 H42.5 Z"/>
+              <!-- E haste pesada + travessas laminares -->
+              <path d="M78,10 H89 V54 H78 Z"/>
+              <path d="M92,10 H122 V13.5 H92 Z"/>
+              <path d="M92,30.2 H114 V33.8 H92 Z"/>
+              <path d="M92,50.5 H122 V54 H92 Z"/>
+              <!-- X diagonal principal pesada + contradiagonal laminar com corte -->
+              <path d="M140,10 H151.5 L186,54 H174.5 Z"/>
+              <path d="M182.2,10 H186 L169.1,27.6 L165.3,27.6 Z"/>
+              <path d="M160.7,36.4 L156.9,36.4 L140,54 H143.8 Z"/>
+              <!-- U contraste editorial -->
+              <path d="M204,10 H215 V40 Q215,50.5 226.5,50.5 H235.5 Q245.5,50.5 245.5,40 V10 H250 V40.5 Q250,54 235.5,54 H222.5 Q204,54 204,40.5 Z"/>
+              <!-- S contraste editorial -->
+              <path d="M312,10 H280 Q268,10 268,21.5 V23 Q268,32.5 280.5,33.5 L298.5,35 Q302.5,35.5 302.5,39.5 V42 Q302.5,50.5 293,50.5 H269.5 L268,54 H297 Q312,54 312,41 V39 Q312,28.5 299,27.5 L281,26 Q277,25.5 277,21.5 V19.5 Q277,13.5 285,13.5 H310.5 Z"/>
+            </svg>
+            <span class="specimen-caption">Branco (#F2F2F2) sobre Preto (#050505)</span>
+          </div>
+          <div class="specimen light">
+            <svg width="266" height="52" viewBox="0 0 326 64" fill="currentColor" aria-label="NEXUS Proposta 2 Preto no Branco">
+              <path d="M12,10 H16.5 V54 H12 Z"/>
+              <path d="M53.5,10 H58 V54 H53.5 Z"/>
+              <path d="M16.5,10 H27.5 L53.5,54 H42.5 Z"/>
+              <path d="M78,10 H89 V54 H78 Z"/>
+              <path d="M92,10 H122 V13.5 H92 Z"/>
+              <path d="M92,30.2 H114 V33.8 H92 Z"/>
+              <path d="M92,50.5 H122 V54 H92 Z"/>
+              <path d="M140,10 H151.5 L186,54 H174.5 Z"/>
+              <path d="M182.2,10 H186 L169.1,27.6 L165.3,27.6 Z"/>
+              <path d="M160.7,36.4 L156.9,36.4 L140,54 H143.8 Z"/>
+              <path d="M204,10 H215 V40 Q215,50.5 226.5,50.5 H235.5 Q245.5,50.5 245.5,40 V10 H250 V40.5 Q250,54 235.5,54 H222.5 Q204,54 204,40.5 Z"/>
+              <path d="M312,10 H280 Q268,10 268,21.5 V23 Q268,32.5 280.5,33.5 L298.5,35 Q302.5,35.5 302.5,39.5 V42 Q302.5,50.5 293,50.5 H269.5 L268,54 H297 Q312,54 312,41 V39 Q312,28.5 299,27.5 L281,26 Q277,25.5 277,21.5 V19.5 Q277,13.5 285,13.5 H310.5 Z"/>
+            </svg>
+            <span class="specimen-caption">Preto (#111111) sobre Branco (#FFFFFF)</span>
+          </div>
+        </div>
+        <div class="scale-strip" id="scale-2"></div>
+        <div class="critique-grid">
+          <div><strong>Geometria</strong>Contraste de 3:1 entre colunas/diagonais (~11u) e travessas laminares (~3.5u), inspirado em relojoaria e tipografia editorial contemporânea sem serifas.</div>
+          <div><strong>Legibilidade em Tamanhos Pequenos</strong>Excelente em Splash/Sobre (&gt;= 24px). Em TopBar (16–18px) e micro-tamanhos (&lt;= 13px), as hastes finas perdem peso frente aos ícones vizinhos de 1.8–2dp.</div>
+          <div><strong>Personalidade</strong>Sofisticada e calma, porém exige ajuste óptico (espessura mínima de 4.5u nas travessas) caso seja reduzida para a barra superior do Android.</div>
+        </div>
+      </div>
+
+      <!-- PROPOSTA 3 -->
+      <div class="wordmark-block">
+        <div class="wordmark-header">
+          <h3>Proposta 3 — Experimental Segmentada ("Modular Void")</h3>
+          <span>Direção Futurista Modular</span>
+        </div>
+        <div class="specimen-pair">
+          <div class="specimen dark">
+            <svg width="262" height="52" viewBox="0 0 320 64" fill="currentColor" aria-label="NEXUS Proposta 3 Branco no Preto">
+              <!-- N em 3 fragmentos chanfrados -->
+              <path d="M12,54 V10 H21 V45 L12,54 Z"/>
+              <path d="M24.5,10 H33.5 L45.5,54 H36.5 Z"/>
+              <path d="M49,19 L58,10 V54 H49 Z"/>
+              <!-- E com coluna partida + barras chanfradas -->
+              <path d="M76,10 H85 V29.5 H76 Z"/>
+              <path d="M76,34.5 H85 V54 H76 Z"/>
+              <path d="M89,10 H120 L115,18 H89 Z"/>
+              <path d="M89,28 H111 L107,36 H89 Z"/>
+              <path d="M89,46 H120 L115,54 H89 Z"/>
+              <!-- X em 4 chevrons com losango negativo central -->
+              <path d="M138,10 H149.5 L159,23.5 L153.2,30 Z"/>
+              <path d="M172.5,10 H184 L168.8,30 L163,23.5 Z"/>
+              <path d="M153.2,34 L159,40.5 L149.5,54 H138 Z"/>
+              <path d="M168.8,34 L184,54 H172.5 L163,40.5 Z"/>
+              <!-- U base separada por chanfros de 45 graus -->
+              <path d="M202,10 H211 V42 L202,51 Z"/>
+              <path d="M237,10 H246 V51 L237,42 Z"/>
+              <path d="M214,45 H234 L242,54 H206 Z"/>
+              <!-- S modular em blocos desconectados -->
+              <path d="M268,10 H308 L302,18 H264 V29 H273 V18 Z"/>
+              <path d="M276,27.5 H296 L300,36.5 H280 Z"/>
+              <path d="M299,35 H308 V54 H264 L270,46 H299 Z"/>
+            </svg>
+            <span class="specimen-caption">Branco (#F2F2F2) sobre Preto (#050505)</span>
+          </div>
+          <div class="specimen light">
+            <svg width="262" height="52" viewBox="0 0 320 64" fill="currentColor" aria-label="NEXUS Proposta 3 Preto no Branco">
+              <path d="M12,54 V10 H21 V45 L12,54 Z"/>
+              <path d="M24.5,10 H33.5 L45.5,54 H36.5 Z"/>
+              <path d="M49,19 L58,10 V54 H49 Z"/>
+              <path d="M76,10 H85 V29.5 H76 Z"/>
+              <path d="M76,34.5 H85 V54 H76 Z"/>
+              <path d="M89,10 H120 L115,18 H89 Z"/>
+              <path d="M89,28 H111 L107,36 H89 Z"/>
+              <path d="M89,46 H120 L115,54 H89 Z"/>
+              <path d="M138,10 H149.5 L159,23.5 L153.2,30 Z"/>
+              <path d="M172.5,10 H184 L168.8,30 L163,23.5 Z"/>
+              <path d="M153.2,34 L159,40.5 L149.5,54 H138 Z"/>
+              <path d="M168.8,34 L184,54 H172.5 L163,40.5 Z"/>
+              <path d="M202,10 H211 V42 L202,51 Z"/>
+              <path d="M237,10 H246 V51 L237,42 Z"/>
+              <path d="M214,45 H234 L242,54 H206 Z"/>
+              <path d="M268,10 H308 L302,18 H264 V29 H273 V18 Z"/>
+              <path d="M276,27.5 H296 L300,36.5 H280 Z"/>
+              <path d="M299,35 H308 V54 H264 L270,46 H299 Z"/>
+            </svg>
+            <span class="specimen-caption">Preto (#111111) sobre Branco (#FFFFFF)</span>
+          </div>
+        </div>
+        <div class="scale-strip" id="scale-3"></div>
+        <div class="critique-grid">
+          <div><strong>Geometria</strong>Construção estritamente modular: cada glifo divide-se em 2 a 4 polígonos separados por canais de 3.5u (vazio em losango no centro do <em>X</em>, base flutuante no <em>U</em>).</div>
+          <div><strong>Limites em Tamanhos Pequenos</strong>Visualmente impactante em 28px+ (Splash/Sobre), mas em &lt;= 14px as 14 peças fragmentam a varredura horizontal rápida e geram ruído óptico ao lado dos ícones da TopBar.</div>
+          <div><strong>Personalidade</strong>Forte identidade experimental/futurista; melhor aproveitada em Splash/About do que como wordmark permanente de navegação.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. APLICAÇÃO ISOLADA EM INTERFACES DO NEXUS -->
+    <section>
+      <h2 class="section-title">3. Aplicação Isolada na UI do NEXUS — Três Hierarquias Tipográficas</h2>
+      <p class="section-desc">
+        Comparação lado a lado utilizando os tokens reais de <code>NexusTheme.kt</code> (<code>#050505</code>/<code>#0C0C0C</code>/<code>#121212</code> em Dark; <code>#F6F6F6</code>/<code>#FFFFFF</code>/<code>#EDEDED</code> em Light),
+        com o perfil de teste <strong>Gabriel Ferreira</strong>, saudação contextual, seções da Home, alertas semânticos preservados (<strong>vermelho</strong> e <strong>amarelo</strong>) e recorte da Agenda.
+      </p>
+
+      <div class="grid-3">
+        <!-- HIERARQUIA 1 -->
+        <div class="phone-frame" data-phone>
+          <div class="phone-status"><span>14:32</span><span>NEXUS Preview · 100%</span></div>
+          <div class="phone-topbar">
+            <div class="topbar-brand" data-topbar-wm></div>
+            <div class="topbar-icons">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 17 9 11 13 15 21 7"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+            </div>
+          </div>
+          <div class="phone-body">
+            <div class="greeting-row">
+              <div>
+                <h3 class="greeting-title accent-type-geo" style="letter-spacing:0.06em;">Boa tarde, Gabriel Ferreira</h3>
+                <div class="greeting-date">Sábado, 21/11/2026</div>
+                <div class="greeting-quote">"A disciplina silenciosa vence a pressa."</div>
+              </div>
+            </div>
+
+            <div class="nx-alert danger">
+              <span style="color:#E5484D; font-weight:700; font-size:15px;">!</span>
+              <div>
+                <div class="nx-alert-title">Atenção financeira</div>
+                <div class="nx-alert-sub">Contas vencidas: R$ 420,00 · 1 fatura em atraso</div>
+              </div>
+            </div>
+            <div class="nx-alert warning">
+              <span style="color:#E5A000; font-weight:700; font-size:14px;">▲</span>
+              <div>
+                <div class="nx-alert-title">Conflito de horário hoje</div>
+                <div class="nx-alert-sub">2 compromisso(s) com sobreposição na Agenda.</div>
+              </div>
+            </div>
+
+            <div class="nx-card elevated">
+              <div class="section-hdr">
+                <span class="section-hdr-title standard-ui-text">Tarefas do mês</span>
+                <span class="section-hdr-action">Ver todas</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:12px; font-variant-numeric:tabular-nums;">
+                <span>14 concluídas · 5 em andamento</span>
+                <span style="color:#E5484D; font-weight:600;">2 atrasadas</span>
+              </div>
+            </div>
+
+            <div class="nx-card elevated">
+              <div class="kpi-label">Resultado do mês (realizado)</div>
+              <div class="kpi-value">R$ 1.840,00</div>
+              <div class="kpi-sub">Saldo informado: R$ 2.310,00</div>
+            </div>
+
+            <div class="nx-card">
+              <div class="section-hdr">
+                <span class="section-hdr-title standard-ui-text">Agenda · Semana</span>
+                <span class="section-hdr-action">Hoje</span>
+              </div>
+              <div class="agenda-strip">
+                <div class="agenda-day">Seg<br/>16</div>
+                <div class="agenda-day">Ter<br/>17</div>
+                <div class="agenda-day">Qua<br/>18</div>
+                <div class="agenda-day">Qui<br/>19</div>
+                <div class="agenda-day">Sex<br/>20</div>
+                <div class="agenda-day selected">Sáb<br/>21</div>
+                <div class="agenda-day">Dom<br/>22</div>
+              </div>
+              <div class="agenda-item"><span class="agenda-time">14:00</span><span style="flex:1;">Entrega placa celular cliente</span></div>
+              <div class="agenda-item"><span class="agenda-time">16:30</span><span style="flex:1;">Estudo Sistemas Embarcados</span></div>
+            </div>
+          </div>
+          <div class="phone-bottombar">
+            <span>Tarefas</span><span>Agenda</span><span class="active-tab">Início</span><span>Finanças</span><span>Eventos</span>
+          </div>
+          <div class="hierarchy-meta">
+            <strong>Hierarquia 1 — Saudação + Nome em Tipografia Acentuada</strong>
+            Toda a linha <em>"Boa tarde, Gabriel Ferreira"</em> usa estilo identitário. Ponto de atenção: nomes longos ou compostos do usuário podem parecer carregados ou sofrer quebra de linha irregular com tracking expandido.
+          </div>
+        </div>
+
+        <!-- HIERARQUIA 2 -->
+        <div class="phone-frame" data-phone>
+          <div class="phone-status"><span>14:32</span><span>NEXUS Preview · 100%</span></div>
+          <div class="phone-topbar">
+            <div class="topbar-brand" data-topbar-wm></div>
+            <div class="topbar-icons">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 17 9 11 13 15 21 7"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+            </div>
+          </div>
+          <div class="phone-body">
+            <div class="greeting-row">
+              <div>
+                <h3 class="greeting-title standard-ui-text">Boa tarde, Gabriel Ferreira</h3>
+                <div class="greeting-date">Sábado, 21/11/2026</div>
+                <div class="greeting-quote">"A disciplina silenciosa vence a pressa."</div>
+              </div>
+            </div>
+
+            <div class="nx-alert danger">
+              <span style="color:#E5484D; font-weight:700; font-size:15px;">!</span>
+              <div>
+                <div class="nx-alert-title">Atenção financeira</div>
+                <div class="nx-alert-sub">Contas vencidas: R$ 420,00 · 1 fatura em atraso</div>
+              </div>
+            </div>
+            <div class="nx-alert warning">
+              <span style="color:#E5A000; font-weight:700; font-size:14px;">▲</span>
+              <div>
+                <div class="nx-alert-title">Conflito de horário hoje</div>
+                <div class="nx-alert-sub">2 compromisso(s) com sobreposição na Agenda.</div>
+              </div>
+            </div>
+
+            <div class="nx-card elevated">
+              <div class="section-hdr">
+                <span class="section-hdr-title accent-section-caps">TAREFAS DO MÊS</span>
+                <span class="section-hdr-action">Ver todas</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:12px; font-variant-numeric:tabular-nums;">
+                <span>14 concluídas · 5 em andamento</span>
+                <span style="color:#E5484D; font-weight:600;">2 atrasadas</span>
+              </div>
+            </div>
+
+            <div class="nx-card elevated">
+              <div class="kpi-label accent-section-caps" style="font-size:11px;">RESULTADO DO MÊS (REALIZADO)</div>
+              <div class="kpi-value">R$ 1.840,00</div>
+              <div class="kpi-sub">Saldo informado: R$ 2.310,00</div>
+            </div>
+
+            <div class="nx-card">
+              <div class="section-hdr">
+                <span class="section-hdr-title accent-section-caps">AGENDA · SEMANA</span>
+                <span class="section-hdr-action">Hoje</span>
+              </div>
+              <div class="agenda-strip">
+                <div class="agenda-day">Seg<br/>16</div>
+                <div class="agenda-day">Ter<br/>17</div>
+                <div class="agenda-day">Qua<br/>18</div>
+                <div class="agenda-day">Qui<br/>19</div>
+                <div class="agenda-day">Sex<br/>20</div>
+                <div class="agenda-day selected">Sáb<br/>21</div>
+                <div class="agenda-day">Dom<br/>22</div>
+              </div>
+              <div class="agenda-item"><span class="agenda-time">14:00</span><span style="flex:1;">Entrega placa celular cliente</span></div>
+              <div class="agenda-item"><span class="agenda-time">16:30</span><span style="flex:1;">Estudo Sistemas Embarcados</span></div>
+            </div>
+          </div>
+          <div class="phone-bottombar">
+            <span>Tarefas</span><span>Agenda</span><span class="active-tab">Início</span><span>Finanças</span><span>Eventos</span>
+          </div>
+          <div class="hierarchy-meta">
+            <strong>Hierarquia 2 — Apenas Títulos de Seção Acentuados</strong>
+            Saudação neutra; subtítulos de blocos em caixa alta com espaçamento técnico (<em>TAREFAS DO MÊS</em>, <em>AGENDA · SEMANA</em>). Organiza os blocos, porém deixa a abertura da Home mais impessoal e pode competir com rótulos curtos de KPIs.
+          </div>
+        </div>
+
+        <!-- HIERARQUIA 3 (RECOMENDADA) -->
+        <div class="phone-frame" data-phone>
+          <div class="phone-status"><span>14:32</span><span>NEXUS Preview · 100%</span></div>
+          <div class="phone-topbar">
+            <div class="topbar-brand" data-topbar-wm></div>
+            <div class="topbar-icons">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="3 17 9 11 13 15 21 7"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>
+              <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+            </div>
+          </div>
+          <div class="phone-body">
+            <div class="greeting-row">
+              <div>
+                <span class="rec-badge">Recomendada</span>
+                <h3 class="greeting-title">
+                  <span class="accent-type-geo" style="letter-spacing:0.08em; text-transform:uppercase; font-size:15px; display:block; opacity:0.86; margin-bottom:2px;">BOA TARDE,</span>
+                  <span class="standard-ui-text" style="font-size:23px;">Gabriel Ferreira</span>
+                </h3>
+                <div class="greeting-date">Sábado, 21/11/2026</div>
+                <div class="greeting-quote">"A disciplina silenciosa vence a pressa."</div>
+              </div>
+            </div>
+
+            <div class="nx-alert danger">
+              <span style="color:#E5484D; font-weight:700; font-size:15px;">!</span>
+              <div>
+                <div class="nx-alert-title">Atenção financeira</div>
+                <div class="nx-alert-sub">Contas vencidas: R$ 420,00 · 1 fatura em atraso</div>
+              </div>
+            </div>
+            <div class="nx-alert warning">
+              <span style="color:#E5A000; font-weight:700; font-size:14px;">▲</span>
+              <div>
+                <div class="nx-alert-title">Conflito de horário hoje</div>
+                <div class="nx-alert-sub">2 compromisso(s) com sobreposição na Agenda.</div>
+              </div>
+            </div>
+
+            <div class="nx-card elevated">
+              <div class="section-hdr">
+                <span class="section-hdr-title standard-ui-text">Tarefas do mês</span>
+                <span class="section-hdr-action">Ver todas</span>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:12px; font-variant-numeric:tabular-nums;">
+                <span>14 concluídas · 5 em andamento</span>
+                <span style="color:#E5484D; font-weight:600;">2 atrasadas</span>
+              </div>
+            </div>
+
+            <div class="nx-card elevated">
+              <div class="kpi-label">Resultado do mês (realizado)</div>
+              <div class="kpi-value">R$ 1.840,00</div>
+              <div class="kpi-sub">Saldo informado: R$ 2.310,00</div>
+            </div>
+
+            <div class="nx-card">
+              <div class="section-hdr">
+                <span class="section-hdr-title standard-ui-text">Agenda · Semana</span>
+                <span class="section-hdr-action">Hoje</span>
+              </div>
+              <div class="agenda-strip">
+                <div class="agenda-day">Seg<br/>16</div>
+                <div class="agenda-day">Ter<br/>17</div>
+                <div class="agenda-day">Qua<br/>18</div>
+                <div class="agenda-day">Qui<br/>19</div>
+                <div class="agenda-day">Sex<br/>20</div>
+                <div class="agenda-day selected">Sáb<br/>21</div>
+                <div class="agenda-day">Dom<br/>22</div>
+              </div>
+              <div class="agenda-item"><span class="agenda-time">14:00</span><span style="flex:1;">Entrega placa celular cliente</span></div>
+              <div class="agenda-item"><span class="agenda-time">16:30</span><span style="flex:1;">Estudo Sistemas Embarcados</span></div>
+            </div>
+          </div>
+          <div class="phone-bottombar">
+            <span>Tarefas</span><span>Agenda</span><span class="active-tab">Início</span><span>Finanças</span><span>Eventos</span>
+          </div>
+          <div class="hierarchy-meta">
+            <strong>Hierarquia 3 — Saudação Acentuada + Nome &amp; Dados Funcionais Padrão</strong>
+            Equilíbrio ideal: a assinatura geométrica na saudação (<em>BOA TARDE,</em>) ancora a personalidade da marca sem distorcer o nome do usuário (<em>Gabriel Ferreira</em>) nem reduzir a velocidade de leitura de KPIs, tarefas ou alertas.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. AVALIAÇÃO DE PERSONALIZAÇÃO -->
+    <section>
+      <h2 class="section-title">4. Avaliação de Personalização Tipográfica (Análise Comparativa)</h2>
+      <p class="section-desc">
+        Avaliação técnica sem implementação de tela de configuração nesta fase.
+      </p>
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>Modelo Avaliado</th>
+            <th>Prós para o NEXUS</th>
+            <th>Riscos &amp; Custos</th>
+            <th>Recomendação</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>A) Identidade única consistente</strong><br/>(sem toggle de fonte)</td>
+            <td>Coerência visual absoluta entre TopBar, Splash, Home e Widgets; zero estado extra em <code>PersonalizationSettingsEntity</code>, backup v7 ou migração.</td>
+            <td>Usuários que preferirem interface ultraneutra não desligam o acento da saudação (embora na Hierarquia 3 ele seja discreto).</td>
+            <td>Viável como padrão de lançamento.</td>
+          </tr>
+          <tr>
+            <td><strong>B) Toggle simples de tipografia de destaque</strong><br/>("Tipografia de identidade na saudação e destaques compatíveis")</td>
+            <td>Casa perfeitamente com a filosofia existente de <code>SettingsScreen</code> / <code>PersonalizationSettingsEntity</code> (que já possui toggles objetivos como modo compacto, frase diária e formato de data); custo de manutenção mínimo (1 booleano).</td>
+            <td>Requer validação em Dark/Light e garantia de fallback em fontes do sistema/Compose.</td>
+            <td><strong>Recomendado</strong> se o usuário quiser escolha opcional sem fragmentar a marca.</td>
+          </tr>
+          <tr>
+            <td><strong>C) Personalização por elemento</strong><br/>(escolher fonte por bloco/título/card)</td>
+            <td>Flexibilidade máxima teórica.</td>
+            <td>Quebra a identidade visual do NEXUS, aumenta risco de baixa legibilidade em números financeiros/alertas e adiciona complexidade desproporcional em UI, backup e testes.</td>
+            <td><strong>Não recomendado.</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <script>
+    const WORDMARKS = {
+      1: {
+        name: "Proposta 1 (Geométrica)",
+        viewBox: "0 0 318 64",
+        paths: [
+          "M12,54 V10 H24.5 L34.8,28.1 L28.2,34.7 L21.5,22.9 V54 Z",
+          "M56,10 V54 H43.5 L33.2,35.9 L39.8,29.3 L46.5,41.1 V10 Z",
+          "M74,10 H83.5 V54 H74 Z",
+          "M87,10 H118 V18.5 H87 Z",
+          "M87,27.8 H112 L108.5,36.2 H87 Z",
+          "M87,45.5 H118 V54 H87 Z",
+          "M136,10 H147.5 L182,54 H170.5 Z",
+          "M170.5,10 H182 L166.9,29.1 L161.2,21.8 Z",
+          "M156.8,42.2 L151.1,34.9 L136,54 H147.5 Z",
+          "M200,10 H209.5 V40.5 Q209.5,45.5 214.5,45.5 H229.5 Q234.5,45.5 234.5,40.5 V10 H244 V42 Q244,54 232,54 H212 Q200,54 200,42 Z",
+          "M306,10 H274 Q262,10 262,22 V25.5 Q262,36 274,36 H292.5 Q296.5,36 296.5,40 V41.5 Q296.5,45.5 292.5,45.5 H265.5 L262,54 H294 Q306,54 306,42 V38.5 Q306,28 294,28 H275.5 Q271.5,28 271.5,24 V22.5 Q271.5,18.5 275.5,18.5 H302.5 Z"
+        ]
+      },
+      2: {
+        name: "Proposta 2 (Editorial)",
+        viewBox: "0 0 326 64",
+        paths: [
+          "M12,10 H16.5 V54 H12 Z",
+          "M53.5,10 H58 V54 H53.5 Z",
+          "M16.5,10 H27.5 L53.5,54 H42.5 Z",
+          "M78,10 H89 V54 H78 Z",
+          "M92,10 H122 V13.5 H92 Z",
+          "M92,30.2 H114 V33.8 H92 Z",
+          "M92,50.5 H122 V54 H92 Z",
+          "M140,10 H151.5 L186,54 H174.5 Z",
+          "M182.2,10 H186 L169.1,27.6 L165.3,27.6 Z",
+          "M160.7,36.4 L156.9,36.4 L140,54 H143.8 Z",
+          "M204,10 H215 V40 Q215,50.5 226.5,50.5 H235.5 Q245.5,50.5 245.5,40 V10 H250 V40.5 Q250,54 235.5,54 H222.5 Q204,54 204,40.5 Z",
+          "M312,10 H280 Q268,10 268,21.5 V23 Q268,32.5 280.5,33.5 L298.5,35 Q302.5,35.5 302.5,39.5 V42 Q302.5,50.5 293,50.5 H269.5 L268,54 H297 Q312,54 312,41 V39 Q312,28.5 299,27.5 L281,26 Q277,25.5 277,21.5 V19.5 Q277,13.5 285,13.5 H310.5 Z"
+        ]
+      },
+      3: {
+        name: "Proposta 3 (Segmentada)",
+        viewBox: "0 0 320 64",
+        paths: [
+          "M12,54 V10 H21 V45 L12,54 Z",
+          "M24.5,10 H33.5 L45.5,54 H36.5 Z",
+          "M49,19 L58,10 V54 H49 Z",
+          "M76,10 H85 V29.5 H76 Z",
+          "M76,34.5 H85 V54 H76 Z",
+          "M89,10 H120 L115,18 H89 Z",
+          "M89,28 H111 L107,36 H89 Z",
+          "M89,46 H120 L115,54 H89 Z",
+          "M138,10 H149.5 L159,23.5 L153.2,30 Z",
+          "M172.5,10 H184 L168.8,30 L163,23.5 Z",
+          "M153.2,34 L159,40.5 L149.5,54 H138 Z",
+          "M168.8,34 L184,54 H172.5 L163,40.5 Z",
+          "M202,10 H211 V42 L202,51 Z",
+          "M237,10 H246 V51 L237,42 Z",
+          "M214,45 H234 L242,54 H206 Z",
+          "M268,10 H308 L302,18 H264 V29 H273 V18 Z",
+          "M276,27.5 H296 L300,36.5 H280 Z",
+          "M299,35 H308 V54 H264 L270,46 H299 Z"
+        ]
+      }
+    };
+
+    function createWordmarkSvg(id, heightPx) {
+      const spec = WORDMARKS[id];
+      const w = Math.round((heightPx / 64) * (id === 2 ? 326 : id === 3 ? 320 : 318));
+      const paths = spec.paths.map(d => `<path d="${d}"/>`).join("");
+      return `<svg width="${w}" height="${heightPx}" viewBox="${spec.viewBox}" fill="currentColor" aria-label="NEXUS">${paths}</svg>`;
+    }
+
+    function renderScaleStrips() {
+      [1, 2, 3].forEach(id => {
+        const el = document.getElementById(`scale-${id}`);
+        el.innerHTML = [
+          { h: 30, label: "28–30px (Splash / Sobre)" },
+          { h: 20, label: "18–20px (TopBar Oficial)" },
+          { h: 13, label: "12–13px (Micro-escala limite)" }
+        ].map(s => `
+          <div class="scale-item">
+            <div style="color:var(--text-primary);">${createWordmarkSvg(id, s.h)}</div>
+            <small>${s.label}</small>
+          </div>
+        `).join("");
+      });
+    }
+
+    function selectWordmark(id) {
+      [1, 2, 3].forEach(k => {
+        document.getElementById(`btn-wm-${k}`).classList.toggle("active", k === id);
+      });
+      const compat = document.getElementById("compat-topbar-wordmark");
+      compat.innerHTML = createWordmarkSvg(id, 20);
+      document.querySelectorAll("[data-topbar-wm]").forEach(node => {
+        node.innerHTML = createWordmarkSvg(id, 19);
+      });
+    }
+
+    function setPreviewTheme(mode) {
+      const isLight = mode === "light";
+      document.getElementById("btn-theme-dark").classList.toggle("active", !isLight);
+      document.getElementById("btn-theme-light").classList.toggle("active", isLight);
+      document.getElementById("compat-topbar-preview").classList.toggle("light", isLight);
+      document.querySelectorAll("[data-phone]").forEach(p => {
+        p.classList.toggle("theme-light", isLight);
+      });
+    }
+
+    renderScaleStrips();
+    selectWordmark(1);
+  </script>
+</body>
+</html>
