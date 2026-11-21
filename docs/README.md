@@ -1,6 +1,6 @@
 # NEXUS — Documentação Oficial de Produto e Engenharia
 
-> **Entrada principal da documentação do repositório ativo `PROJECT_NEXUS`.**  
+> **Entrada principal da documentação do repositório ativo `PROJETO-NEXUS-`.**  
 > **Última revisão documental:** 2026-11-20 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 7`, `versionName = "5.2.0"`, Room `DATABASE_VERSION = 6`, Backup `CURRENT_FORMAT_VERSION = 7`, Módulo Mercado Lotes `01–09` concluídos no código).
 
 ---
@@ -40,7 +40,9 @@ Em caso de dúvida entre documentos ou registros históricos, siga rigorosamente
 | **9** | [`09_GUIA_DESENVOLVIMENTO.md`](./09_GUIA_DESENVOLVIMENTO.md) | Convenções Kotlin/Compose, prevenção de OOM no compilador K2, checklist por lote e manutenção documental | Antes e ao final de qualquer alteração de código |
 | **10** | [`10_ROADMAP.md`](./10_ROADMAP.md) | Separação clara de entregas concluídas, planejadas/pendentes, dívidas técnicas e itens fora de escopo | Priorizar próximos lotes |
 | **11** | [`11_DECISOES_ADRS.md`](./11_DECISOES_ADRS.md) | Architecture Decision Records (`ADR-001`..`ADR-014`) com status, alternativas e consequências | Entender o porquê das escolhas arquiteturais |
-| **12** | [`12_RASTREABILIDADE.md`](./12_RASTREABILIDADE.md) | Matriz `Requisito → Funcionalidade → Módulo → Componente → Dados → Fluxo → Teste/ADR` | Rastrear impacto completo de qualquer mudança |\n| **13** | [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) | Ciclo de vida de ideias, revisão de decisões, autorização e continuidade | Antes de classificar ou reavaliar ideias |\n| **14** | [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md) | Registro das mudanças no próprio modelo documental | Entender a evolução das regras documentais |
+| **12** | [`12_RASTREABILIDADE.md`](./12_RASTREABILIDADE.md) | Matriz `Requisito → Funcionalidade → Módulo → Componente → Dados → Fluxo → Teste/ADR` | Rastrear impacto completo de qualquer mudança |
+| **13** | [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) | Ciclo de vida de ideias, revisão de decisões, autorização e continuidade | Antes de classificar ou reavaliar ideias |
+| **14** | [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md) | Registro das mudanças no próprio modelo documental | Entender a evolução das regras documentais |
 
 ### Documentos Históricos e Arquivados (`/docs/archive/`)
 
@@ -52,6 +54,10 @@ Em caso de dúvida entre documentos ou registros históricos, siga rigorosamente
 
 ---
 
-## 4. Governança e Evolução Documental\n\nA documentação vigente é viva e pode ser revisada quando houver mudança de realidade, necessidade, evidência ou entendimento. Consulte [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) para classificar ideias, distinguir decisões contextuais de restrições estruturais e definir quando uma proposta pode ser reavaliada. Mudanças relevantes no método documental devem ser registradas em [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md).\n\n## 5. Sincronização com Artefatos do Google AI Studio
+## 4. Governança e Evolução Documental
+
+A documentação vigente é viva e pode ser revisada quando houver mudança de realidade, necessidade, evidência ou entendimento. Consulte [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) para classificar ideias, distinguir decisões contextuais de restrições estruturais e definir quando uma proposta pode ser reavaliada. Mudanças relevantes no método documental devem ser registradas em [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md).
+
+## 5. Sincronização com Artefatos do Google AI Studio
 
 Quando o projeto for continuado dentro do Google AI Studio, os artefatos da sessão (`NEXUS_CONTINUIDADE.md`, `NEXUS_PRODUCT_SPEC.md`, `NEXUS_DESIGN_SYSTEM.md`, `NEXUS_INTEGRATION_MAP.md`, `NEXUS_IMPLEMENTATION_ROADMAP.md`, `NEXUS_CURRENT_STATE.md`) devem permanecer alinhados aos documentos `/docs/` do repositório ativo — sendo os arquivos em `/docs/` a fonte portátil que acompanha exportações e pacotes `.zip` do código-fonte.
