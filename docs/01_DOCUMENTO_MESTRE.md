@@ -29,7 +29,11 @@ Em vez de espalhar tarefas, calendário, projetos, objetivos, eventos, contas a 
 
 ---
 
-## 3. Evolução dos Princípios e Documentos\n\nOs princípios desta seção descrevem compromissos estruturais vigentes, mas não tornam os documentos imutáveis. A visão do produto, especificações, arquitetura e decisões podem ser revisadas quando novas necessidades ou evidências justificarem a mudança. Revisões devem preservar contexto, histórico e rastreabilidade conforme docs/13_GOVERNANCA_DOCUMENTAL.md; uma decisão anterior não deve ser interpretada como proibição eterna sem verificar seu contexto e status.\n\n## 4. Escopo Atual do Sistema (Visão Consolidada)
+## 3. Evolução dos Princípios e Documentos
+
+Os princípios desta seção descrevem compromissos estruturais vigentes, mas não tornam os documentos imutáveis. A visão do produto, especificações, arquitetura e decisões podem ser revisadas quando novas necessidades ou evidências justificarem a mudança. Revisões devem preservar contexto, histórico e rastreabilidade conforme docs/13_GOVERNANCA_DOCUMENTAL.md; uma decisão anterior não deve ser interpretada como proibição eterna sem verificar seu contexto e status.
+
+## 4. Escopo Atual do Sistema (Visão Consolidada)
 
 ### Núcleo Implementado no Código
 - **Dashboard (`HomeScreen`):** saudação personalizada + data + frase diária discreta no cabeçalho, gráfico de anel de tarefas do mês (`TaskRingChart`), alertas críticos reais (`AlertBannerCard`), próximos compromissos/eventos/pagamentos, gráfico de fluxo financeiro de 6 meses (`BarGroupChart`), gráfico de rosca por categoria (`DonutChart`), projetos e objetivos, tudo ordenável e ligável/desligável via `DashboardCustomizationScreen`.
