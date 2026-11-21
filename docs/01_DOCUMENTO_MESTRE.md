@@ -29,7 +29,7 @@ Em vez de espalhar tarefas, calendário, projetos, objetivos, eventos, contas a 
 
 ---
 
-## 3. Escopo Atual do Sistema (Visão Consolidada)
+## 3. Evolução dos Princípios e Documentos\n\nOs princípios desta seção descrevem compromissos estruturais vigentes, mas não tornam os documentos imutáveis. A visão do produto, especificações, arquitetura e decisões podem ser revisadas quando novas necessidades ou evidências justificarem a mudança. Revisões devem preservar contexto, histórico e rastreabilidade conforme docs/13_GOVERNANCA_DOCUMENTAL.md; uma decisão anterior não deve ser interpretada como proibição eterna sem verificar seu contexto e status.\n\n## 4. Escopo Atual do Sistema (Visão Consolidada)
 
 ### Núcleo Implementado no Código
 - **Dashboard (`HomeScreen`):** saudação personalizada + data + frase diária discreta no cabeçalho, gráfico de anel de tarefas do mês (`TaskRingChart`), alertas críticos reais (`AlertBannerCard`), próximos compromissos/eventos/pagamentos, gráfico de fluxo financeiro de 6 meses (`BarGroupChart`), gráfico de rosca por categoria (`DonutChart`), projetos e objetivos, tudo ordenável e ligável/desligável via `DashboardCustomizationScreen`.
@@ -45,11 +45,11 @@ Em vez de espalhar tarefas, calendário, projetos, objetivos, eventos, contas a 
 
 ### Fora do Escopo / Planejado e Pendente
 - **Planejado ainda não implementado:** Eventos com `locationMode` (`IN_PERSON`, `ONLINE`, `TBD`), banner JPEG via `PickVisualMedia` e empacotamento `.zip` (`data.json` + `banners/`); dependência oficial `androidx.core:core-splashscreen`; expansão de recorrência para Compromissos e Eventos; eventual bloco Mercado opcional na `HomeScreen`.
-- **Explicitamente fora de escopo:** login, nuvem, IA embarcada/remota, leitura automática de extratos bancários, múltiplos usuários, publicação obrigatória em Play Store ou troca do Room/navegação por estado para `NavHost`.
+- **Restrições e decisões vigentes:** login, backend próprio e sincronização obrigatória em nuvem não fazem parte da arquitetura offline-first atual; múltiplos usuários e troca do Room/navegação por estado para NavHost não estão planejados. IA local/remota e leitura automática de documentos/extratos não estão aprovadas como funcionalidades; qualquer possibilidade deve passar por pesquisa, análise de compatibilidade e aprovação conforme 13_GOVERNANCA_DOCUMENTAL.md. Integrações financeiras reais exigem avaliação específica de segurança, privacidade, regulamentação e viabilidade.
 
 ---
 
-## 4. Visão Técnica Resumida
+## 5. Visão Técnica Resumida
 
 | Dimensão | Valor Real Confirmado no Código |
 | --- | --- |
