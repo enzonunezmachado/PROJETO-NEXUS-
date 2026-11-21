@@ -1,3 +1,6 @@
+> **[DOCUMENTO HISTÓRICO ARQUIVADO — DIAGNÓSTICO DE BUILD 2026-11-17]**  
+> Registro preservado da causa raiz e correção do OOM do compilador Kotlin K2 (`2.1.0`) e das Builds #3 e #4 do CI. As regras permanentes derivadas desta análise estão consolidadas em [`../09_GUIA_DESENVOLVIMENTO.md`](../09_GUIA_DESENVOLVIMENTO.md) e [`../08_QUALIDADE_SEGURANCA.md`](../08_QUALIDADE_SEGURANCA.md).
+
 # Diagnóstico Técnico e Correção da Falha de Compilação — NEXUS
 
 **Data:** 2026-11-17  

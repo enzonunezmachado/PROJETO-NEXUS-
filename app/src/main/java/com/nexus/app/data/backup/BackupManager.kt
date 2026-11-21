@@ -1284,68 +1284,98 @@ class BackupManager(
         val validatedMarketAlerts: List<MarketPriceAlert>? =
             payload.marketConfig?.priceAlerts?.let { sanitizePriceAlerts(it, now) }
 
-        database.withTransaction {
-            // Limpa na ordem inversa das chaves estrangeiras
-            database.goalProgressLogDao().deleteAll()
-            database.goalMilestoneDao().deleteAll()
-            database.reminderDao().deleteAll()
-            database.briefingHistoryDao().deleteAll()
-            database.routineAssistantSettingsDao().deleteAll()
-            database.personalizationSettingsDao().deleteAll()
-            database.quoteDao().deleteAll()
-            database.transactionDao().deleteAll()
-            database.subtaskDao().deleteAll()
-            database.recurrenceExceptionDao().deleteAll()
-            database.taskDao().deleteAll()
-            database.taskRecurrenceDao().deleteAll()
-            database.appointmentDao().deleteAll()
-            database.installmentPurchaseDao().deleteAll()
-            database.recurringRuleDao().deleteAll()
-            database.creditCardStatementDao().deleteAll()
-            database.budgetDao().deleteAll()
-            database.financialGoalDao().deleteAll()
-            database.loanDao().deleteAll()
-            database.eventDao().deleteAll()
-            database.creditCardDao().deleteAll()
-            database.projectDao().deleteAll()
-            database.personalGoalDao().deleteAll()
-            database.categoryDao().deleteAll()
-            database.settingsDao().deleteAll()
-            database.auditHistoryDao().deleteAll()
-            database.errorLogDao().deleteAll()
+        val previousFavorites = marketWatchlistRepository?.favoriteCodes?.value
+        val previousAlerts = marketAlertRepository?.alerts?.value
+        var appliedFavoritesCount = 0
+        var appliedAlertsCount = 0
+        var marketApplied = false
+        var marketWriteReached = false
 
-            // Reinsere em ordem segura de dependencia
-            database.settingsDao().insertAll(settingsEntities)
-            database.routineAssistantSettingsDao().insertAll(routineSettingsEntities)
-            database.personalizationSettingsDao().insertAll(personalizationEntities)
-            database.quoteDao().insertAll(quoteEntities)
-            database.categoryDao().insertAll(categoryEntities)
-            database.personalGoalDao().insertAll(personalGoalEntities)
-            database.goalMilestoneDao().insertAll(goalMilestoneEntities)
-            database.goalProgressLogDao().insertAll(goalProgressLogEntities)
-            database.projectDao().insertAll(projectEntities)
-            database.creditCardDao().insertAll(cardEntities)
-            database.eventDao().insertAll(eventEntities)
-            database.taskRecurrenceDao().insertAll(taskRecurrenceEntities)
-            database.taskDao().insertAll(taskEntities)
-            database.recurrenceExceptionDao().insertAll(recurrenceExceptionEntities)
-            database.subtaskDao().insertAll(subtaskEntities)
-            database.appointmentDao().insertAll(appointmentEntities)
-            database.creditCardStatementDao().insertAll(statementEntities)
-            database.installmentPurchaseDao().insertAll(installmentPurchaseEntities)
-            database.recurringRuleDao().insertAll(recurringRuleEntities)
-            database.transactionDao().insertAll(transactionEntities)
-            database.loanDao().insertAll(loanEntities)
-            database.budgetDao().insertAll(budgetEntities)
-            database.financialGoalDao().insertAll(goalEntities)
-            database.auditHistoryDao().insertAll(auditEntities)
-            database.errorLogDao().insertAll(errorLogEntities)
-            database.reminderDao().insertAll(reminderEntities)
-            database.briefingHistoryDao().insertAll(briefingHistoryEntities)
+        try {
+            database.withTransaction {
+                // Limpa na ordem inversa das chaves estrangeiras
+                database.goalProgressLogDao().deleteAll()
+                database.goalMilestoneDao().deleteAll()
+                database.reminderDao().deleteAll()
+                database.briefingHistoryDao().deleteAll()
+                database.routineAssistantSettingsDao().deleteAll()
+                database.personalizationSettingsDao().deleteAll()
+                database.quoteDao().deleteAll()
+                database.transactionDao().deleteAll()
+                database.subtaskDao().deleteAll()
+                database.recurrenceExceptionDao().deleteAll()
+                database.taskDao().deleteAll()
+                database.taskRecurrenceDao().deleteAll()
+                database.appointmentDao().deleteAll()
+                database.installmentPurchaseDao().deleteAll()
+                database.recurringRuleDao().deleteAll()
+                database.creditCardStatementDao().deleteAll()
+                database.budgetDao().deleteAll()
+                database.financialGoalDao().deleteAll()
+                database.loanDao().deleteAll()
+                database.eventDao().deleteAll()
+                database.creditCardDao().deleteAll()
+                database.projectDao().deleteAll()
+                database.personalGoalDao().deleteAll()
+                database.categoryDao().deleteAll()
+                database.settingsDao().deleteAll()
+                database.auditHistoryDao().deleteAll()
+                database.errorLogDao().deleteAll()
+
+                // Reinsere em ordem segura de dependencia
+                database.settingsDao().insertAll(settingsEntities)
+                database.routineAssistantSettingsDao().insertAll(routineSettingsEntities)
+                database.personalizationSettingsDao().insertAll(personalizationEntities)
+                database.quoteDao().insertAll(quoteEntities)
+                database.categoryDao().insertAll(categoryEntities)
+                database.personalGoalDao().insertAll(personalGoalEntities)
+                database.goalMilestoneDao().insertAll(goalMilestoneEntities)
+                database.goalProgressLogDao().insertAll(goalProgressLogEntities)
+                database.projectDao().insertAll(projectEntities)
+                database.creditCardDao().insertAll(cardEntities)
+                database.eventDao().insertAll(eventEntities)
+                database.taskRecurrenceDao().insertAll(taskRecurrenceEntities)
+                database.taskDao().insertAll(taskEntities)
+                database.recurrenceExceptionDao().insertAll(recurrenceExceptionEntities)
+                database.subtaskDao().insertAll(subtaskEntities)
+                database.appointmentDao().insertAll(appointmentEntities)
+                database.creditCardStatementDao().insertAll(statementEntities)
+                database.installmentPurchaseDao().insertAll(installmentPurchaseEntities)
+                database.recurringRuleDao().insertAll(recurringRuleEntities)
+                database.transactionDao().insertAll(transactionEntities)
+                database.loanDao().insertAll(loanEntities)
+                database.budgetDao().insertAll(budgetEntities)
+                database.financialGoalDao().insertAll(goalEntities)
+                database.auditHistoryDao().insertAll(auditEntities)
+                database.errorLogDao().insertAll(errorLogEntities)
+                database.reminderDao().insertAll(reminderEntities)
+                database.briefingHistoryDao().insertAll(briefingHistoryEntities)
+
+                // Aplica configurações do Mercado antes do commit do Room:
+                // se falhar ao gravar favoritos/alertas, o SQLite sofre rollback junto;
+                // se o commit do Room falhar em seguida, o catch externo reverte favoritos e alertas.
+                marketWriteReached = true
+                val marketResult = applyMarketConfigWithRollback(
+                    watchlistRepo = marketWatchlistRepository,
+                    alertRepo = marketAlertRepository,
+                    validatedFavorites = validatedMarketFavorites,
+                    validatedAlerts = validatedMarketAlerts
+                )
+                appliedFavoritesCount = marketResult.first
+                appliedAlertsCount = marketResult.second
+                marketApplied = marketResult.third
+            }
+        } catch (ex: Exception) {
+            if (marketWriteReached) {
+                rollbackMarketConfig(
+                    watchlistRepo = marketWatchlistRepository,
+                    alertRepo = marketAlertRepository,
+                    previousFavorites = if (validatedMarketFavorites != null) previousFavorites else null,
+                    previousAlerts = if (validatedMarketAlerts != null) previousAlerts else null
+                )
+            }
+            throw ex
         }
-
-        val (appliedFavoritesCount, appliedAlertsCount, marketApplied) =
-            applyMarketConfigWithRollback(validatedMarketFavorites, validatedMarketAlerts)
 
         return RestoreSummary(
             settingsRestored = settingsEntities.size,
@@ -1381,42 +1411,62 @@ class BackupManager(
         )
     }
 
-    private fun applyMarketConfigWithRollback(
-        validatedFavorites: List<String>?,
-        validatedAlerts: List<MarketPriceAlert>?
-    ): Triple<Int, Int, Boolean> {
-        val watchlistRepo = marketWatchlistRepository
-        val alertRepo = marketAlertRepository
-        if (watchlistRepo == null && alertRepo == null) {
-            return Triple(0, 0, false)
+    companion object {
+        internal fun applyMarketConfigWithRollback(
+            watchlistRepo: MarketWatchlistRepository?,
+            alertRepo: MarketAlertRepository?,
+            validatedFavorites: List<String>?,
+            validatedAlerts: List<MarketPriceAlert>?
+        ): Triple<Int, Int, Boolean> {
+            if (watchlistRepo == null && alertRepo == null) {
+                return Triple(0, 0, false)
+            }
+
+            val previousFavorites = watchlistRepo?.favoriteCodes?.value
+            val previousAlerts = alertRepo?.alerts?.value
+            var favoritesApplied = false
+            var alertsApplied = false
+            var restoredFavoritesCount = 0
+            var restoredAlertsCount = 0
+
+            try {
+                if (validatedFavorites != null && watchlistRepo != null) {
+                    restoredFavoritesCount = watchlistRepo.replaceAllFavorites(validatedFavorites).size
+                    favoritesApplied = true
+                }
+                if (validatedAlerts != null && alertRepo != null) {
+                    restoredAlertsCount = alertRepo.replaceAllAlerts(validatedAlerts).size
+                    alertsApplied = true
+                }
+            } catch (ex: Exception) {
+                rollbackMarketConfig(
+                    watchlistRepo = watchlistRepo,
+                    alertRepo = alertRepo,
+                    previousFavorites = if (favoritesApplied) previousFavorites else null,
+                    previousAlerts = if (alertsApplied) previousAlerts else null
+                )
+                throw ex
+            }
+
+            val applied = (validatedFavorites != null && watchlistRepo != null) ||
+                (validatedAlerts != null && alertRepo != null)
+            return Triple(restoredFavoritesCount, restoredAlertsCount, applied)
         }
 
-        val previousFavorites = watchlistRepo?.favoriteCodes?.value
-        var favoritesApplied = false
-        var restoredFavoritesCount = 0
-        var restoredAlertsCount = 0
-
-        try {
-            if (validatedFavorites != null && watchlistRepo != null) {
-                restoredFavoritesCount = watchlistRepo.replaceAllFavorites(validatedFavorites).size
-                favoritesApplied = true
-            }
-            if (validatedAlerts != null && alertRepo != null) {
-                restoredAlertsCount = alertRepo.replaceAllAlerts(validatedAlerts).size
-            }
-        } catch (ex: Exception) {
-            if (favoritesApplied && watchlistRepo != null && previousFavorites != null) {
+        internal fun rollbackMarketConfig(
+            watchlistRepo: MarketWatchlistRepository?,
+            alertRepo: MarketAlertRepository?,
+            previousFavorites: List<String>?,
+            previousAlerts: List<MarketPriceAlert>?
+        ) {
+            if (watchlistRepo != null && previousFavorites != null) {
                 runCatching { watchlistRepo.replaceAllFavorites(previousFavorites) }
             }
-            throw ex
+            if (alertRepo != null && previousAlerts != null) {
+                runCatching { alertRepo.replaceAllAlerts(previousAlerts) }
+            }
         }
 
-        val applied = (validatedFavorites != null && watchlistRepo != null) ||
-            (validatedAlerts != null && alertRepo != null)
-        return Triple(restoredFavoritesCount, restoredAlertsCount, applied)
-    }
-
-    companion object {
         fun sanitizeFavoriteCodes(codes: List<String>): List<String> =
             codes
                 .map { it.trim() }

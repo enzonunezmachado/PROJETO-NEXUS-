@@ -75,6 +75,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nexus.app.BuildConfig
 import com.nexus.app.core.DateTimeUtils
+import com.nexus.app.data.backup.NexusBackupPayload
 import com.nexus.app.data.db.NexusDatabase
 import com.nexus.app.data.db.entity.CategoryEntity
 import com.nexus.app.data.db.entity.ErrorLogEntity
@@ -144,7 +145,7 @@ fun MoreScreen(
                 MoreMenuItem(
                     icon = Icons.Outlined.ShowChart,
                     title = "Mercado",
-                    subtitle = "Moedas, criptomoedas e visão geral de cotações em BRL",
+                    subtitle = "Moedas, cripto, índices, ações, gráficos históricos, acompanhamento e alertas de preço",
                     onClick = onOpenMarket
                 )
             }
@@ -200,7 +201,7 @@ fun MoreScreen(
                 MoreMenuItem(
                     icon = Icons.Outlined.Backup,
                     title = "Backup e Restauração",
-                    subtitle = "Exportar ou restaurar todo o banco (v1 a v6) em JSON via Storage Access Framework",
+                    subtitle = "Exportar ou restaurar banco e configurações do Mercado (v1 a v${NexusBackupPayload.CURRENT_FORMAT_VERSION}) em JSON via SAF",
                     onClick = onOpenBackup
                 )
             }
@@ -1078,13 +1079,13 @@ fun BackupScreen(
             item {
                 NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
                     Text(
-                        text = "Exportar backup completo (JSON v6)",
+                        text = "Exportar backup completo (JSON v${NexusBackupPayload.CURRENT_FORMAT_VERSION})",
                         style = MaterialTheme.typography.titleMedium,
                         color = palette.textPrimary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Gera um arquivo JSON versionado com todas as 27 tabelas locais (tarefas, séries recorrentes, projetos, objetivos pessoais, personalização, frases, agenda, eventos, financeiro, lembretes e rotina) via seletor SAF.",
+                        text = "Gera um arquivo JSON versionado com todas as 27 tabelas locais (tarefas, séries recorrentes, projetos, objetivos pessoais, personalização, frases, agenda, eventos, financeiro, lembretes e rotina) e suas configurações do Mercado (favoritos e alertas de preço) via seletor SAF.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = palette.textSecondary
                     )
@@ -1116,7 +1117,7 @@ fun BackupScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Valida o arquivo, mostra o resumo por tabela e restaura dentro de uma transação única (tudo ou nada). Compatível com backups v1 a v6.",
+                        text = "Valida o arquivo, mostra o resumo por tabela e restaura o banco local em transação única junto aos favoritos e alertas do Mercado. Compatível com backups v1 a v${NexusBackupPayload.CURRENT_FORMAT_VERSION}.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = palette.textSecondary
                     )

@@ -1,3 +1,6 @@
+> **[DOCUMENTO HISTÓRICO ARQUIVADO — ESPECIFICAÇÃO BASE `v4` → ETAPAS 1–6]**  
+> Especificação histórica usada na evolução inicial sobre a baseline `v4`. O módulo Mercado (Etapa 6 original) e outras partes evoluíram posteriormente nos Lotes 01–09. Consulte os documentos vigentes: [`../02_ESPECIFICACAO_PRODUTO.md`](../02_ESPECIFICACAO_PRODUTO.md), [`../10_ROADMAP.md`](../10_ROADMAP.md) e [`../11_DECISOES_ADRS.md`](../11_DECISOES_ADRS.md).
+
 # NEXUS_SPEC — Especificação de evolução do NEXUS
 
 > **Para que serve:** fonte da verdade para qualquer IA que programe o NEXUS (Google AI Studio e outras). Salve em `docs/NEXUS_SPEC.md` no repositório. Cada pedido de trabalho dirá apenas: "Leia `docs/NEXUS_SPEC.md` e implemente a ETAPA X". Se um pedido solto contradiz esta spec, avise a contradição antes de implementar.

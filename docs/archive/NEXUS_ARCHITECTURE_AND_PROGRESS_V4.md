@@ -1,3 +1,6 @@
+> **[DOCUMENTO HISTÓRICO ARQUIVADO — FASE `5.0.0` / ROOM `v4`]**  
+> Preserva o retrato técnico anterior da fase `v4`. **Substituído pela documentação oficial vigente** em [`../03_ARQUITETURA_ENGENHARIA.md`](../03_ARQUITETURA_ENGENHARIA.md), [`../04_MODELO_DADOS.md`](../04_MODELO_DADOS.md) e [`../07_ESTADO_ATUAL.md`](../07_ESTADO_ATUAL.md).
+
 # NEXUS — Mapa Técnico e Arquitetura Atual
 
 > Documento vivo atualizado exclusivamente com base nos arquivos-fonte atuais do repositório. Cada item indica **CONFIRMADO NO CÓDIGO** ou **NÃO VERIFICADO / SUPOSIÇÃO**. Nenhum código, recurso ou configuração foi alterado nesta revisão.

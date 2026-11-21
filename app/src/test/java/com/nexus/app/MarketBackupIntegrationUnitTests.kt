@@ -350,4 +350,70 @@ class MarketBackupIntegrationUnitTests {
         assertEquals(0, notifications.size)
         assertTrue(alertRepo.alerts.value.first { it.id == "rearm-2" }.awaitingConditionReset)
     }
+
+    @Test
+    fun `applyMarketConfigWithRollback and rollbackMarketConfig restore previous state on failure`() {
+        val initialFavorite = listOf(MarketAssetCatalog.EUR_BRL_CODE)
+        val initialAlert = MarketPriceAlert(
+            id = "orig-1",
+            assetCode = MarketAssetCatalog.USD_BRL_CODE,
+            condition = MarketAlertCondition.PRICE_ABOVE,
+            targetPrice = 6.10,
+            isActive = true,
+            status = MarketAlertStatus.WAITING,
+            createdAtEpochMs = 1_795_000_000_000L,
+            updatedAtEpochMs = 1_795_000_000_000L
+        )
+        val watchlistStore = InMemoryWatchlistStore(initialFavorite)
+        var shouldFailAlertSave = true
+        val failingAlertStore = object : MarketAlertStore {
+            var saved: List<MarketPriceAlert> = listOf(initialAlert)
+            override fun loadAlerts(): List<MarketPriceAlert> = saved
+            override fun saveAlerts(alerts: List<MarketPriceAlert>) {
+                if (shouldFailAlertSave) {
+                    throw IllegalStateException("Simulated disk error")
+                }
+                saved = alerts
+            }
+        }
+
+        val watchlistRepo = MarketWatchlistRepository(watchlistStore)
+        val alertRepo = MarketAlertRepository(failingAlertStore)
+        val newAlerts = listOf(
+            initialAlert.copy(id = "new-2", targetPrice = 6.50)
+        )
+
+        val failed = runCatching {
+            BackupManager.applyMarketConfigWithRollback(
+                watchlistRepo = watchlistRepo,
+                alertRepo = alertRepo,
+                validatedFavorites = listOf(MarketAssetCatalog.BTC_BRL_CODE),
+                validatedAlerts = newAlerts
+            )
+        }
+        assertTrue(failed.isFailure)
+        assertEquals(initialFavorite, watchlistRepo.favoriteCodes.value)
+        assertEquals(listOf(initialAlert), alertRepo.alerts.value)
+
+        // When both stores succeed, rollbackMarketConfig can still revert both after a failed SQLite commit
+        shouldFailAlertSave = false
+        val result = BackupManager.applyMarketConfigWithRollback(
+            watchlistRepo = watchlistRepo,
+            alertRepo = alertRepo,
+            validatedFavorites = listOf(MarketAssetCatalog.BTC_BRL_CODE),
+            validatedAlerts = newAlerts
+        )
+        assertEquals(Triple(1, 1, true), result)
+        assertEquals(listOf(MarketAssetCatalog.BTC_BRL_CODE), watchlistRepo.favoriteCodes.value)
+        assertEquals(newAlerts, alertRepo.alerts.value)
+
+        BackupManager.rollbackMarketConfig(
+            watchlistRepo = watchlistRepo,
+            alertRepo = alertRepo,
+            previousFavorites = initialFavorite,
+            previousAlerts = listOf(initialAlert)
+        )
+        assertEquals(initialFavorite, watchlistRepo.favoriteCodes.value)
+        assertEquals(listOf(initialAlert), alertRepo.alerts.value)
+    }
 }
