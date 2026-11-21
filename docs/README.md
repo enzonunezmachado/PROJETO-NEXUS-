@@ -16,7 +16,7 @@ Esta suíte documental em `/docs/` constitui a **planta completa de produto, arq
 Em caso de dúvida entre documentos ou registros históricos, siga rigorosamente esta ordem de precedência:
 
 1. **Código-fonte real em `app/src/` e configuração Gradle/Manifest (`build.gradle.kts`, `AndroidManifest.xml`)** — fonte máxima do que existe hoje em execução/estrutura.
-2. **Documentação técnica vigente em `/docs/*.md` (documentos `01` a `12`)** — retrato consolidado e auditado do sistema atual.
+2. **Documentação técnica vigente em `/docs/*.md` (documentos `01` a `13` e histórico metodológico)** — retrato consolidado e auditado do sistema atual.
 3. **Documento de continuidade nos artefatos do AI Studio (`NEXUS_CONTINUIDADE.md`)** — sincronizado com `/docs/`.
 4. **Documentos históricos em `/docs/archive/`** — preservam contexto de origem, especificações anteriores (`v4`/`v5`) e diagnósticos pontuais; **não devem ser tratados como retrato do estado atual** sem conferência no código.
 
