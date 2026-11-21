@@ -54,11 +54,27 @@
 
 ---
 
-## 4. Fora de Escopo Permanente / Descartado
+## 4. Restrições Estruturais, Itens Não Planejados e Decisões Históricas
 
-- Reescrever o aplicativo do zero ou substituir Jetpack Compose / Room por outras stacks.
-- Login, contas de usuário, backend próprio, sincronização em nuvem ou Firebase.
-- IA embarcada ou online (chatbots, leitura automática de extratos bancários por OCR/LLM).
-- Integração com contas bancárias reais / Open Finance, corretora de valores, ordens de compra/venda ou recomendações de investimento.
-- Migração da navegação por estado para `NavHost` baseado em rotas string.
-- Substituição das `12` fontes públicas sem token do Mercado por provedores pagos ou dependência obrigatória de chave pessoal brapi *(decisão substituída pelos Lotes 01–09)*.
+> Esta seção descreve o estado atual de escopo, não uma lista de proibições eternas. Ideias não planejadas, rejeitadas ou descartadas podem ser reavaliadas quando houver mudança de contexto ou novas evidências, conforme docs/13_GOVERNANCA_DOCUMENTAL.md. Reavaliação não equivale a aprovação ou implementação.
+
+### 4.1 Restrições estruturais atualmente adotadas
+- Preservar a arquitetura Android nativa Kotlin + Jetpack Compose + Room, com evolução incremental; substituição exige proposta e decisão explícita.
+- Manter o núcleo offline-first, sem login obrigatório, backend proprietário ou dependência de nuvem para o funcionamento principal.
+- Não introduzir chaves secretas ou credenciais privadas embutidas no aplicativo/repositório.
+- Preservar navegação por estado enquanto a decisão arquitetural correspondente permanecer ativa.
+- Preservar integridade de dados e migrações Room aditivas; não utilizar fallbackToDestructiveMigration().
+
+### 4.2 Não planejado ou não aprovado atualmente
+- IA embarcada ou online, chatbots, interpretação automática por OCR/LLM e assistentes generativos: não aprovados nem planejados neste momento. Pesquisa exploratória pode avaliar utilidade, execução local, privacidade, desempenho, licença e compatibilidade com aparelhos modestos. Pesquisa não autoriza implementação.
+- Integração com contas bancárias reais/Open Finance: não aprovada nem planejada. Exige avaliação específica de segurança, privacidade, consentimento, regulamentação, provedores, custos e manutenção.
+- Múltiplos usuários, contas e sincronização obrigatória em nuvem: não fazem parte da arquitetura atual.
+- Corretora de valores, ordens de compra/venda e recomendações de investimento: não fazem parte do escopo atual.
+
+### 4.3 Decisões ou alternativas históricas
+- Reescrever o aplicativo do zero ou substituir a stack atual: alternativa não adotada; não executar sem nova proposta fundamentada e aprovação explícita.
+- Substituir as 12 fontes públicas sem token do Mercado por provedores pagos ou exigir chave pessoal brapi: proposta anterior superada pelos Lotes 01–09 e pelos ADRs correspondentes.
+- Migrar navegação por estado para NavHost: alternativa não adotada enquanto ADR-001 permanecer ativo.
+
+### 4.4 Regra de reavaliação
+Uma ideia anteriormente rejeitada, descartada ou não planejada pode voltar à pesquisa/análise quando surgir necessidade nova, tecnologia/custo/licença/capacidade dos dispositivos mudar, novas evidências reduzirem riscos ou a alternativa resolver problema mais importante. Recuperar a justificativa original, registrar o que mudou e atualizar ADRs/documentos afetados quando houver nova decisão. Não apagar nem reescrever silenciosamente o histórico.
