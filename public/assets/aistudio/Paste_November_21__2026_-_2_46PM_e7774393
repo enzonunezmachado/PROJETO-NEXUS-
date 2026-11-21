@@ -1,0 +1,836 @@
+# NEXUS — CRIAÇÃO DE TRÊS PERFIS DE VIDA COMPLETOS PARA TESTES DO APLICATIVO
+
+Quero que você realize uma investigação completa do projeto NEXUS e, com base nela, desenvolva três arquivos JSON de backup independentes, cada um representando a vida de uma pessoa fictícia completamente diferente.
+
+O objetivo é utilizar esses arquivos para testar o aplicativo com dados realistas, variados, interligados e suficientemente numerosos para exercitar os módulos, as funcionalidades, os indicadores, os gráficos, as notificações, os filtros, as listagens, os históricos e as diferentes possibilidades de utilização do NEXUS.
+
+Não quero três conjuntos de dados artificiais, preenchidos com tarefas genéricas e repetitivas. Quero três vidas fictícias, com histórias, rotinas, responsabilidades, compromissos, problemas, projetos, relações pessoais e situações financeiras próprias.
+
+**Uma decisão importante sobre a execução:** você tem acesso ao código-fonte e à documentação do NEXUS. Portanto, não quero que este prompt determine tecnicamente como cada informação deve ser cadastrada. Essa investigação e essa decisão são suas.
+
+Nós forneceremos o contexto humano dos personagens. Você deverá descobrir como representar essas realidades utilizando os recursos que realmente existem no aplicativo.
+
+---
+
+# PARTE 1 — OBJETIVO DO TRABALHO
+
+Criar três arquivos JSON independentes:
+
+1. `NEXUS_TESTE_GABRIEL_UNIVERSITARIO.json`
+2. `NEXUS_TESTE_HELENA_COMUNIDADE.json`
+3. `NEXUS_TESTE_RICARDO_EMPRESARIO.json`
+
+Cada arquivo deve representar um usuário diferente, com uma vida própria e um conjunto de dados coerente.
+
+Os arquivos serão utilizados para importar os backups no NEXUS e observar como o aplicativo se comporta quando recebe informações de pessoas com realidades diferentes.
+
+Queremos conseguir experimentar o aplicativo com uma quantidade significativa de informações já cadastradas, sem precisar preencher tudo manualmente.
+
+Os três perfis devem, em conjunto, proporcionar uma cobertura ampla das funcionalidades disponíveis no NEXUS.
+
+## O que esperamos conseguir testar
+
+- Dashboard e indicadores.
+- Organização da rotina.
+- Compromissos e agenda.
+- Tarefas e atividades.
+- Tarefas recorrentes e repetições.
+- Eventos com e sem custos.
+- Projetos e acompanhamento de progresso.
+- Objetivos pessoais e profissionais.
+- Organização financeira.
+- Receitas e despesas.
+- Contas, vencimentos e pagamentos.
+- Histórico financeiro.
+- Gráficos e indicadores financeiros.
+- Notificações, lembretes e alertas.
+- Listas e organizações de informações.
+- Filtros, pesquisa, ordenação e agrupamentos.
+- Registros concluídos, pendentes, atrasados e futuros.
+- Relações entre diferentes módulos.
+- Demais recursos existentes no aplicativo que possam ser representados nos dados de backup.
+
+Essa relação é uma referência do que queremos exercitar, não uma afirmação de que todos esses recursos necessariamente existem ou são exportados pelo mecanismo de backup atual.
+
+Você deverá descobrir a realidade técnica do projeto.
+
+---
+
+# PARTE 2 — AUTONOMIA PARA INVESTIGAR O NEXUS
+
+Antes de criar qualquer arquivo, investigue o projeto.
+
+Não comece inventando JSON, criando estruturas próprias ou presumindo como funciona o backup.
+
+Você conhece o projeto por meio dos arquivos disponíveis, mas precisa verificar o estado atual do código e da documentação.
+
+Investigue especialmente:
+
+1. O mecanismo oficial de exportação e importação de backups.
+2. A versão atual do formato de backup.
+3. Todas as entidades e estruturas de dados que podem ser representadas.
+4. Campos obrigatórios e opcionais.
+5. IDs, identificadores e relacionamentos.
+6. Enums, estados e validações.
+7. Datas, horários e formatos esperados.
+8. Como os registros financeiros são representados.
+9. Como funcionam recorrências e repetições.
+10. Como são representados eventos, compromissos e tarefas.
+11. Como funcionam projetos, objetivos e progresso.
+12. Quais informações são armazenadas no Room.
+13. Quais informações ficam fora do Room ou utilizam outros mecanismos.
+14. Quais funcionalidades não fazem parte do backup oficial.
+15. Quais recursos possuem notificações, lembretes ou alertas.
+16. Quais campos ou relacionamentos são necessários para que os dados sejam exibidos corretamente nas telas e indicadores.
+
+Explore também as funcionalidades menos óbvias.
+
+Não queremos descobrir apenas como cadastrar tarefas, compromissos e despesas. Queremos descobrir todas as possibilidades que o aplicativo oferece para representar uma vida organizada.
+
+**Você deve tomar a iniciativa de encontrar essas possibilidades.**
+
+Não se limite aos exemplos apresentados neste documento.
+
+## Autonomia na composição dos dados
+
+Os personagens apresentados adiante são descrições humanas, não especificações técnicas.
+
+Não estamos determinando que você crie exatamente determinada quantidade de tarefas, eventos, contas, projetos, imóveis, compras ou qualquer outro registro.
+
+Não estamos determinando nomes de registros, valores, datas específicas, quantidades de itens ou estruturas de JSON.
+
+Você deverá interpretar cada personagem e decidir quais informações fazem sentido para representar sua vida.
+
+Por exemplo, quando descrevemos uma pessoa que administra imóveis, esperamos que você compreenda as responsabilidades envolvidas e utilize os recursos disponíveis no NEXUS para representar essa realidade da maneira mais completa possível.
+
+Não queremos que você fique limitado às palavras utilizadas neste documento.
+
+Queremos que investigue, planeje e utilize sua capacidade de compreender o aplicativo.
+
+Ao mesmo tempo, não invente módulos, campos, funcionalidades ou estruturas inexistentes.
+
+A implementação real do NEXUS é a autoridade técnica.
+
+---
+
+# PARTE 3 — OS TRÊS PERSONAGENS
+
+## PERFIL 01 — GABRIEL FERREIRA
+
+**22 anos | São Paulo, SP | Universitário | Aspirante a empreendedor**
+
+### História e contexto pessoal
+
+Gabriel tem 22 anos e cursa Engenharia da Computação na Universidade de São Paulo (USP).
+
+É um jovem bastante ocupado, curioso, ambicioso e interessado em tecnologia, inovação e empreendedorismo.
+
+Mora sozinho em um apartamento relativamente próximo à universidade, mas mantém contato frequente com seus pais e familiares.
+
+Sua vida não gira exclusivamente em torno da faculdade.
+
+Ele tenta equilibrar estudos, trabalho, projetos pessoais, atividades sociais, família, saúde e planos para o futuro.
+
+Tem uma rotina que muda bastante dependendo da época do semestre. Em alguns períodos, consegue organizar melhor os horários. Em outros, enfrenta semanas extremamente movimentadas.
+
+### Faculdade
+
+Gabriel precisa lidar com uma rotina universitária realista:
+
+- Aulas e horários diferentes durante a semana.
+- Provas e avaliações.
+- Trabalhos individuais.
+- Trabalhos em grupo.
+- Entregas com prazos.
+- Reuniões com colegas.
+- Atividades de pesquisa.
+- Projetos acadêmicos.
+- Participação em eventos universitários.
+- Cursos complementares.
+- Estudos individuais.
+- Preparação para avaliações.
+- Atividades relacionadas à Engenharia da Computação.
+
+Algumas atividades acontecem regularmente. Outras possuem datas específicas.
+
+Existem períodos com maior concentração de compromissos e entregas.
+
+### Empreendedorismo e projetos pessoais
+
+Gabriel tem interesse em abrir uma empresa de tecnologia no futuro.
+
+Participa de eventos de empreendedorismo, encontros de inovação, palestras, workshops e atividades de networking.
+
+Acompanha pessoas e empresas do setor tecnológico e procura oportunidades para desenvolver ideias próprias.
+
+Ele possui projetos pessoais que não estão necessariamente relacionados à universidade.
+
+Pode estar desenvolvendo uma ideia de aplicativo, pesquisando um modelo de negócio, organizando uma proposta ou estudando uma oportunidade comercial.
+
+Tem objetivos profissionais de médio e longo prazo.
+
+É importante que sua vida represente um jovem que está tentando construir algo, não apenas um estudante que frequenta aulas e entrega trabalhos.
+
+### Atividade profissional
+
+Além da faculdade, Gabriel administra uma pequena assistência técnica domiciliar de celulares e tablets.
+
+É uma atividade que começou como uma forma de ganhar dinheiro e desenvolver experiência empreendedora.
+
+Ele recebe solicitações de clientes, organiza avaliações, realiza diagnósticos, prepara orçamentos, compra peças e executa reparos.
+
+O atendimento possui várias situações simultâneas.
+
+Alguns clientes aguardam avaliação. Outros aguardam orçamento. Alguns aprovaram o serviço, mas a peça ainda não chegou. Existem reparos em andamento, aparelhos prontos para retirada, pagamentos pendentes e serviços concluídos.
+
+Ele precisa conciliar os atendimentos com as aulas e os compromissos universitários.
+
+Também precisa acompanhar fornecedores, materiais, custos de peças, ferramentas, entregas e garantias.
+
+Não transforme a assistência técnica em uma empresa artificialmente grande. É uma atividade pequena, administrada por ele, mas que exige organização.
+
+### Vida familiar e social
+
+Gabriel tem pais, irmãos e outros familiares.
+
+Participa de aniversários, encontros familiares, almoços, comemorações e datas especiais.
+
+Precisa lembrar de compromissos familiares, organizar presentes, combinar horários e participar de eventos.
+
+Tem amigos da universidade e pessoas que conhece em eventos de empreendedorismo.
+
+Também possui momentos de lazer, encontros, atividades físicas e compromissos pessoais.
+
+Não faça com que todos os seus dias sejam ocupados exclusivamente por trabalho e faculdade.
+
+### Finanças
+
+Gabriel precisa administrar a própria vida financeira.
+
+Possui despesas relacionadas a:
+
+- Moradia.
+- Alimentação.
+- Transporte.
+- Faculdade e educação.
+- Internet e serviços.
+- Compras pessoais.
+- Saúde e atividades físicas.
+- Lazer.
+- Equipamentos e tecnologia.
+- Cartão de crédito.
+- Compras parceladas.
+- Contas com vencimentos.
+- Reserva financeira.
+- Investimentos nos próprios projetos.
+
+Também possui movimentações financeiras relacionadas à assistência técnica.
+
+É importante representar a diferença entre o dinheiro que recebe dos clientes, os custos dos reparos, a compra de peças, as despesas operacionais e o dinheiro que efetivamente sobra.
+
+### Planos futuros
+
+Gabriel pensa em realizar um intercâmbio internacional.
+
+Pesquisa universidades, requisitos, idiomas, documentação, custos, possibilidades de financiamento e prazos.
+
+Esse objetivo ainda está em preparação.
+
+Ele também deseja desenvolver sua carreira profissional e transformar suas ideias em negócios reais.
+
+### Característica principal do perfil
+
+Gabriel representa uma pessoa jovem com muitas áreas da vida acontecendo simultaneamente.
+
+Seu desafio é conciliar faculdade, empreendedorismo, trabalho, família, compromissos, projetos e finanças.
+
+A vida dele deve conter situações em que compromissos diferentes competem pela mesma janela de tempo.
+
+---
+
+## PERFIL 02 — HELENA MARTINS
+
+**69 anos | São João del-Rei, MG | Aposentada | Voluntária | Pequena produtora de bolos | Administradora de patrimônio familiar**
+
+### História e contexto pessoal
+
+Helena tem 69 anos, é viúva e mora em São João del-Rei, Minas Gerais.
+
+Tem filhos adultos e netos.
+
+É uma pessoa tranquila, muito ligada à família e à comunidade onde vive.
+
+Sua rotina é relativamente mais calma do que a dos outros personagens, mas isso não significa que ela não tenha responsabilidades.
+
+Helena possui uma história de vida longa, construída em torno da família, da comunidade, do trabalho e da preservação de seu patrimônio.
+
+### Patrimônio familiar e casas da comunidade
+
+A família de Helena construiu, ao longo de décadas, várias pequenas casas em um terreno familiar.
+
+Essas construções foram realizadas gradualmente, com o esforço dos pais, do marido, dos filhos e da própria Helena.
+
+A casa principal pertence à família e é onde Helena mora atualmente.
+
+Além dela, existem outras casas destinadas ao aluguel.
+
+Helena cuida pessoalmente dessas propriedades e oferece aluguéis acessíveis para moradores da comunidade.
+
+Ela não administra uma grande imobiliária e não possui uma empresa de gestão imobiliária.
+
+É uma pessoa que preserva um patrimônio familiar e procura manter as casas em boas condições para que outras famílias possam morar nelas.
+
+Essa responsabilidade envolve diferentes situações:
+
+- Acompanhamento dos imóveis.
+- Relacionamento com moradores.
+- Recebimento dos aluguéis.
+- Controle de pagamentos.
+- Despesas de conservação.
+- Manutenção preventiva.
+- Reparos emergenciais.
+- Pequenas reformas.
+- Organização de obras.
+- Compra de materiais.
+- Contratação de profissionais quando necessário.
+- Preparação de imóveis para novos moradores.
+- Planejamento de melhorias.
+
+As casas não estão todas em condições iguais.
+
+Algumas estão bem conservadas. Outras precisam de pequenos reparos. Eventualmente, uma propriedade pode ficar vazia durante uma reforma.
+
+Helena procura melhorar gradualmente as condições dos imóveis, sem comprometer toda sua renda.
+
+O patrimônio possui grande valor afetivo para ela.
+
+### Produção de bolos
+
+Além de cuidar das casas, Helena faz bolos simples.
+
+É algo que aprendeu ao longo da vida e que gosta de fazer.
+
+Prepara bolos caseiros para encomendas de conhecidos, vizinhos e pessoas da comunidade.
+
+Pode produzir bolos simples para aniversários, encontros familiares, pequenas comemorações e encomendas.
+
+Não é uma confeitaria profissional de grande porte.
+
+Sua produção é artesanal e de pequena escala.
+
+Ela precisa organizar:
+
+- Encomendas.
+- Datas de entrega.
+- Compras de ingredientes.
+- Preparação dos bolos.
+- Custos dos ingredientes.
+- Pagamentos recebidos.
+- Entregas.
+- Compromissos com clientes.
+
+Também faz bolos gratuitamente para os aniversários dos netos e para algumas comemorações familiares.
+
+Esses bolos não representam vendas. São uma demonstração de carinho e participação na vida da família.
+
+Essa atividade deve aparecer naturalmente na vida dela, sem transformar Helena em uma empresária de confeitaria.
+
+### Voluntariado e comunidade
+
+Helena participa de atividades voluntárias.
+
+Ajuda pessoas da comunidade, participa de campanhas de arrecadação, encontros, ações beneficentes e atividades coletivas.
+
+Pode ajudar a organizar eventos, reunir doações, acompanhar materiais e combinar atividades com outras pessoas.
+
+Algumas ações acontecem regularmente e outras são organizadas em datas específicas.
+
+Ela também participa de encontros com amigas, atividades comunitárias e eventos locais.
+
+### Vida pessoal e familiar
+
+Helena tem filhos adultos, netos, familiares, amigas e vizinhos com quem mantém contato.
+
+Sua rotina envolve:
+
+- Aniversários da família.
+- Visitas aos filhos e netos.
+- Preparação de refeições.
+- Encontros familiares.
+- Compras domésticas.
+- Consultas e compromissos pessoais.
+- Jardinagem.
+- Caminhadas.
+- Atividades de lazer.
+- Pequenas viagens.
+- Organização da própria casa.
+
+Ela gosta de preparar coisas para a família e valoriza momentos simples.
+
+Os aniversários dos netos são especialmente importantes, pois costuma preparar pessoalmente os bolos de comemoração.
+
+### Finanças
+
+Helena recebe aposentadoria e possui receitas complementares relacionadas aos aluguéis e às encomendas de bolos.
+
+Tem despesas domésticas, alimentação, energia, água, telefone, saúde, compras, manutenção das propriedades e atividades pessoais.
+
+Precisa equilibrar os recebimentos com as despesas de conservação dos imóveis.
+
+Não possui uma vida financeira extremamente complexa, mas existem responsabilidades e decisões financeiras reais.
+
+É importante que sua realidade seja diferente da de um empresário, com movimentações mais simples e proporcionais à sua vida.
+
+### Característica principal do perfil
+
+Helena representa uma pessoa que possui uma vida mais tranquila, mas que carrega responsabilidades familiares, comunitárias e patrimoniais.
+
+Seu perfil deve demonstrar que o NEXUS não é útil apenas para jovens, empresários ou pessoas com agendas extremamente movimentadas.
+
+Também pode ajudar alguém a preservar sua tranquilidade, cuidar da família, acompanhar compromissos, administrar responsabilidades e organizar atividades cotidianas.
+
+---
+
+## PERFIL 03 — RICARDO ALMEIDA
+
+**42 anos | Curitiba, PR | Empresário | Casado | Sem filhos**
+
+### História e contexto pessoal
+
+Ricardo tem 42 anos, mora em Curitiba e é casado.
+
+Não tem filhos.
+
+É proprietário de uma empresa de distribuição e comercialização de produtos alimentícios, com atuação regional.
+
+Sua empresa começou pequena e cresceu ao longo dos anos.
+
+Hoje, possui uma estrutura com um centro de distribuição, duas lojas próprias e fornecimento de produtos para estabelecimentos comerciais de outras cidades.
+
+A empresa trabalha com produtos alimentícios embalados, cafés, produtos artesanais, itens de mercearia e outros produtos de fornecedores regionais.
+
+Ricardo administra o negócio e acompanha decisões importantes, mas não realiza pessoalmente todas as atividades operacionais.
+
+Possui funcionários e pessoas responsáveis por diferentes áreas.
+
+### Empresa e operação comercial
+
+A empresa possui diferentes frentes de operação:
+
+- Compras de fornecedores.
+- Negociação de preços.
+- Recebimento de mercadorias.
+- Controle de estoque.
+- Armazenamento.
+- Separação de pedidos.
+- Vendas nas lojas.
+- Atendimento a clientes comerciais.
+- Distribuição de produtos.
+- Organização de entregas.
+- Controle de pagamentos.
+- Acompanhamento de recebimentos.
+- Despesas operacionais.
+- Manutenção de equipamentos e instalações.
+- Gestão de funcionários.
+- Planejamento de expansão.
+
+A operação envolve movimentações frequentes.
+
+Existem pedidos de clientes, compras de fornecedores, mercadorias que precisam chegar, produtos que precisam ser distribuídos e entregas que precisam acontecer.
+
+Nem tudo ocorre perfeitamente.
+
+Podem existir atrasos de fornecedores, divergências em pedidos, produtos em falta, clientes que pagam depois do prazo, problemas logísticos e despesas inesperadas.
+
+Ricardo precisa acompanhar a operação sem estar fisicamente presente em todos os lugares.
+
+### Gestão e compromissos profissionais
+
+Ricardo participa de reuniões, negociações, encontros empresariais e eventos do setor.
+
+Tem compromissos com fornecedores, funcionários, clientes comerciais, parceiros e profissionais externos.
+
+Também acompanha indicadores da empresa, resultados financeiros e decisões estratégicas.
+
+Possui projetos de expansão, melhoria operacional e desenvolvimento de novas oportunidades.
+
+Alguns projetos pertencem diretamente à empresa.
+
+Outros são iniciativas pessoais, que não devem ser misturadas automaticamente com a operação comercial.
+
+### Projetos independentes
+
+Ricardo possui interesses e objetivos que vão além da empresa.
+
+Pode estar planejando uma reforma na residência, estudando um investimento, organizando uma viagem especial com a esposa ou desenvolvendo algum projeto pessoal.
+
+Esses projetos precisam existir de maneira independente da empresa.
+
+O objetivo é representar uma pessoa que possui responsabilidades profissionais importantes, mas que também tem uma vida própria.
+
+### Vida pessoal e familiar
+
+Ricardo é casado e procura reservar tempo para a esposa.
+
+O casal gosta de viajar, conhecer restaurantes, frequentar spas, fazer passeios e aproveitar momentos de descanso.
+
+Não possuem filhos.
+
+Ricardo também mantém contato com os pais, irmãos, sobrinhos e outros familiares.
+
+Existem aniversários, encontros familiares, datas comemorativas, compromissos e eventos que precisam ser lembrados.
+
+Pode haver compromissos relacionados à saúde, atividades físicas, cuidados pessoais e organização da residência.
+
+A vida pessoal deve possuir a mesma atenção que a profissional.
+
+Não faça com que Ricardo seja apenas um empresário trabalhando o tempo inteiro.
+
+### Finanças pessoais e empresariais
+
+A vida financeira de Ricardo possui maior complexidade.
+
+Ele precisa acompanhar as finanças pessoais e também as movimentações da empresa.
+
+Existem receitas comerciais, despesas operacionais, compras, fornecedores, pagamentos, recebimentos, custos de distribuição, manutenção, funcionários e outras responsabilidades.
+
+Na vida pessoal, existem despesas domésticas, viagens, lazer, compras, compromissos e investimentos.
+
+Não confunda automaticamente as movimentações pessoais com as empresariais.
+
+Represente essa separação utilizando os recursos que efetivamente existem no NEXUS.
+
+### Característica principal do perfil
+
+Ricardo representa uma pessoa com responsabilidades empresariais complexas, patrimônio, família, compromissos pessoais e projetos independentes.
+
+Seu maior desafio é manter o controle de uma operação comercial que envolve pessoas, mercadorias, dinheiro, fornecedores, clientes e diferentes locais, sem perder o equilíbrio da vida pessoal.
+
+---
+
+# PARTE 4 — CONSTRUÇÃO DAS TRÊS VIDAS
+
+Agora que você conhece os personagens, deve construir os dados que representem suas vidas.
+
+Não queremos uma coleção de registros isolados.
+
+Queremos que os dados contem uma história.
+
+Por exemplo, um compromisso pode estar relacionado a um projeto; um projeto pode possuir atividades; uma despesa pode ter relação com uma atividade; uma receita pode estar associada a uma operação; uma obrigação pode possuir vencimento e histórico.
+
+Utilize essas relações sempre que a implementação permitir.
+
+## Linha do tempo
+
+Crie uma linha do tempo coerente para cada personagem.
+
+Como referência, procure representar:
+
+- Meses anteriores.
+- O mês atual.
+- Compromissos futuros.
+- Projetos que começaram no passado e continuam.
+- Atividades já concluídas.
+- Atividades em andamento.
+- Obrigações pendentes.
+- Alguns atrasos realistas.
+- Objetivos com diferentes níveis de progresso.
+- Receitas e despesas distribuídas ao longo do tempo.
+- Compromissos recorrentes.
+- Acontecimentos pontuais.
+
+A extensão temporal deve ser escolhida de acordo com as possibilidades e limitações do formato de backup.
+
+Não é necessário utilizar exatamente o mesmo volume de dados para os três personagens.
+
+A prioridade é a coerência.
+
+## Variedade de situações
+
+Não deixe todos os registros com o mesmo estado.
+
+Cada perfil deve possuir uma combinação natural de situações.
+
+Alguns exemplos de situações que podem aparecer, caso sejam suportadas:
+
+- Concluído.
+- Em andamento.
+- Pendente.
+- Aguardando.
+- Atrasado.
+- Cancelado.
+- Reagendado.
+- Pago.
+- Não pago.
+- Parcialmente resolvido.
+- Planejado.
+- Em preparação.
+
+Não utilize estados inexistentes no código.
+
+Não deixe todos os compromissos no futuro ou todas as atividades concluídas.
+
+A vida real possui acontecimentos em diferentes estágios.
+
+## Recorrências e repetições
+
+Dê atenção especial às funcionalidades de recorrência.
+
+Nos testes anteriores, essa possibilidade praticamente não foi aproveitada.
+
+Investigue como o NEXUS representa repetições e utilize os recursos existentes para criar situações recorrentes coerentes com as vidas dos personagens.
+
+Não basta criar vários registros parecidos manualmente se o aplicativo possui um mecanismo próprio de recorrência.
+
+Ao mesmo tempo, não presuma que todas as repetições precisam ser representadas da mesma maneira.
+
+Descubra a implementação real.
+
+## Eventos com custos
+
+Também queremos exercitar eventos que possuem custos financeiros.
+
+Os personagens participam de eventos de diferentes naturezas.
+
+Podem existir eventos gratuitos, pagos, familiares, profissionais, educacionais, comunitários e de lazer.
+
+Investigue como o NEXUS representa essas situações e utilize as possibilidades disponíveis.
+
+Não deixe essa categoria de funcionalidade de fora.
+
+## Notificações, lembretes e alertas
+
+Investigue cuidadosamente como o NEXUS trabalha com notificações, lembretes e alertas.
+
+Queremos que os dados permitam exercitar os recursos relacionados a essas funcionalidades sempre que o backup oficial permitir.
+
+Considere situações que naturalmente exigiriam avisos, como:
+
+- Compromissos próximos.
+- Prazos de atividades.
+- Contas a vencer.
+- Pagamentos pendentes.
+- Eventos futuros.
+- Atividades recorrentes.
+- Obrigações atrasadas.
+- Etapas de projetos.
+- Outros acontecimentos que o aplicativo consiga acompanhar.
+
+Não invente estruturas de notificação dentro do JSON.
+
+Verifique se essas informações fazem parte do backup, se são geradas pelo próprio aplicativo ou se dependem de outros mecanismos.
+
+Se não puderem ser restauradas pelo backup, documente essa limitação.
+
+---
+
+# PARTE 5 — QUALIDADE E REALISMO DOS DADOS
+
+A qualidade dos dados é mais importante do que simplesmente gerar arquivos enormes.
+
+Evite:
+
+- Centenas de tarefas genéricas.
+- Registros duplicados.
+- Nomes repetidos artificialmente.
+- Valores financeiros aleatórios.
+- Datas sem coerência.
+- Projetos sem relação com a vida do personagem.
+- Compromissos incompatíveis no mesmo horário.
+- Receitas e despesas sem sentido.
+- Registros criados apenas para aumentar contagens.
+- Pessoas que aparecem sem contexto.
+- Informações que contradizem a história dos personagens.
+
+Procure construir relações naturais.
+
+Por exemplo:
+
+- Um projeto pode estar em andamento e possuir atividades concluídas e pendentes.
+- Um evento pode possuir custos associados.
+- Uma obrigação financeira pode ter vencimento e histórico de pagamento.
+- Uma atividade recorrente pode representar um hábito ou responsabilidade contínua.
+- Uma pessoa pode possuir compromissos familiares e profissionais.
+- Uma empresa pode ter diferentes operações acontecendo simultaneamente.
+
+Esses exemplos servem para orientar o raciocínio, não para limitar as possibilidades.
+
+## Gráficos e indicadores
+
+Os dados devem ser suficientemente variados para produzir informações úteis nos gráficos e indicadores do aplicativo.
+
+Não crie números artificiais apenas para deixar os gráficos visualmente interessantes.
+
+Crie situações financeiras e operacionais plausíveis, com variações ao longo do tempo.
+
+Cada perfil deve possuir uma realidade própria.
+
+Gabriel terá movimentações de estudante e pequeno empreendedor.
+
+Helena terá aposentadoria, aluguéis acessíveis, despesas domésticas, pequenas encomendas e custos de manutenção.
+
+Ricardo terá movimentações pessoais e empresariais de maior complexidade.
+
+A diferença entre os três deve aparecer naturalmente nos dados.
+
+---
+
+# PARTE 6 — REGRAS TÉCNICAS E SEGURANÇA
+
+Esta atividade é de geração de dados de teste.
+
+Não é uma autorização para modificar o funcionamento do aplicativo.
+
+**Não altere:**
+
+- Código das funcionalidades.
+- Entidades Room.
+- DAOs.
+- Estrutura do banco de dados.
+- Migrações.
+- Mecanismo oficial de backup.
+- Regras de negócio.
+- Navegação.
+- Interface.
+- Design System.
+- Arquitetura.
+- Funcionalidades existentes.
+
+Não altere o formato oficial do backup para facilitar a geração dos dados.
+
+Utilize o formato e o mecanismo que o projeto realmente implementa.
+
+Não crie um JSON alternativo que pareça um backup, mas que não possa ser importado pelo aplicativo.
+
+Os três arquivos devem ser independentes.
+
+Cada um deve poder ser importado separadamente, sem depender dos outros.
+
+Não compartilhe IDs ou referências entre arquivos de maneira que possa provocar conflitos.
+
+Não inclua dados pessoais reais do usuário ou de terceiros. Todos os nomes, endereços, empresas, contatos e acontecimentos devem ser fictícios.
+
+Não substitua, apague ou modifique dados pessoais existentes no dispositivo utilizado para testes.
+
+---
+
+# PARTE 7 — VALIDAÇÃO
+
+Depois de criar os arquivos, realize uma validação cuidadosa.
+
+Verifique:
+
+1. Se os três arquivos são JSON sintaticamente válidos.
+2. Se correspondem ao formato oficial de backup.
+3. Se utilizam a versão correta.
+4. Se todos os campos obrigatórios estão presentes.
+5. Se os tipos de dados estão corretos.
+6. Se os IDs são válidos e não apresentam conflitos internos.
+7. Se os relacionamentos entre registros são consistentes.
+8. Se os enums e estados são aceitos.
+9. Se as datas e horários são válidos.
+10. Se os valores financeiros fazem sentido.
+11. Se existem registros duplicados sem justificativa.
+12. Se a linha do tempo de cada personagem é coerente.
+13. Se as informações não contradizem as histórias.
+14. Se os três arquivos são independentes.
+15. Se o mecanismo oficial de restauração consegue interpretar os arquivos, quando for possível testar isso com segurança.
+
+Diferencie claramente:
+
+- JSON sintaticamente válido.
+- Compatibilidade estrutural com o formato oficial.
+- Consistência dos relacionamentos.
+- Coerência semântica da vida simulada.
+- Restauração efetivamente testada no aplicativo.
+
+Não declare que um backup foi importado ou restaurado se isso não foi realmente executado.
+
+Se for possível testar a restauração, faça isso somente em ambiente isolado ou dispositivo de teste, sem sobrescrever dados pessoais.
+
+Se alguma funcionalidade importante não puder ser representada pelo backup, explique.
+
+Se alguma parte do projeto não puder ser investigada, não invente uma resposta.
+
+---
+
+# PARTE 8 — LOCAL DOS ARQUIVOS
+
+Salve os três arquivos em uma pasta apropriada para dados de teste dentro do repositório.
+
+A pasta deve ser fácil de localizar, compreender e utilizar.
+
+Não misture os arquivos com os backups pessoais do usuário.
+
+Não faça alterações desnecessárias na estrutura do projeto.
+
+Não crie automaticamente dados de teste que sejam carregados pelo aplicativo na inicialização.
+
+Os arquivos devem permanecer separados e ser utilizados manualmente para os testes de importação.
+
+Não faça commits ou alterações no GitHub sem autorização explícita.
+
+---
+
+# PARTE 9 — RELATÓRIO FINAL
+
+Quando terminar, apresente um relatório objetivo, mas completo.
+
+O relatório deve informar:
+
+### 1. Investigação realizada
+- Qual formato de backup foi encontrado.
+- Qual versão foi utilizada.
+- Quais estruturas e funcionalidades foram identificadas.
+- Quais limitações foram encontradas.
+
+### 2. Arquivos criados
+- Nome de cada arquivo.
+- Caminho completo dentro do projeto.
+- Tamanho.
+- Quantidade de registros.
+- Resumo do perfil representado.
+
+### 3. Cobertura funcional
+Explique quais recursos do NEXUS foram exercitados por cada personagem.
+
+Não basta listar módulos. Explique brevemente como a vida de cada pessoa utiliza esses recursos.
+
+### 4. Validação
+Apresente os resultados das verificações realizadas.
+
+Informe claramente se os arquivos foram apenas validados estruturalmente ou se também foram importados e restaurados no aplicativo.
+
+### 5. Limitações
+Informe quais recursos não puderam ser representados, quais dependem de mecanismos externos e quais limitações foram encontradas.
+
+### 6. Orientações de utilização
+Explique como localizar os arquivos e como realizar os testes de importação, respeitando o mecanismo oficial do NEXUS.
+
+---
+
+# ORIENTAÇÃO FINAL
+
+Quero que você encare essa atividade como a construção de um conjunto de cenários realistas para testar o NEXUS.
+
+Não queremos apenas preencher o aplicativo.
+
+Queremos descobrir como ele se comporta quando recebe a vida de três pessoas completamente diferentes.
+
+Um jovem universitário que tenta construir seu futuro, estudar, empreender, trabalhar e manter uma vida pessoal.
+
+Uma senhora que cuida da família, participa da comunidade, preserva o patrimônio construído por gerações e ainda encontra tempo para fazer bolos para as pessoas que ama.
+
+Um empresário que administra uma operação comercial, coordena pessoas, acompanha fornecedores, distribui produtos, toma decisões financeiras e tenta preservar seu casamento, seus projetos pessoais e seus momentos de descanso.
+
+Essas vidas devem parecer reais.
+
+Não devem parecer demonstrações artificiais de funcionalidades.
+
+**Queremos que o NEXUS seja colocado diante de três realidades diferentes e tenha a oportunidade de demonstrar tudo o que já é capaz de organizar.**
+
+Você possui autonomia para investigar, planejar e construir a melhor representação possível dessas vidas, desde que respeite a implementação real do projeto e as regras técnicas estabelecidas neste documento.
+
+Priorize qualidade, coerência, variedade, cobertura funcional e compatibilidade com o backup oficial.
+
+Não tenha pressa em gerar os arquivos antes de compreender o projeto.
