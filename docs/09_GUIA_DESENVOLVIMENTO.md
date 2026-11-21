@@ -103,3 +103,20 @@ Sempre atualizar **no mesmo fechamento do lote**, sem criar cópias paralelas ne
 2. **Sincronização com os Artefatos do Google AI Studio (quando operando no AI Studio):**
    - Atualizar **os mesmos artefatos existentes** (`NEXUS_CONTINUIDADE.md`, `NEXUS_CURRENT_STATE.md`, `NEXUS_PRODUCT_SPEC.md`, `NEXUS_DESIGN_SYSTEM.md`, `NEXUS_INTEGRATION_MAP.md`, `NEXUS_IMPLEMENTATION_ROADMAP.md`) preservando o histórico em `NEXUS_CONTINUIDADE.md` e garantindo zero contradição com `/docs/`.
    - **Nunca** criar arquivos duplicados ou cópias temporárias dentro ou fora de `/docs/`.
+
+
+---
+
+## 6. Governança de Ideias, Decisões e Revisões Documentais
+
+Antes de transformar uma ideia discutida em requisito, ADR, item de roadmap ou implementação, consultar docs/13_GOVERNANCA_DOCUMENTAL.md.
+
+1. Classificar antes de agir: distinguir ideia capturada, pesquisa, análise, proposta, aprovada, planejada e implementação. Não inferir aprovação a partir de brainstorming.
+2. Pesquisar não é implementar: uma iniciativa pode ser investigada sem alterar código, arquitetura ou requisitos aprovados.
+3. Decisões antigas têm contexto: consultar ADRs e histórico antes de concluir que uma alternativa está permanentemente proibida. Rejeições e descartes contextuais podem ser reavaliados com novas evidências, preservando o registro original.
+4. Documentos são revisáveis: Documento Mestre, especificações, arquitetura, ADRs e roadmap podem mudar quando necessário. Atualizar o conteúdo vigente e preservar histórico/rastreabilidade; não manter contradições apenas por antiguidade.
+5. Autorização tem escopo: autorização para pesquisa ou atualização documental não autoriza alteração de código. Executar somente o escopo explicitamente aprovado.
+6. Mudança documental proporcional: atualizar apenas arquivos impactados. Registrar mudanças metodológicas relevantes em docs/HISTORICO_DOCUMENTACAO.md e atualizar docs/README.md.
+7. Continuidade entre sessões: consultar README, governança, estado atual, roadmap e ADRs relacionados; retomar iniciativas em aberto sem tratá-las como aprovadas.
+
+Se houver dúvida real sobre autorização, escopo ou conflito entre documentos, interromper a ação e explicitar a lacuna antes de executar alterações irreversíveis.
