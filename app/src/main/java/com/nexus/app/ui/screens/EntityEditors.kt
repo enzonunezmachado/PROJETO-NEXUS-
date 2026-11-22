@@ -102,7 +102,9 @@ import com.nexus.app.ui.components.NexusCard
 import com.nexus.app.ui.components.NexusDatePickerDialog
 import com.nexus.app.ui.components.NexusTimePickerDialog
 import com.nexus.app.ui.components.ReminderLeadTimeSelector
+import com.nexus.app.ui.theme.ColoredBorderRole
 import com.nexus.app.ui.theme.LocalNexusPalette
+import com.nexus.app.ui.theme.coloredBorder
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -1022,10 +1024,11 @@ fun TaskEditorSheet(
                             )
                         },
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(
-                            width = if (highlightExpenseButton) 1.5.dp else 1.dp,
-                            color = if (highlightExpenseButton) palette.positive else palette.border
-                        )
+                        border = if (highlightExpenseButton) {
+                            palette.coloredBorder(palette.positive, ColoredBorderRole.HIGHLIGHTED_BUTTON)
+                        } else {
+                            BorderStroke(1.dp, palette.border)
+                        }
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.ReceiptLong,

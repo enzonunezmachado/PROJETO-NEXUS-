@@ -74,7 +74,9 @@ import com.nexus.app.domain.model.MarketQuoteUiState
 import com.nexus.app.notifications.NexusNotificationScheduler
 import com.nexus.app.ui.components.NexusCard
 import com.nexus.app.ui.market.MarketAlertRowPresentation
+import com.nexus.app.ui.theme.ColoredBorderRole
 import com.nexus.app.ui.theme.LocalNexusPalette
+import com.nexus.app.ui.theme.coloredBorder
 
 data class MarketAlertEditorState(
     val existingAlert: MarketPriceAlert? = null,
@@ -291,7 +293,7 @@ private fun MarketNotificationPermissionBanner(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(10.dp),
         color = palette.warning.copy(alpha = 0.10f),
-        border = BorderStroke(1.dp, palette.warning.copy(alpha = 0.30f))
+        border = palette.coloredBorder(palette.warning, ColoredBorderRole.MEDIUM_ACCENT)
     ) {
         Row(
             modifier = Modifier
@@ -506,7 +508,7 @@ private fun MarketAlertStatusBadge(
         modifier = modifier,
         shape = RoundedCornerShape(6.dp),
         color = tint.copy(alpha = 0.14f),
-        border = BorderStroke(1.dp, tint.copy(alpha = 0.35f))
+        border = palette.coloredBorder(tint, ColoredBorderRole.SMALL_BADGE_SUBTLE)
     ) {
         Text(
             text = status.label,

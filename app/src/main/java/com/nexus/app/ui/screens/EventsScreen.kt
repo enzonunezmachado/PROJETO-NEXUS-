@@ -6,6 +6,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -108,81 +109,112 @@ fun EventsScreen(
         }
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Eventos",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = palette.textPrimary
-                )
-                OutlinedButton(onClick = onCreateEvent, shape = RoundedCornerShape(10.dp)) {
-                    Text("Novo evento", color = palette.textPrimary)
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 720.dp
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Eventos",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = palette.textPrimary
+                    )
+                    OutlinedButton(onClick = onCreateEvent, shape = RoundedCornerShape(10.dp)) {
+                        Text("Novo evento", color = palette.textPrimary)
+                    }
                 }
             }
-        }
 
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = filterMode == "UPCOMING",
-                    onClick = { filterMode = "UPCOMING" },
-                    label = { Text("Próximos") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = palette.surfaceElevated,
-                        selectedLabelColor = palette.highlight
-                    )
-                )
-                FilterChip(
-                    selected = filterMode == "PENDING_TICKET",
-                    onClick = { filterMode = "PENDING_TICKET" },
-                    label = { Text("Ingresso pendente") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = palette.surfaceElevated,
-                        selectedLabelColor = palette.highlight
-                    )
-                )
-                FilterChip(
-                    selected = filterMode == "ALL",
-                    onClick = { filterMode = "ALL" },
-                    label = { Text("Todos") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = palette.surfaceElevated,
-                        selectedLabelColor = palette.highlight
-                    )
-                )
-            }
-        }
-
-        if (filtered.isEmpty()) {
             item {
-                NexusEmptyState(
-                    icon = Icons.Outlined.Event,
-                    title = "Nenhum evento encontrado",
-                    subtitle = "Cadastre congressos, palestras, workshops ou encontros para acompanhar ingressos, custos e agenda.",
-                    actionLabel = "Novo evento",
-                    onAction = onCreateEvent
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = filterMode == "UPCOMING",
+                        onClick = { filterMode = "UPCOMING" },
+                        label = { Text("Próximos") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = palette.surfaceElevated,
+                            selectedLabelColor = palette.highlight
+                        )
+                    )
+                    FilterChip(
+                        selected = filterMode == "PENDING_TICKET",
+                        onClick = { filterMode = "PENDING_TICKET" },
+                        label = { Text("Ingresso pendente") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = palette.surfaceElevated,
+                            selectedLabelColor = palette.highlight
+                        )
+                    )
+                    FilterChip(
+                        selected = filterMode == "ALL",
+                        onClick = { filterMode = "ALL" },
+                        label = { Text("Todos") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = palette.surfaceElevated,
+                            selectedLabelColor = palette.highlight
+                        )
+                    )
+                }
             }
-        } else {
-            items(filtered, key = { it.event.id }) { ew ->
-                EventSummaryCard(
-                    item = ew,
-                    onClick = { onOpenEvent(ew.event.id) }
-                )
+
+            if (filtered.isEmpty()) {
+                item {
+                    NexusEmptyState(
+                        icon = Icons.Outlined.Event,
+                        title = "Nenhum evento encontrado",
+                        subtitle = "Cadastre congressos, palestras, workshops ou encontros para acompanhar ingressos, custos e agenda.",
+                        actionLabel = "Novo evento",
+                        onAction = onCreateEvent
+                    )
+                }
+            } else if (!isWide) {
+                items(filtered, key = { it.event.id }) { ew ->
+                    EventSummaryCard(
+                        item = ew,
+                        onClick = { onOpenEvent(ew.event.id) }
+                    )
+                }
+            } else {
+                items(
+                    items = filtered.chunked(2),
+                    key = { row -> "ev_row_${row.first().event.id}" }
+                ) { pair ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            EventSummaryCard(
+                                item = pair[0],
+                                onClick = { onOpenEvent(pair[0].event.id) }
+                            )
+                        }
+                        if (pair.size > 1) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                EventSummaryCard(
+                                    item = pair[1],
+                                    onClick = { onOpenEvent(pair[1].event.id) }
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
             }
         }
     }

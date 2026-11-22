@@ -46,12 +46,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,7 +65,9 @@ import com.nexus.app.domain.model.TaskPriority
 import com.nexus.app.domain.model.TaskStatus
 import com.nexus.app.domain.model.TaskWithDetails
 import com.nexus.app.domain.rules.RecurrenceEngine
+import com.nexus.app.ui.theme.ColoredBorderRole
 import com.nexus.app.ui.theme.LocalNexusPalette
+import com.nexus.app.ui.theme.coloredBorder
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
@@ -144,27 +148,132 @@ fun SectionHeader(
     }
 }
 
+private fun buildNexusN1Path(): Path = Path().apply {
+    // N-1 Monolito Chanfrado (coordenadas exatas do viewBox 0 0 318 64)
+    moveTo(12f, 54f)
+    lineTo(12f, 17f)
+    lineTo(19f, 10f)
+    lineTo(24.8f, 10f)
+    lineTo(44.8f, 38.6f)
+    lineTo(46.5f, 38.6f)
+    lineTo(46.5f, 13.5f)
+    lineTo(56f, 10f)
+    lineTo(56f, 47f)
+    lineTo(49f, 54f)
+    lineTo(43.2f, 54f)
+    lineTo(23.2f, 25.4f)
+    lineTo(21.5f, 25.4f)
+    lineTo(21.5f, 50.5f)
+    close()
+}
+
+private fun buildNexusWordmarkPath(): Path = Path().apply {
+    // N-1 (Monolito Chanfrado)
+    addPath(buildNexusN1Path())
+    // E (Kinetik Cut)
+    addRect(Rect(74f, 10f, 83.5f, 54f))
+    addRect(Rect(87f, 10f, 118f, 18.5f))
+    moveTo(87f, 27.8f)
+    lineTo(112f, 27.8f)
+    lineTo(108.5f, 36.2f)
+    lineTo(87f, 36.2f)
+    close()
+    addRect(Rect(87f, 45.5f, 118f, 54f))
+    // X (Kinetik Cut)
+    moveTo(136f, 10f)
+    lineTo(147.5f, 10f)
+    lineTo(182f, 54f)
+    lineTo(170.5f, 54f)
+    close()
+    moveTo(170.5f, 10f)
+    lineTo(182f, 10f)
+    lineTo(166.9f, 29.1f)
+    lineTo(161.2f, 21.8f)
+    close()
+    moveTo(156.8f, 42.2f)
+    lineTo(151.1f, 34.9f)
+    lineTo(136f, 54f)
+    lineTo(147.5f, 54f)
+    close()
+    // U (Kinetik Cut)
+    moveTo(200f, 10f)
+    lineTo(209.5f, 10f)
+    lineTo(209.5f, 40.5f)
+    quadraticTo(209.5f, 45.5f, 214.5f, 45.5f)
+    lineTo(229.5f, 45.5f)
+    quadraticTo(234.5f, 45.5f, 234.5f, 40.5f)
+    lineTo(234.5f, 10f)
+    lineTo(244f, 10f)
+    lineTo(244f, 42f)
+    quadraticTo(244f, 54f, 232f, 54f)
+    lineTo(212f, 54f)
+    quadraticTo(200f, 54f, 200f, 42f)
+    close()
+    // S (Kinetik Cut)
+    moveTo(306f, 10f)
+    lineTo(274f, 10f)
+    quadraticTo(262f, 10f, 262f, 22f)
+    lineTo(262f, 25.5f)
+    quadraticTo(262f, 36f, 274f, 36f)
+    lineTo(292.5f, 36f)
+    quadraticTo(296.5f, 36f, 296.5f, 40f)
+    lineTo(296.5f, 41.5f)
+    quadraticTo(296.5f, 45.5f, 292.5f, 45.5f)
+    lineTo(265.5f, 45.5f)
+    lineTo(262f, 54f)
+    lineTo(294f, 54f)
+    quadraticTo(306f, 54f, 306f, 42f)
+    lineTo(306f, 38.5f)
+    quadraticTo(306f, 28f, 294f, 28f)
+    lineTo(275.5f, 28f)
+    quadraticTo(271.5f, 28f, 271.5f, 24f)
+    lineTo(271.5f, 22.5f)
+    quadraticTo(271.5f, 18.5f, 275.5f, 18.5f)
+    lineTo(302.5f, 18.5f)
+    close()
+}
+
+private val NexusN1VectorPath = buildNexusN1Path()
+private val NexusWordmarkVectorPath = buildNexusWordmarkPath()
+
+@Composable
+fun NexusWordmark(
+    modifier: Modifier = Modifier,
+    height: Dp = 18.dp,
+    color: Color = LocalNexusPalette.current.highlight
+) {
+    val width = height * (318f / 64f)
+    Canvas(
+        modifier = modifier
+            .width(width)
+            .height(height)
+            .semantics { contentDescription = "NEXUS" }
+    ) {
+        withTransform({
+            scale(scaleX = size.width / 318f, scaleY = size.height / 64f, pivot = Offset.Zero)
+        }) {
+            drawPath(path = NexusWordmarkVectorPath, color = color)
+        }
+    }
+}
+
 @Composable
 fun NexusMonogramIcon(
     size: Dp = 20.dp,
     tint: Color = LocalNexusPalette.current.highlight,
     modifier: Modifier = Modifier
 ) {
-    Canvas(modifier = modifier.size(size)) {
-        val w = this.size.width
-        val h = this.size.height
-        val stroke = (w * 0.16f).coerceAtLeast(2.2f)
-        val path = Path().apply {
-            moveTo(w * 0.18f, h * 0.86f)
-            lineTo(w * 0.18f, h * 0.14f)
-            lineTo(w * 0.82f, h * 0.86f)
-            lineTo(w * 0.82f, h * 0.14f)
+    Canvas(
+        modifier = modifier
+            .size(size)
+            .semantics { contentDescription = "NEXUS" }
+    ) {
+        withTransform({
+            translate(left = -6f * (size.width / 56f), top = -4f * (size.height / 56f))
+            scale(scaleX = size.width / 56f, scaleY = size.height / 56f, pivot = Offset.Zero)
+        }) {
+            drawPath(path = NexusN1VectorPath, color = tint)
         }
-        drawPath(
-            path = path,
-            color = tint,
-            style = Stroke(width = stroke, cap = StrokeCap.Square, join = StrokeJoin.Miter)
-        )
     }
 }
 
@@ -267,7 +376,7 @@ fun AlertBannerCard(
             .then(if (onClick != null) Modifier.clip(shape).clickable(onClick = onClick) else Modifier),
         shape = shape,
         color = palette.surfaceElevated,
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.55f))
+        border = palette.coloredBorder(accent, ColoredBorderRole.ALERT_BANNER_LARGE)
     ) {
         Row(
             modifier = Modifier

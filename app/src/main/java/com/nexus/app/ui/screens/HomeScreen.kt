@@ -3,6 +3,8 @@ package com.nexus.app.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,7 +15,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -44,6 +48,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nexus.app.core.DateTimeUtils
 import com.nexus.app.domain.model.AgendaItem
 import com.nexus.app.domain.model.DailyBriefingSnapshot
@@ -101,12 +106,15 @@ fun HomeScreen(
     val greetingBlockConfig = snapshot.blocks.firstOrNull { it.type == DashboardBlockType.GREETING }
     val showMergedQuote = (quoteBlockConfig?.enabled ?: true) && (personalization?.showDailyQuoteOnDashboard ?: true)
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(verticalGap)
-    ) {
-        if (enabledBlocks.isEmpty()) {
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 720.dp
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(verticalGap)
+        ) {
+            if (enabledBlocks.isEmpty()) {
             item {
                 NexusEmptyState(
                     icon = Icons.Outlined.DashboardCustomize,
@@ -199,36 +207,67 @@ fun HomeScreen(
                             if (block.showOverdueOrAlerts) {
                                 val overdueStmtsCount = snapshot.openStatements.count { it.statement.status == StatementStatus.OVERDUE }
                                 val conflictCount = snapshot.todayAppointments.count { it.hasConflict }
-                                if (snapshot.financeSummary.overdueExpenseCents > 0L || overdueStmtsCount > 0) {
-                                    item(key = "blk_alert_finance") {
-                                        AlertBannerCard(
-                                            title = "Atenção financeira",
-                                            subtitle = buildString {
-                                                if (snapshot.financeSummary.overdueExpenseCents > 0L) {
-                                                    append("Contas vencidas: ${DateTimeUtils.formatBrl(snapshot.financeSummary.overdueExpenseCents)}")
-                                                }
-                                                if (overdueStmtsCount > 0) {
-                                                    if (isNotEmpty()) append(" · ")
-                                                    append("$overdueStmtsCount fatura(s) em atraso")
-                                                }
-                                            },
-                                            severity = AlertSeverity.DANGER,
-                                            onClick = if (overdueStmtsCount > 0 && snapshot.financeSummary.overdueExpenseCents == 0L) {
-                                                onOpenFinanceCards
-                                            } else {
-                                                onOpenFinance
-                                            }
-                                        )
+                                val hasFinanceAlert = snapshot.financeSummary.overdueExpenseCents > 0L || overdueStmtsCount > 0
+                                val hasConflictAlert = conflictCount > 0
+                                val financeAlertSubtitle = buildString {
+                                    if (snapshot.financeSummary.overdueExpenseCents > 0L) {
+                                        append("Contas vencidas: ${DateTimeUtils.formatBrl(snapshot.financeSummary.overdueExpenseCents)}")
+                                    }
+                                    if (overdueStmtsCount > 0) {
+                                        if (isNotEmpty()) append(" · ")
+                                        append("$overdueStmtsCount fatura(s) em atraso")
                                     }
                                 }
-                                if (conflictCount > 0) {
-                                    item(key = "blk_alert_conflict") {
-                                        AlertBannerCard(
-                                            title = "Conflito de horário hoje",
-                                            subtitle = "$conflictCount compromisso(s) com sobreposição na Agenda.",
-                                            severity = AlertSeverity.WARNING,
-                                            onClick = onOpenAgenda
-                                        )
+                                val financeAlertClick = if (overdueStmtsCount > 0 && snapshot.financeSummary.overdueExpenseCents == 0L) {
+                                    onOpenFinanceCards
+                                } else {
+                                    onOpenFinance
+                                }
+
+                                if (isWide && hasFinanceAlert && hasConflictAlert) {
+                                    item(key = "blk_alerts_row") {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                AlertBannerCard(
+                                                    title = "Atenção financeira",
+                                                    subtitle = financeAlertSubtitle,
+                                                    severity = AlertSeverity.DANGER,
+                                                    onClick = financeAlertClick
+                                                )
+                                            }
+                                            Box(modifier = Modifier.weight(1f)) {
+                                                AlertBannerCard(
+                                                    title = "Conflito de horário hoje",
+                                                    subtitle = "$conflictCount compromisso(s) com sobreposição na Agenda.",
+                                                    severity = AlertSeverity.WARNING,
+                                                    onClick = onOpenAgenda
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    if (hasFinanceAlert) {
+                                        item(key = "blk_alert_finance") {
+                                            AlertBannerCard(
+                                                title = "Atenção financeira",
+                                                subtitle = financeAlertSubtitle,
+                                                severity = AlertSeverity.DANGER,
+                                                onClick = financeAlertClick
+                                            )
+                                        }
+                                    }
+                                    if (hasConflictAlert) {
+                                        item(key = "blk_alert_conflict") {
+                                            AlertBannerCard(
+                                                title = "Conflito de horário hoje",
+                                                subtitle = "$conflictCount compromisso(s) com sobreposição na Agenda.",
+                                                severity = AlertSeverity.WARNING,
+                                                onClick = onOpenAgenda
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -243,7 +282,12 @@ fun HomeScreen(
                                         onAction = onOpenTasksOverdue
                                     )
                                 }
-                                items(limitedOverdue, key = { "overdue_${it.task.id}" }) { taskItem ->
+                                adaptiveTwoColumnItems(
+                                    itemsList = limitedOverdue,
+                                    isWide = isWide,
+                                    keyPrefix = "overdue",
+                                    keyOf = { it.task.id }
+                                ) { taskItem ->
                                     TaskRowCard(
                                         item = taskItem,
                                         onClick = { onOpenTask(taskItem.task.id) },
@@ -273,7 +317,12 @@ fun HomeScreen(
                                         }
                                     }
                                 } else {
-                                    items(limitedPrio, key = { "prio_${it.task.id}" }) { taskItem ->
+                                    adaptiveTwoColumnItems(
+                                        itemsList = limitedPrio,
+                                        isWide = isWide,
+                                        keyPrefix = "prio",
+                                        keyOf = { it.task.id }
+                                    ) { taskItem ->
                                         TaskRowCard(
                                             item = taskItem,
                                             onClick = { onOpenTask(taskItem.task.id) },
@@ -302,6 +351,7 @@ fun HomeScreen(
                                 snapshot = snapshot,
                                 showCashflow = block.showPrimaryDetail,
                                 showCategoryBreakdown = block.showSecondaryDetail,
+                                isWide = isWide,
                                 onOpenFinance = onOpenFinance
                             )
                         }
@@ -395,7 +445,12 @@ fun HomeScreen(
                                     onAction = onOpenAgenda
                                 )
                             }
-                            items(limitedAppts, key = { "today_appt_${it.id}" }) { appt ->
+                            adaptiveTwoColumnItems(
+                                itemsList = limitedAppts,
+                                isWide = isWide,
+                                keyPrefix = "today_appt",
+                                keyOf = { it.id }
+                            ) { appt ->
                                 AppointmentCompactCard(
                                     item = appt,
                                     showConflictAlert = block.showOverdueOrAlerts,
@@ -414,7 +469,12 @@ fun HomeScreen(
                                     trailing = "${snapshot.upcomingEvents.size}"
                                 )
                             }
-                            items(limitedEvents, key = { "home_ev_${it.event.id}" }) { ew ->
+                            adaptiveTwoColumnItems(
+                                itemsList = limitedEvents,
+                                isWide = isWide,
+                                keyPrefix = "home_ev",
+                                keyOf = { it.event.id }
+                            ) { ew ->
                                 EventSummaryCard(
                                     item = ew,
                                     onClick = { onOpenEvent(ew.event.id) }
@@ -435,7 +495,12 @@ fun HomeScreen(
                                     onAction = onOpenFinance
                                 )
                             }
-                            items(snapshot.upcomingPayments.take(block.maxItems), key = { "up_tx_${it.transaction.id}" }) { tw ->
+                            adaptiveTwoColumnItems(
+                                itemsList = snapshot.upcomingPayments.take(block.maxItems),
+                                isWide = isWide,
+                                keyPrefix = "up_tx",
+                                keyOf = { it.transaction.id }
+                            ) { tw ->
                                 val tx = tw.transaction
                                 val isOverdue = tx.status == FinancialStatus.OVERDUE
                                 NexusCard(
@@ -482,7 +547,12 @@ fun HomeScreen(
                                 }
                             }
                             if (hasStmts) {
-                                items(snapshot.openStatements.take(block.maxItems), key = { "up_stmt_${it.statement.id}" }) { sw ->
+                                adaptiveTwoColumnItems(
+                                    itemsList = snapshot.openStatements.take(block.maxItems),
+                                    isWide = isWide,
+                                    keyPrefix = "up_stmt",
+                                    keyOf = { it.statement.id }
+                                ) { sw ->
                                     val isOverdueStmt = sw.statement.status == StatementStatus.OVERDUE
                                     NexusCard(
                                         modifier = Modifier.fillMaxWidth(),
@@ -557,7 +627,12 @@ fun HomeScreen(
                             }
                         } else {
                             if (hasPersonal) {
-                                items(snapshot.personalGoals.take(block.maxItems), key = { "home_pg_${it.goal.id}" }) { pg ->
+                                adaptiveTwoColumnItems(
+                                    itemsList = snapshot.personalGoals.take(block.maxItems),
+                                    isWide = isWide,
+                                    keyPrefix = "home_pg",
+                                    keyOf = { it.goal.id }
+                                ) { pg ->
                                     PersonalGoalCard(
                                         item = pg,
                                         onClick = { onOpenPlanning(pg.goal.id) }
@@ -565,7 +640,12 @@ fun HomeScreen(
                                 }
                             }
                             if (hasFinancial) {
-                                items(snapshot.financialGoals.take(block.maxItems), key = { "home_fg_${it.id}" }) { fg ->
+                                adaptiveTwoColumnItems(
+                                    itemsList = snapshot.financialGoals.take(block.maxItems),
+                                    isWide = isWide,
+                                    keyPrefix = "home_fg",
+                                    keyOf = { it.id }
+                                ) { fg ->
                                     val fraction = if (fg.targetAmountCents > 0L) {
                                         (fg.currentAmountCents.toFloat() / fg.targetAmountCents.toFloat()).coerceIn(0f, 1f)
                                     } else 0f
@@ -610,17 +690,58 @@ fun HomeScreen(
             }
         }
 
-        item(key = "blk_footer_customize") {
-            Spacer(modifier = Modifier.height(4.dp))
-            OutlinedButton(
-                onClick = onOpenCustomizeDashboard,
-                border = BorderStroke(1.dp, palette.border),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth()
+            item(key = "blk_footer_customize") {
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = if (isWide) Alignment.CenterStart else Alignment.Center
+                ) {
+                    OutlinedButton(
+                        onClick = onOpenCustomizeDashboard,
+                        border = BorderStroke(1.dp, palette.border),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = if (isWide) Modifier.widthIn(min = 240.dp) else Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Outlined.DashboardCustomize, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Personalizar painel", color = palette.textPrimary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun <T> LazyListScope.adaptiveTwoColumnItems(
+    itemsList: List<T>,
+    isWide: Boolean,
+    keyPrefix: String,
+    keyOf: (T) -> Any,
+    itemContent: @Composable (T) -> Unit
+) {
+    if (!isWide) {
+        items(itemsList, key = { "${keyPrefix}_${keyOf(it)}" }) { item ->
+            itemContent(item)
+        }
+    } else {
+        items(
+            items = itemsList.chunked(2),
+            key = { row -> "${keyPrefix}_row_${keyOf(row.first())}" }
+        ) { pair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Icon(Icons.Outlined.DashboardCustomize, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Personalizar painel", color = palette.textPrimary)
+                Box(modifier = Modifier.weight(1f)) {
+                    itemContent(pair[0])
+                }
+                if (pair.size > 1) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        itemContent(pair[1])
+                    }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
             }
         }
     }
@@ -638,39 +759,53 @@ private fun GreetingBlock(
     onCustomize: () -> Unit
 ) {
     val palette = LocalNexusPalette.current
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 text = DateTimeUtils.formatGreeting(userName, greetingTemplate),
-                style = MaterialTheme.typography.headlineMedium,
-                color = palette.textPrimary
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 20.sp,
+                    lineHeight = 26.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
-            if (showDate) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = formattedDate,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = palette.textSecondary
-                )
-            }
-            if (quoteSelection != null && quoteSelection.quote != null) {
-                Spacer(modifier = Modifier.height(6.dp))
-                InlineHeaderQuoteText(
-                    selection = quoteSelection,
-                    showAuthor = showQuoteAuthor,
-                    onClick = onOpenQuoteLibrary
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(
+                onClick = onCustomize,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.DashboardCustomize,
+                    contentDescription = "Personalizar dashboard",
+                    tint = palette.textSecondary,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
-        IconButton(onClick = onCustomize) {
-            Icon(
-                imageVector = Icons.Outlined.DashboardCustomize,
-                contentDescription = "Personalizar dashboard",
-                tint = palette.textSecondary
+        if (showDate) {
+            Text(
+                text = formattedDate,
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.textSecondary
+            )
+        }
+        if (quoteSelection != null && quoteSelection.quote != null) {
+            Spacer(modifier = Modifier.height(2.dp))
+            InlineHeaderQuoteText(
+                selection = quoteSelection,
+                showAuthor = showQuoteAuthor,
+                onClick = onOpenQuoteLibrary
             )
         }
     }
@@ -826,6 +961,7 @@ private fun DashboardChartsBlock(
     snapshot: DashboardSnapshot,
     showCashflow: Boolean,
     showCategoryBreakdown: Boolean,
+    isWide: Boolean,
     onOpenFinance: () -> Unit
 ) {
     val palette = LocalNexusPalette.current
@@ -843,67 +979,117 @@ private fun DashboardChartsBlock(
             onAction = onOpenFinance
         )
 
-        if (showCashflow) {
-            NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
-                Text(
-                    text = "Receitas vs Despesas (realizado)",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = palette.textPrimary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                val barEntries = points.map { pt ->
-                    BarGroupEntry(
-                        id = pt.yearMonthIso,
-                        label = pt.yearMonthLabel,
-                        primaryValueCents = pt.receivedIncomeCents,
-                        secondaryValueCents = pt.paidExpenseCents
+        if (isWide && showCashflow && showCategoryBreakdown) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    HomeCashflowCard(
+                        points = points,
+                        selectedMonthId = selectedMonthId,
+                        onSelectMonth = { selectedMonthId = it }
                     )
                 }
-                BarGroupChart(
-                    entries = barEntries,
-                    primaryLabel = "Receitas",
-                    secondaryLabel = "Despesas",
-                    selectedEntryId = selectedMonthId,
-                    onSelectEntry = { entry -> selectedMonthId = entry.id }
+                Box(modifier = Modifier.weight(1f)) {
+                    HomeCategoryDonutCard(
+                        categories = categories,
+                        selectedCategoryKey = selectedCategoryKey,
+                        onSelectCategory = { selectedCategoryKey = it }
+                    )
+                }
+            }
+        } else {
+            if (showCashflow) {
+                HomeCashflowCard(
+                    points = points,
+                    selectedMonthId = selectedMonthId,
+                    onSelectMonth = { selectedMonthId = it }
                 )
             }
-        }
 
-        if (showCategoryBreakdown) {
-            NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
-                Text(
-                    text = "Gastos por categoria (mês)",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = palette.textPrimary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                val totalSpend = categories.sumOf { it.totalCents }
-                val slices = categories.mapIndexed { index, cat ->
-                    val fallbackColor = palette.chartPalette[index % palette.chartPalette.size]
-                    val resolvedColor = if (cat.categoryId == "__OTHERS__") {
-                        palette.chartPalette.last()
-                    } else {
-                        parseHexColorOrDefault(cat.colorHex, fallbackColor)
-                    }
-                    val pct = if (totalSpend > 0L) (cat.totalCents * 100f) / totalSpend.toFloat() else 0f
-                    DonutSlice(
-                        id = cat.categoryId ?: cat.categoryName,
-                        label = cat.categoryName,
-                        valueCents = cat.totalCents,
-                        color = resolvedColor,
-                        percentage = pct
-                    )
-                }
-                DonutChart(
-                    slices = slices,
-                    totalCents = totalSpend,
-                    centerLabel = "Gastos do mês",
-                    selectedSliceId = selectedCategoryKey,
-                    onSliceClick = { selectedCategoryKey = it },
-                    emptyMessage = "Sem despesas lançadas neste mês."
+            if (showCategoryBreakdown) {
+                HomeCategoryDonutCard(
+                    categories = categories,
+                    selectedCategoryKey = selectedCategoryKey,
+                    onSelectCategory = { selectedCategoryKey = it }
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun HomeCashflowCard(
+    points: List<com.nexus.app.domain.rules.MonthlyCashflowPoint>,
+    selectedMonthId: String?,
+    onSelectMonth: (String?) -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Text(
+            text = "Receitas vs Despesas (realizado)",
+            style = MaterialTheme.typography.titleSmall,
+            color = palette.textPrimary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        val barEntries = points.map { pt ->
+            BarGroupEntry(
+                id = pt.yearMonthIso,
+                label = pt.yearMonthLabel,
+                primaryValueCents = pt.receivedIncomeCents,
+                secondaryValueCents = pt.paidExpenseCents
+            )
+        }
+        BarGroupChart(
+            entries = barEntries,
+            primaryLabel = "Receitas",
+            secondaryLabel = "Despesas",
+            selectedEntryId = selectedMonthId,
+            onSelectEntry = { entry -> onSelectMonth(entry.id) }
+        )
+    }
+}
+
+@Composable
+private fun HomeCategoryDonutCard(
+    categories: List<com.nexus.app.domain.rules.CategorySpendPoint>,
+    selectedCategoryKey: String?,
+    onSelectCategory: (String?) -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Text(
+            text = "Gastos por categoria (mês)",
+            style = MaterialTheme.typography.titleSmall,
+            color = palette.textPrimary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        val totalSpend = categories.sumOf { it.totalCents }
+        val slices = categories.mapIndexed { index, cat ->
+            val fallbackColor = palette.chartPalette[index % palette.chartPalette.size]
+            val resolvedColor = if (cat.categoryId == "__OTHERS__") {
+                palette.chartPalette.last()
+            } else {
+                parseHexColorOrDefault(cat.colorHex, fallbackColor)
+            }
+            val pct = if (totalSpend > 0L) (cat.totalCents * 100f) / totalSpend.toFloat() else 0f
+            DonutSlice(
+                id = cat.categoryId ?: cat.categoryName,
+                label = cat.categoryName,
+                valueCents = cat.totalCents,
+                color = resolvedColor,
+                percentage = pct
+            )
+        }
+        DonutChart(
+            slices = slices,
+            totalCents = totalSpend,
+            centerLabel = "Gastos do mês",
+            selectedSliceId = selectedCategoryKey,
+            onSliceClick = onSelectCategory,
+            emptyMessage = "Sem despesas lançadas neste mês."
+        )
     }
 }
 

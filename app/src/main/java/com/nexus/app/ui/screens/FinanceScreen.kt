@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -435,411 +437,613 @@ private fun OverviewTabContent(
         }
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item(key = "fin_month_selector") {
-            MonthYearSelectorBar(
-                currentMonth = selectedMonth,
-                onPreviousMonth = { onMonthChange(selectedMonth.minusMonths(1)) },
-                onNextMonth = { onMonthChange(selectedMonth.plusMonths(1)) },
-                onResetToCurrentMonth = if (selectedMonth != currentMonth) {
-                    { onMonthChange(currentMonth) }
-                } else null
-            )
-        }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 720.dp
 
-        item(key = "fin_balance_and_result") {
-            NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onEditDeclaredBalance),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "Saldo atual informado",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = palette.textSecondary
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = DateTimeUtils.formatBrl(dashboardData.declaredBalanceCents),
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontFeatureSettings = "tnum"
-                            ),
-                            color = if (dashboardData.declaredBalanceCents >= 0L) palette.textPrimary else palette.danger
-                        )
-                    }
-                    IconButton(onClick = onEditDeclaredBalance) {
-                        Icon(Icons.Outlined.Edit, contentDescription = "Editar saldo informado", tint = palette.highlight)
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = palette.border)
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Resultado do mês (realizado)",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = palette.textSecondary
-                    )
-                    Text(
-                        text = DateTimeUtils.formatBrl(monthResultCents),
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontFeatureSettings = "tnum"
-                        ),
-                        color = if (monthResultCents >= 0L) palette.positive else palette.danger
-                    )
-                }
-            }
-        }
-
-        item(key = "fin_month_totals") {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FinanceMetricCard(
-                    title = "Receitas realizadas",
-                    amountCents = summary.receivedIncomeCents,
-                    accent = palette.positive,
-                    subtitle = "Previstas no mês: ${DateTimeUtils.formatBrl(summary.plannedIncomeCents)}",
-                    modifier = Modifier.weight(1f)
-                )
-                FinanceMetricCard(
-                    title = "Despesas pagas",
-                    amountCents = summary.paidExpenseCents,
-                    accent = palette.textPrimary,
-                    subtitle = "Pendentes no mês: ${DateTimeUtils.formatBrl(summary.pendingExpenseCents)}",
-                    modifier = Modifier.weight(1f)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item(key = "fin_month_selector") {
+                MonthYearSelectorBar(
+                    currentMonth = selectedMonth,
+                    onPreviousMonth = { onMonthChange(selectedMonth.minusMonths(1)) },
+                    onNextMonth = { onMonthChange(selectedMonth.plusMonths(1)) },
+                    onResetToCurrentMonth = if (selectedMonth != currentMonth) {
+                        { onMonthChange(currentMonth) }
+                    } else null
                 )
             }
-        }
 
-        item(key = "fin_market_currencies") {
-            val eurState = marketQuoteStates[MarketAssetCatalog.EUR_BRL_CODE]
-                ?: MarketQuoteUiState(assetCode = MarketAssetCatalog.EUR_BRL_CODE)
-            val anyCurrencyRefreshing = usdBrlQuoteState.isRefreshing || eurState.isRefreshing
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionHeader(
-                    title = "Moedas",
-                    actionLabel = if (anyCurrencyRefreshing) "Atualizando..." else "Atualizar tudo",
-                    onAction = if (anyCurrencyRefreshing) null else onRefreshAllMarketQuotes
-                )
-                UsdBrlQuoteCard(
-                    state = usdBrlQuoteState,
-                    onRefresh = onRefreshUsdBrl,
-                    onOpenDetail = { onOpenMarketAsset(MarketAssetCatalog.USD_BRL_CODE) }
-                )
-                CompactCurrencyQuoteCard(
-                    descriptor = MarketAssetCatalog.EUR_BRL,
-                    state = eurState,
-                    onRefresh = { onRefreshMarketAsset(MarketAssetCatalog.EUR_BRL_CODE) },
-                    onOpenDetail = { onOpenMarketAsset(MarketAssetCatalog.EUR_BRL_CODE) }
-                )
-            }
-        }
-
-        item(key = "fin_market_crypto") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionHeader(
-                    title = "Criptomoedas",
-                    trailing = "Valores em BRL · 24h",
-                    actionLabel = "Ver Mercado",
-                    onAction = onOpenMarket
-                )
-                CryptoQuotesCard(
-                    descriptors = MarketAssetCatalog.CRYPTO_ASSETS,
-                    states = marketQuoteStates,
-                    onRefreshAsset = onRefreshMarketAsset,
-                    onOpenDetail = onOpenMarketAsset
-                )
-            }
-        }
-
-        if (summary.overdueExpenseCents > 0L) {
-            item(key = "fin_overdue_alert") {
-                AlertBannerCard(
-                    severity = AlertSeverity.DANGER,
-                    title = "${summary.overdueCount} ${if (summary.overdueCount == 1) "conta vencida" else "contas vencidas"}",
-                    subtitle = "Total em aberto (todas as datas): ${DateTimeUtils.formatBrl(summary.overdueExpenseCents)}",
-                    onClick = {
-                        onStatusFilterChangeSafeAction(onOpenAllTransactions)
-                    }
-                )
-            }
-        }
-
-        item(key = "fin_donut_categories") {
-            NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Despesas por categoria",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = palette.textPrimary
-                    )
-                    SegmentedTogglePill(
-                        options = CategorySpendScope.entries.toList(),
-                        selected = spendScope,
-                        labelOf = { it.label },
-                        onSelect = { spendScope = it }
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                DonutChart(
-                    slices = donutSlices,
-                    totalCents = categoryTotalCents,
-                    centerLabel = if (spendScope == CategorySpendScope.PAID_ONLY) "Pagas" else "Total do mês",
-                    selectedSliceId = selectedCategorySliceId,
-                    onSliceClick = { selectedCategorySliceId = it },
-                    emptyMessage = "Sem despesas registradas para este mês."
-                )
-
-                if (selectedCategorySliceId != null) {
-                    val selLabel = donutSlices.firstOrNull { it.id == selectedCategorySliceId }?.label ?: "Categoria"
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = palette.border)
-                    Spacer(modifier = Modifier.height(10.dp))
+            if (isWide) {
+                item(key = "fin_top_summary_row") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = "Lançamentos em $selLabel (${filteredMonthCategoryTransactions.size})",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = palette.textPrimary
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(
-                                onClick = { selectedCategorySliceId = null },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("Limpar", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
-                            }
-                            if (selectedCategorySliceId != FinanceRules.OTHERS_CATEGORY_ID &&
-                                selectedCategorySliceId != "__UNCATEGORIZED__"
-                            ) {
-                                TextButton(
-                                    onClick = { onFilterCategoryInTransactions(selectedCategorySliceId) },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text("Ver todos", style = MaterialTheme.typography.labelMedium, color = palette.highlight)
-                                }
-                            }
+                        Box(modifier = Modifier.weight(0.46f)) {
+                            OverviewBalanceCard(
+                                declaredBalanceCents = dashboardData.declaredBalanceCents,
+                                monthResultCents = monthResultCents,
+                                onEditDeclaredBalance = onEditDeclaredBalance
+                            )
+                        }
+                        Box(modifier = Modifier.weight(0.54f)) {
+                            OverviewMonthTotalsRow(summary = summary)
                         }
                     }
-                    if (filteredMonthCategoryTransactions.isEmpty()) {
-                        Text(
-                            text = "Nenhum lançamento encontrado para esta seleção.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.textSecondary
-                        )
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            filteredMonthCategoryTransactions.take(6).forEach { txItem ->
-                                CompactOverviewTransactionRow(
-                                    item = txItem,
-                                    onClick = { onOpenTransaction(txItem.transaction.id) },
-                                    onToggleSettle = { onToggleSettleTransaction(txItem.transaction.id) }
+                }
+            } else {
+                item(key = "fin_balance_and_result") {
+                    OverviewBalanceCard(
+                        declaredBalanceCents = dashboardData.declaredBalanceCents,
+                        monthResultCents = monthResultCents,
+                        onEditDeclaredBalance = onEditDeclaredBalance
+                    )
+                }
+
+                item(key = "fin_month_totals") {
+                    OverviewMonthTotalsRow(summary = summary)
+                }
+            }
+
+            item(key = "fin_market_currencies") {
+                val eurState = marketQuoteStates[MarketAssetCatalog.EUR_BRL_CODE]
+                    ?: MarketQuoteUiState(assetCode = MarketAssetCatalog.EUR_BRL_CODE)
+                val anyCurrencyRefreshing = usdBrlQuoteState.isRefreshing || eurState.isRefreshing
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader(
+                        title = "Moedas",
+                        actionLabel = if (anyCurrencyRefreshing) "Atualizando..." else "Atualizar tudo",
+                        onAction = if (anyCurrencyRefreshing) null else onRefreshAllMarketQuotes
+                    )
+                    if (isWide) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                UsdBrlQuoteCard(
+                                    state = usdBrlQuoteState,
+                                    onRefresh = onRefreshUsdBrl,
+                                    onOpenDetail = { onOpenMarketAsset(MarketAssetCatalog.USD_BRL_CODE) }
+                                )
+                            }
+                            Box(modifier = Modifier.weight(1f)) {
+                                CompactCurrencyQuoteCard(
+                                    descriptor = MarketAssetCatalog.EUR_BRL,
+                                    state = eurState,
+                                    onRefresh = { onRefreshMarketAsset(MarketAssetCatalog.EUR_BRL_CODE) },
+                                    onOpenDetail = { onOpenMarketAsset(MarketAssetCatalog.EUR_BRL_CODE) }
                                 )
                             }
                         }
+                    } else {
+                        UsdBrlQuoteCard(
+                            state = usdBrlQuoteState,
+                            onRefresh = onRefreshUsdBrl,
+                            onOpenDetail = { onOpenMarketAsset(MarketAssetCatalog.USD_BRL_CODE) }
+                        )
+                        CompactCurrencyQuoteCard(
+                            descriptor = MarketAssetCatalog.EUR_BRL,
+                            state = eurState,
+                            onRefresh = { onRefreshMarketAsset(MarketAssetCatalog.EUR_BRL_CODE) },
+                            onOpenDetail = { onOpenMarketAsset(MarketAssetCatalog.EUR_BRL_CODE) }
+                        )
                     }
                 }
             }
-        }
 
-        item(key = "fin_bars_6months") {
-            NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Comparativo 6 meses",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = palette.textPrimary
+            item(key = "fin_market_crypto") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader(
+                        title = "Criptomoedas",
+                        trailing = "Valores em BRL · 24h",
+                        actionLabel = "Ver Mercado",
+                        onAction = onOpenMarket
                     )
-                    SegmentedTogglePill(
-                        options = CashflowSeriesMode.entries.toList(),
-                        selected = cashflowMode,
-                        labelOf = { it.label },
-                        onSelect = { cashflowMode = it }
+                    CryptoQuotesCard(
+                        descriptors = MarketAssetCatalog.CRYPTO_ASSETS,
+                        states = marketQuoteStates,
+                        onRefreshAsset = onRefreshMarketAsset,
+                        onOpenDetail = onOpenMarketAsset
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = if (cashflowMode == CashflowSeriesMode.REALIZED) {
-                        "Valores efetivamente recebidos e pagos"
-                    } else {
-                        "Valores previstos/pendentes ainda não liquidados"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.textSecondary
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                BarGroupChart(
-                    entries = cashflowEntries,
-                    primaryLabel = if (cashflowMode == CashflowSeriesMode.REALIZED) "Receitas pagas" else "Receitas previstas",
-                    secondaryLabel = if (cashflowMode == CashflowSeriesMode.REALIZED) "Despesas pagas" else "Despesas previstas",
-                    selectedEntryId = selectedBarMonthIso,
-                    onSelectEntry = { entry ->
-                        selectedBarMonthIso = entry.id
-                        runCatching { YearMonth.parse(entry.id) }.getOrNull()?.let { pickedYm ->
-                            if (pickedYm != selectedMonth) {
-                                onMonthChange(pickedYm)
+            }
+
+            if (summary.overdueExpenseCents > 0L) {
+                item(key = "fin_overdue_alert") {
+                    AlertBannerCard(
+                        severity = AlertSeverity.DANGER,
+                        title = "${summary.overdueCount} ${if (summary.overdueCount == 1) "conta vencida" else "contas vencidas"}",
+                        subtitle = "Total em aberto (todas as datas): ${DateTimeUtils.formatBrl(summary.overdueExpenseCents)}",
+                        onClick = {
+                            onStatusFilterChangeSafeAction(onOpenAllTransactions)
+                        }
+                    )
+                }
+            }
+
+            if (isWide) {
+                item(key = "fin_charts_row") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            OverviewCategoryDonutCard(
+                                spendScope = spendScope,
+                                onSpendScopeChange = { spendScope = it },
+                                donutSlices = donutSlices,
+                                categoryTotalCents = categoryTotalCents,
+                                selectedCategorySliceId = selectedCategorySliceId,
+                                onSelectCategorySlice = { selectedCategorySliceId = it },
+                                filteredMonthCategoryTransactions = filteredMonthCategoryTransactions,
+                                onFilterCategoryInTransactions = onFilterCategoryInTransactions,
+                                onOpenTransaction = onOpenTransaction,
+                                onToggleSettleTransaction = onToggleSettleTransaction
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            OverviewSixMonthBarsCard(
+                                cashflowMode = cashflowMode,
+                                onCashflowModeChange = { cashflowMode = it },
+                                cashflowEntries = cashflowEntries,
+                                selectedBarMonthIso = selectedBarMonthIso,
+                                onSelectBarEntry = { entry ->
+                                    selectedBarMonthIso = entry.id
+                                    runCatching { YearMonth.parse(entry.id) }.getOrNull()?.let { pickedYm ->
+                                        if (pickedYm != selectedMonth) {
+                                            onMonthChange(pickedYm)
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                item(key = "fin_forecast_budgets_row") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            OverviewForecast30DaysCard(
+                                forecast = dashboardData.forecast30Days,
+                                onOpenTransaction = onOpenTransaction,
+                                onToggleSettleTransaction = onToggleSettleTransaction
+                            )
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            OverviewBudgetsCard(
+                                monthTitle = monthTitle,
+                                budgetProgress = dashboardData.budgetProgress,
+                                onCreateBudget = onCreateBudget
+                            )
+                        }
+                    }
+                }
+            } else {
+                item(key = "fin_donut_categories") {
+                    OverviewCategoryDonutCard(
+                        spendScope = spendScope,
+                        onSpendScopeChange = { spendScope = it },
+                        donutSlices = donutSlices,
+                        categoryTotalCents = categoryTotalCents,
+                        selectedCategorySliceId = selectedCategorySliceId,
+                        onSelectCategorySlice = { selectedCategorySliceId = it },
+                        filteredMonthCategoryTransactions = filteredMonthCategoryTransactions,
+                        onFilterCategoryInTransactions = onFilterCategoryInTransactions,
+                        onOpenTransaction = onOpenTransaction,
+                        onToggleSettleTransaction = onToggleSettleTransaction
+                    )
+                }
+
+                item(key = "fin_bars_6months") {
+                    OverviewSixMonthBarsCard(
+                        cashflowMode = cashflowMode,
+                        onCashflowModeChange = { cashflowMode = it },
+                        cashflowEntries = cashflowEntries,
+                        selectedBarMonthIso = selectedBarMonthIso,
+                        onSelectBarEntry = { entry ->
+                            selectedBarMonthIso = entry.id
+                            runCatching { YearMonth.parse(entry.id) }.getOrNull()?.let { pickedYm ->
+                                if (pickedYm != selectedMonth) {
+                                    onMonthChange(pickedYm)
+                                }
                             }
                         }
-                    },
-                    emptyMessage = "Sem lançamentos ${cashflowMode.label.lowercase()} nos últimos 6 meses."
+                    )
+                }
+
+                item(key = "fin_forecast_30d") {
+                    OverviewForecast30DaysCard(
+                        forecast = dashboardData.forecast30Days,
+                        onOpenTransaction = onOpenTransaction,
+                        onToggleSettleTransaction = onToggleSettleTransaction
+                    )
+                }
+
+                item(key = "fin_budgets_overview") {
+                    OverviewBudgetsCard(
+                        monthTitle = monthTitle,
+                        budgetProgress = dashboardData.budgetProgress,
+                        onCreateBudget = onCreateBudget
+                    )
+                }
+            }
+
+            item(key = "fin_quick_actions") {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { onCreateTransaction(TransactionType.INCOME) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, palette.border)
+                    ) {
+                        Text("+ Receita", color = palette.positive)
+                    }
+                    OutlinedButton(
+                        onClick = { onCreateTransaction(TransactionType.EXPENSE) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, palette.border)
+                    ) {
+                        Text("+ Despesa", color = palette.textPrimary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverviewBalanceCard(
+    declaredBalanceCents: Long,
+    monthResultCents: Long,
+    onEditDeclaredBalance: () -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onEditDeclaredBalance),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "Saldo atual informado",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.textSecondary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = DateTimeUtils.formatBrl(declaredBalanceCents),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = if (declaredBalanceCents >= 0L) palette.textPrimary else palette.danger
+                )
+            }
+            IconButton(onClick = onEditDeclaredBalance) {
+                Icon(Icons.Outlined.Edit, contentDescription = "Editar saldo informado", tint = palette.highlight)
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        HorizontalDivider(color = palette.border)
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Resultado do mês (realizado)",
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.textSecondary
+            )
+            Text(
+                text = DateTimeUtils.formatBrl(monthResultCents),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontFeatureSettings = "tnum"
+                ),
+                color = if (monthResultCents >= 0L) palette.positive else palette.danger
+            )
+        }
+    }
+}
+
+@Composable
+private fun OverviewMonthTotalsRow(summary: com.nexus.app.domain.rules.MonthlyFinanceSummary) {
+    val palette = LocalNexusPalette.current
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FinanceMetricCard(
+            title = "Receitas realizadas",
+            amountCents = summary.receivedIncomeCents,
+            accent = palette.positive,
+            subtitle = "Previstas no mês: ${DateTimeUtils.formatBrl(summary.plannedIncomeCents)}",
+            modifier = Modifier.weight(1f)
+        )
+        FinanceMetricCard(
+            title = "Despesas pagas",
+            amountCents = summary.paidExpenseCents,
+            accent = palette.textPrimary,
+            subtitle = "Pendentes no mês: ${DateTimeUtils.formatBrl(summary.pendingExpenseCents)}",
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun OverviewCategoryDonutCard(
+    spendScope: CategorySpendScope,
+    onSpendScopeChange: (CategorySpendScope) -> Unit,
+    donutSlices: List<DonutSlice>,
+    categoryTotalCents: Long,
+    selectedCategorySliceId: String?,
+    onSelectCategorySlice: (String?) -> Unit,
+    filteredMonthCategoryTransactions: List<TransactionWithDetails>,
+    onFilterCategoryInTransactions: (String?) -> Unit,
+    onOpenTransaction: (String) -> Unit,
+    onToggleSettleTransaction: (String) -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Despesas por categoria",
+                style = MaterialTheme.typography.titleMedium,
+                color = palette.textPrimary
+            )
+            SegmentedTogglePill(
+                options = CategorySpendScope.entries.toList(),
+                selected = spendScope,
+                labelOf = { it.label },
+                onSelect = onSpendScopeChange
+            )
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        DonutChart(
+            slices = donutSlices,
+            totalCents = categoryTotalCents,
+            centerLabel = if (spendScope == CategorySpendScope.PAID_ONLY) "Pagas" else "Total do mês",
+            selectedSliceId = selectedCategorySliceId,
+            onSliceClick = onSelectCategorySlice,
+            emptyMessage = "Sem despesas registradas para este mês."
+        )
+
+        if (selectedCategorySliceId != null) {
+            val selLabel = donutSlices.firstOrNull { it.id == selectedCategorySliceId }?.label ?: "Categoria"
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = palette.border)
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Lançamentos em $selLabel (${filteredMonthCategoryTransactions.size})",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = palette.textPrimary
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = { onSelectCategorySlice(null) },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text("Limpar", style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
+                    }
+                    if (selectedCategorySliceId != FinanceRules.OTHERS_CATEGORY_ID &&
+                        selectedCategorySliceId != "__UNCATEGORIZED__"
+                    ) {
+                        TextButton(
+                            onClick = { onFilterCategoryInTransactions(selectedCategorySliceId) },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("Ver todos", style = MaterialTheme.typography.labelMedium, color = palette.highlight)
+                        }
+                    }
+                }
+            }
+            if (filteredMonthCategoryTransactions.isEmpty()) {
+                Text(
+                    text = "Nenhum lançamento encontrado para esta seleção.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.textSecondary
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    filteredMonthCategoryTransactions.take(6).forEach { txItem ->
+                        CompactOverviewTransactionRow(
+                            item = txItem,
+                            onClick = { onOpenTransaction(txItem.transaction.id) },
+                            onToggleSettle = { onToggleSettleTransaction(txItem.transaction.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverviewSixMonthBarsCard(
+    cashflowMode: CashflowSeriesMode,
+    onCashflowModeChange: (CashflowSeriesMode) -> Unit,
+    cashflowEntries: List<BarGroupEntry>,
+    selectedBarMonthIso: String?,
+    onSelectBarEntry: (BarGroupEntry) -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Comparativo 6 meses",
+                style = MaterialTheme.typography.titleMedium,
+                color = palette.textPrimary
+            )
+            SegmentedTogglePill(
+                options = CashflowSeriesMode.entries.toList(),
+                selected = cashflowMode,
+                labelOf = { it.label },
+                onSelect = onCashflowModeChange
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = if (cashflowMode == CashflowSeriesMode.REALIZED) {
+                "Valores efetivamente recebidos e pagos"
+            } else {
+                "Valores previstos/pendentes ainda não liquidados"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.textSecondary
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        BarGroupChart(
+            entries = cashflowEntries,
+            primaryLabel = if (cashflowMode == CashflowSeriesMode.REALIZED) "Receitas pagas" else "Receitas previstas",
+            secondaryLabel = if (cashflowMode == CashflowSeriesMode.REALIZED) "Despesas pagas" else "Despesas previstas",
+            selectedEntryId = selectedBarMonthIso,
+            onSelectEntry = onSelectBarEntry,
+            emptyMessage = "Sem lançamentos ${cashflowMode.label.lowercase()} nos últimos 6 meses."
+        )
+    }
+}
+
+@Composable
+private fun OverviewForecast30DaysCard(
+    forecast: com.nexus.app.domain.rules.Forecast30DaysSummary,
+    onOpenTransaction: (String) -> Unit,
+    onToggleSettleTransaction: (String) -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Previsão próximos 30 dias",
+                style = MaterialTheme.typography.titleMedium,
+                color = palette.textPrimary
+            )
+            Text(
+                text = "Previsto",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = palette.info
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Receitas previstas", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
+                Text(
+                    text = DateTimeUtils.formatBrl(forecast.plannedIncomeCents),
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = palette.positive
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text("A vencer (não pago)", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
+                Text(
+                    text = DateTimeUtils.formatBrl(forecast.upcomingExpensesCents),
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = palette.warning
                 )
             }
         }
-
-        item(key = "fin_forecast_30d") {
-            val forecast = dashboardData.forecast30Days
-            NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Previsão próximos 30 dias",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = palette.textPrimary
+        Spacer(modifier = Modifier.height(10.dp))
+        HorizontalDivider(color = palette.border)
+        Spacer(modifier = Modifier.height(8.dp))
+        if (forecast.topUpcomingExpenses.isEmpty()) {
+            Text(
+                text = "Nenhuma conta a vencer nos próximos 30 dias.",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textSecondary
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                forecast.topUpcomingExpenses.forEach { txItem ->
+                    CompactOverviewTransactionRow(
+                        item = txItem,
+                        onClick = { onOpenTransaction(txItem.transaction.id) },
+                        onToggleSettle = { onToggleSettleTransaction(txItem.transaction.id) }
                     )
-                    Text(
-                        text = "Previsto",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = palette.info
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Receitas previstas", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
-                        Text(
-                            text = DateTimeUtils.formatBrl(forecast.plannedIncomeCents),
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontFeatureSettings = "tnum"
-                            ),
-                            color = palette.positive
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("A vencer (não pago)", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
-                        Text(
-                            text = DateTimeUtils.formatBrl(forecast.upcomingExpensesCents),
-                            style = MaterialTheme.typography.titleSmall.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                fontFeatureSettings = "tnum"
-                            ),
-                            color = palette.warning
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = palette.border)
-                Spacer(modifier = Modifier.height(8.dp))
-                if (forecast.topUpcomingExpenses.isEmpty()) {
-                    Text(
-                        text = "Nenhuma conta a vencer nos próximos 30 dias.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = palette.textSecondary
-                    )
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        forecast.topUpcomingExpenses.forEach { txItem ->
-                            CompactOverviewTransactionRow(
-                                item = txItem,
-                                onClick = { onOpenTransaction(txItem.transaction.id) },
-                                onToggleSettle = { onToggleSettleTransaction(txItem.transaction.id) }
-                            )
-                        }
-                    }
                 }
             }
         }
+    }
+}
 
-        item(key = "fin_budgets_overview") {
-            NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Orçamentos do mês",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = palette.textPrimary
-                    )
-                    TextButton(
-                        onClick = onCreateBudget,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text("Definir", color = palette.highlight)
-                    }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                if (dashboardData.budgetProgress.isEmpty()) {
-                    Text(
-                        text = "Nenhum orçamento definido para $monthTitle.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = palette.textSecondary
-                    )
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        dashboardData.budgetProgress.forEach { bp ->
-                            ProgressBarRow(
-                                label = bp.category.name,
-                                currentCents = bp.spentCents,
-                                targetCents = bp.budget.limitCents,
-                                usedPercent = bp.usedPercent,
-                                exceededCents = bp.exceededCents
-                            )
-                        }
-                    }
-                }
+@Composable
+private fun OverviewBudgetsCard(
+    monthTitle: String,
+    budgetProgress: List<BudgetProgress>,
+    onCreateBudget: () -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Orçamentos do mês",
+                style = MaterialTheme.typography.titleMedium,
+                color = palette.textPrimary
+            )
+            TextButton(
+                onClick = onCreateBudget,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text("Definir", color = palette.highlight)
             }
         }
-
-        item(key = "fin_quick_actions") {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = { onCreateTransaction(TransactionType.INCOME) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, palette.border)
-                ) {
-                    Text("+ Receita", color = palette.positive)
-                }
-                OutlinedButton(
-                    onClick = { onCreateTransaction(TransactionType.EXPENSE) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, palette.border)
-                ) {
-                    Text("+ Despesa", color = palette.textPrimary)
+        Spacer(modifier = Modifier.height(6.dp))
+        if (budgetProgress.isEmpty()) {
+            Text(
+                text = "Nenhum orçamento definido para $monthTitle.",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textSecondary
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                budgetProgress.forEach { bp ->
+                    ProgressBarRow(
+                        label = bp.category.name,
+                        currentCents = bp.spentCents,
+                        targetCents = bp.budget.limitCents,
+                        usedPercent = bp.usedPercent,
+                        exceededCents = bp.exceededCents
+                    )
                 }
             }
         }
@@ -848,6 +1052,41 @@ private fun OverviewTabContent(
 
 private fun onStatusFilterChangeSafeAction(openAll: () -> Unit) {
     openAll()
+}
+
+private fun <T> LazyListScope.adaptiveTwoColumnFinanceItems(
+    itemsList: List<T>,
+    isWide: Boolean,
+    keyPrefix: String,
+    keyOf: (T) -> Any,
+    itemContent: @Composable (T) -> Unit
+) {
+    if (!isWide) {
+        items(itemsList, key = { "${keyPrefix}_${keyOf(it)}" }) { item ->
+            itemContent(item)
+        }
+    } else {
+        items(
+            items = itemsList.chunked(2),
+            key = { row -> "${keyPrefix}_row_${keyOf(row.first())}" }
+        ) { pair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    itemContent(pair[0])
+                }
+                if (pair.size > 1) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        itemContent(pair[1])
+                    }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1026,77 +1265,86 @@ private fun TransactionsTabContent(
         )
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item(key = "tx_compact_actions") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "${transactions.size} ${if (transactions.size == 1) "lançamento" else "lançamentos"}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = palette.textSecondary
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { showFilterSheet = true },
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, if (activeFilterCount > 0) palette.highlight else palette.border),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            Icons.Outlined.FilterList,
-                            contentDescription = "Filtros",
-                            modifier = Modifier.size(16.dp),
-                            tint = if (activeFilterCount > 0) palette.highlight else palette.textPrimary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (activeFilterCount > 0) "Filtros ($activeFilterCount)" else "Filtros",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (activeFilterCount > 0) palette.highlight else palette.textPrimary
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = onExportCsv,
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, palette.border),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("CSV", color = palette.textPrimary, style = MaterialTheme.typography.labelLarge)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 720.dp
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item(key = "tx_compact_actions") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${transactions.size} ${if (transactions.size == 1) "lançamento" else "lançamentos"}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = palette.textSecondary
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { showFilterSheet = true },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, if (activeFilterCount > 0) palette.highlight else palette.border),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.FilterList,
+                                contentDescription = "Filtros",
+                                modifier = Modifier.size(16.dp),
+                                tint = if (activeFilterCount > 0) palette.highlight else palette.textPrimary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (activeFilterCount > 0) "Filtros ($activeFilterCount)" else "Filtros",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (activeFilterCount > 0) palette.highlight else palette.textPrimary
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onExportCsv,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, palette.border),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("CSV", color = palette.textPrimary, style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 }
             }
-        }
 
-        if (transactions.isEmpty()) {
-            item {
-                NexusEmptyState(
-                    icon = Icons.Outlined.AccountBalanceWallet,
-                    title = "Nenhum lançamento encontrado",
-                    subtitle = if (activeFilterCount > 0) {
-                        "Nenhum registro corresponde aos filtros selecionados."
-                    } else {
-                        "Registre receitas, despesas ou contas para acompanhar previstos e realizados."
-                    },
-                    actionLabel = if (activeFilterCount > 0) "Limpar filtros" else "Novo lançamento",
-                    onAction = if (activeFilterCount > 0) onClearFilters else onCreateTransaction
-                )
-            }
-        } else {
-            items(transactions, key = { it.transaction.id }) { item ->
-                TransactionRowCard(
-                    item = item,
-                    onClick = { onOpenTransaction(item.transaction.id) },
-                    onToggleSettle = { onToggleSettleTransaction(item.transaction.id) }
-                )
+            if (transactions.isEmpty()) {
+                item {
+                    NexusEmptyState(
+                        icon = Icons.Outlined.AccountBalanceWallet,
+                        title = "Nenhum lançamento encontrado",
+                        subtitle = if (activeFilterCount > 0) {
+                            "Nenhum registro corresponde aos filtros selecionados."
+                        } else {
+                            "Registre receitas, despesas ou contas para acompanhar previstos e realizados."
+                        },
+                        actionLabel = if (activeFilterCount > 0) "Limpar filtros" else "Novo lançamento",
+                        onAction = if (activeFilterCount > 0) onClearFilters else onCreateTransaction
+                    )
+                }
+            } else {
+                adaptiveTwoColumnFinanceItems(
+                    itemsList = transactions,
+                    isWide = isWide,
+                    keyPrefix = "tx",
+                    keyOf = { it.transaction.id }
+                ) { item ->
+                    TransactionRowCard(
+                        item = item,
+                        onClick = { onOpenTransaction(item.transaction.id) },
+                        onToggleSettle = { onToggleSettleTransaction(item.transaction.id) }
+                    )
+                }
             }
         }
     }
@@ -1350,37 +1598,45 @@ private fun CardsTabContent(
 ) {
     val palette = LocalNexusPalette.current
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Cartões e Faturas", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
-                OutlinedButton(onClick = onCreateCard, shape = RoundedCornerShape(10.dp)) {
-                    Text("Novo cartão", color = palette.textPrimary)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 720.dp
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Cartões e Faturas", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
+                    OutlinedButton(onClick = onCreateCard, shape = RoundedCornerShape(10.dp)) {
+                        Text("Novo cartão", color = palette.textPrimary)
+                    }
                 }
             }
-        }
 
-        if (cards.isEmpty()) {
-            item {
-                NexusEmptyState(
-                    icon = Icons.Outlined.CreditCard,
-                    title = "Nenhum cartão cadastrado",
-                    subtitle = "Cadastre cartões para agrupar compras por fechamento e quitar faturas sem duplicar despesas.",
-                    actionLabel = "Adicionar cartão",
-                    onAction = onCreateCard
-                )
-            }
-        } else {
-            items(cards, key = { it.card.id }) { cw ->
-                val card = cw.card
+            if (cards.isEmpty()) {
+                item {
+                    NexusEmptyState(
+                        icon = Icons.Outlined.CreditCard,
+                        title = "Nenhum cartão cadastrado",
+                        subtitle = "Cadastre cartões para agrupar compras por fechamento e quitar faturas sem duplicar despesas.",
+                        actionLabel = "Adicionar cartão",
+                        onAction = onCreateCard
+                    )
+                }
+            } else {
+                adaptiveTwoColumnFinanceItems(
+                    itemsList = cards,
+                    isWide = isWide,
+                    keyPrefix = "card",
+                    keyOf = { it.card.id }
+                ) { cw ->
+                    val card = cw.card
                 NexusCard(
                     modifier = Modifier.fillMaxWidth(),
                     elevated = true,
@@ -1497,6 +1753,7 @@ private fun CardsTabContent(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -1512,37 +1769,45 @@ private fun RecurringAndInstallmentsTabContent(
 ) {
     val palette = LocalNexusPalette.current
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Compras Parceladas", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
-                OutlinedButton(onClick = onCreateInstallment, shape = RoundedCornerShape(10.dp)) {
-                    Text("Novo parcelamento", color = palette.textPrimary)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 720.dp
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Compras Parceladas", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
+                    OutlinedButton(onClick = onCreateInstallment, shape = RoundedCornerShape(10.dp)) {
+                        Text("Novo parcelamento", color = palette.textPrimary)
+                    }
                 }
             }
-        }
 
-        if (installmentPurchases.isEmpty()) {
-            item {
-                NexusEmptyState(
-                    icon = Icons.Outlined.CreditCard,
-                    title = "Nenhum parcelamento cadastrado",
-                    subtitle = "Gere parcelas mensais automaticamente no cartão ou em conta.",
-                    actionLabel = "Criar parcelamento",
-                    onAction = onCreateInstallment
-                )
-            }
-        } else {
-            items(installmentPurchases, key = { it.purchase.id }) { item ->
-                val p = item.purchase
+            if (installmentPurchases.isEmpty()) {
+                item {
+                    NexusEmptyState(
+                        icon = Icons.Outlined.CreditCard,
+                        title = "Nenhum parcelamento cadastrado",
+                        subtitle = "Gere parcelas mensais automaticamente no cartão ou em conta.",
+                        actionLabel = "Criar parcelamento",
+                        onAction = onCreateInstallment
+                    )
+                }
+            } else {
+                adaptiveTwoColumnFinanceItems(
+                    itemsList = installmentPurchases,
+                    isWide = isWide,
+                    keyPrefix = "inst",
+                    keyOf = { it.purchase.id }
+                ) { item ->
+                    val p = item.purchase
                 val progress = if (p.installmentsCount > 0) {
                     item.paidCount.toFloat() / p.installmentsCount.toFloat()
                 } else 0f
@@ -1623,7 +1888,12 @@ private fun RecurringAndInstallmentsTabContent(
                 )
             }
         } else {
-            items(recurringRules, key = { it.id }) { rule ->
+            adaptiveTwoColumnFinanceItems(
+                itemsList = recurringRules,
+                isWide = isWide,
+                keyPrefix = "rec",
+                keyOf = { it.id }
+            ) { rule ->
                 NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1660,6 +1930,7 @@ private fun RecurringAndInstallmentsTabContent(
                 }
             }
         }
+        }
     }
 }
 
@@ -1687,37 +1958,45 @@ private fun PlanningAndLoansTabContent(
         selectedMonth.format(DateTimeFormatter.ofPattern("MM/yyyy", DateTimeUtils.LOCALE_PT_BR))
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Orçamentos ($monthLabel)", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
-                OutlinedButton(onClick = onCreateBudget, shape = RoundedCornerShape(10.dp)) {
-                    Text("Definir orçamento", color = palette.textPrimary)
-                }
-            }
-        }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 720.dp
 
-        if (budgets.isEmpty()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             item {
-                NexusCard(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Nenhum limite mensal definido por categoria em $monthLabel.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = palette.textSecondary
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Orçamentos ($monthLabel)", style = MaterialTheme.typography.titleMedium, color = palette.textPrimary)
+                    OutlinedButton(onClick = onCreateBudget, shape = RoundedCornerShape(10.dp)) {
+                        Text("Definir orçamento", color = palette.textPrimary)
+                    }
                 }
             }
-        } else {
-            items(budgets, key = { it.budget.id }) { bp ->
-                NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+
+            if (budgets.isEmpty()) {
+                item {
+                    NexusCard(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Nenhum limite mensal definido por categoria em $monthLabel.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = palette.textSecondary
+                        )
+                    }
+                }
+            } else {
+                adaptiveTwoColumnFinanceItems(
+                    itemsList = budgets,
+                    isWide = isWide,
+                    keyPrefix = "bud",
+                    keyOf = { it.budget.id }
+                ) { bp ->
+                    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1765,7 +2044,12 @@ private fun PlanningAndLoansTabContent(
                 )
             }
         } else {
-            items(goals, key = { it.id }) { goal ->
+            adaptiveTwoColumnFinanceItems(
+                itemsList = goals,
+                isWide = isWide,
+                keyPrefix = "fgoal",
+                keyOf = { it.id }
+            ) { goal ->
                 val fraction = if (goal.targetAmountCents > 0L) {
                     (goal.currentAmountCents.toFloat() / goal.targetAmountCents.toFloat()).coerceIn(0f, 1f)
                 } else 0f
@@ -1836,7 +2120,12 @@ private fun PlanningAndLoansTabContent(
                 }
             }
         } else {
-            items(loans, key = { it.id }) { loan ->
+            adaptiveTwoColumnFinanceItems(
+                itemsList = loans,
+                isWide = isWide,
+                keyPrefix = "loan",
+                keyOf = { it.id }
+            ) { loan ->
                 val done = loan.paidInstallments >= loan.installmentsTotal
                 NexusCard(
                     modifier = Modifier.fillMaxWidth(),
@@ -1894,7 +2183,12 @@ private fun PlanningAndLoansTabContent(
                 }
             }
         } else {
-            items(auditHistory.take(15), key = { it.id }) { audit ->
+            adaptiveTwoColumnFinanceItems(
+                itemsList = auditHistory.take(15),
+                isWide = isWide,
+                keyPrefix = "audit",
+                keyOf = { it.id }
+            ) { audit ->
                 NexusCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "${audit.action} · ${DateTimeUtils.formatDateTime(audit.occurredAt)}",
@@ -1909,6 +2203,7 @@ private fun PlanningAndLoansTabContent(
                     )
                 }
             }
+        }
         }
     }
 

@@ -3,6 +3,7 @@ package com.nexus.app.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -136,115 +137,146 @@ fun PlanningGoalsScreen(
     Column(modifier = modifier.fillMaxSize()) {
         TopSubScreenBar(title = "Planejamento e Objetivos", onBack = onBack)
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = filter.searchQuery,
-                        onValueChange = onSearchQueryChange,
-                        placeholder = { Text("Buscar objetivos...") },
-                        trailingIcon = {
-                            if (filter.searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { onSearchQueryChange("") }) {
-                                    Icon(Icons.Outlined.Close, contentDescription = "Limpar busca")
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    Button(
-                        onClick = {
-                            editingGoal = null
-                            showGoalEditor = true
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = palette.highlight,
-                            contentColor = palette.background
-                        )
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isWide = maxWidth >= 720.dp
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Outlined.Add, contentDescription = "Novo objetivo", modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Novo")
-                    }
-                }
-            }
-
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(GoalStatusFilter.entries) { stFilter ->
-                        FilterChip(
-                            selected = filter.statusFilter == stFilter,
-                            onClick = { onStatusFilterChange(stFilter) },
-                            label = { Text(stFilter.label) }
+                        OutlinedTextField(
+                            value = filter.searchQuery,
+                            onValueChange = onSearchQueryChange,
+                            placeholder = { Text("Buscar objetivos...") },
+                            trailingIcon = {
+                                if (filter.searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { onSearchQueryChange("") }) {
+                                        Icon(Icons.Outlined.Close, contentDescription = "Limpar busca")
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
                         )
+                        Button(
+                            onClick = {
+                                editingGoal = null
+                                showGoalEditor = true
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = palette.highlight,
+                                contentColor = palette.background
+                            )
+                        ) {
+                            Icon(Icons.Outlined.Add, contentDescription = "Novo objetivo", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Novo")
+                        }
                     }
                 }
-            }
 
-            if (categories.isNotEmpty()) {
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item {
+                        items(GoalStatusFilter.entries) { stFilter ->
                             FilterChip(
-                                selected = filter.categoryFilterId == null,
-                                onClick = { onCategoryFilterChange(null) },
-                                label = { Text("Todas categorias") }
-                            )
-                        }
-                        items(categories, key = { "cat_filter_${it.id}" }) { cat ->
-                            FilterChip(
-                                selected = filter.categoryFilterId == cat.id,
-                                onClick = {
-                                    onCategoryFilterChange(if (filter.categoryFilterId == cat.id) null else cat.id)
-                                },
-                                label = { Text(cat.name) }
+                                selected = filter.statusFilter == stFilter,
+                                onClick = { onStatusFilterChange(stFilter) },
+                                label = { Text(stFilter.label) }
                             )
                         }
                     }
                 }
-            }
 
-            item {
-                SectionHeader(
-                    title = "Objetivos (${filter.statusFilter.label})",
-                    trailing = "${goals.size}"
-                )
-            }
-
-            if (goals.isEmpty()) {
-                item {
-                    NexusEmptyState(
-                        icon = Icons.Outlined.Flag,
-                        title = if (allGoals.isEmpty()) "Nenhum objetivo cadastrado" else "Nenhum objetivo neste filtro",
-                        subtitle = if (allGoals.isEmpty()) {
-                            "Crie objetivos pessoais de médio ou longo prazo, acompanhe marcos e conecte tarefas e projetos existentes sem duplicação."
-                        } else {
-                            "Altere o filtro ou adicione um novo objetivo pessoal."
-                        },
-                        actionLabel = "Novo objetivo",
-                        onAction = {
-                            editingGoal = null
-                            showGoalEditor = true
+                if (categories.isNotEmpty()) {
+                    item {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item {
+                                FilterChip(
+                                    selected = filter.categoryFilterId == null,
+                                    onClick = { onCategoryFilterChange(null) },
+                                    label = { Text("Todas categorias") }
+                                )
+                            }
+                            items(categories, key = { "cat_filter_${it.id}" }) { cat ->
+                                FilterChip(
+                                    selected = filter.categoryFilterId == cat.id,
+                                    onClick = {
+                                        onCategoryFilterChange(if (filter.categoryFilterId == cat.id) null else cat.id)
+                                    },
+                                    label = { Text(cat.name) }
+                                )
+                            }
                         }
+                    }
+                }
+
+                item {
+                    SectionHeader(
+                        title = "Objetivos (${filter.statusFilter.label})",
+                        trailing = "${goals.size}"
                     )
                 }
-            } else {
-                items(goals, key = { it.goal.id }) { item ->
-                    PersonalGoalCard(
-                        item = item,
-                        onClick = { selectedGoalId = item.goal.id }
-                    )
+
+                if (goals.isEmpty()) {
+                    item {
+                        NexusEmptyState(
+                            icon = Icons.Outlined.Flag,
+                            title = if (allGoals.isEmpty()) "Nenhum objetivo cadastrado" else "Nenhum objetivo neste filtro",
+                            subtitle = if (allGoals.isEmpty()) {
+                                "Crie objetivos pessoais de médio ou longo prazo, acompanhe marcos e conecte tarefas e projetos existentes sem duplicação."
+                            } else {
+                                "Altere o filtro ou adicione um novo objetivo pessoal."
+                            },
+                            actionLabel = "Novo objetivo",
+                            onAction = {
+                                editingGoal = null
+                                showGoalEditor = true
+                            }
+                        )
+                    }
+                } else if (!isWide) {
+                    items(goals, key = { it.goal.id }) { item ->
+                        PersonalGoalCard(
+                            item = item,
+                            onClick = { selectedGoalId = item.goal.id }
+                        )
+                    }
+                } else {
+                    items(
+                        items = goals.chunked(2),
+                        key = { row -> "pg_row_${row.first().goal.id}" }
+                    ) { pair ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                PersonalGoalCard(
+                                    item = pair[0],
+                                    onClick = { selectedGoalId = pair[0].goal.id }
+                                )
+                            }
+                            if (pair.size > 1) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    PersonalGoalCard(
+                                        item = pair[1],
+                                        onClick = { selectedGoalId = pair[1].goal.id }
+                                    )
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
                 }
             }
         }

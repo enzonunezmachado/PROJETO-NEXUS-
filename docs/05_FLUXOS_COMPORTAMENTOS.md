@@ -129,3 +129,18 @@ sequenceDiagram
 - **Tratamento de Erros e Crash:**
   - Falhas assíncronas em repositórios/workers usam `safeDbCall` / `runCatching`, registram em `error_logs` e mostram feedback amigável (nunca stack trace cru na UI).
   - Exceções não tratadas passam pelo `GlobalErrorHandler`, que grava `ErrorLogEntity` no Room (com timeout curto de proteção) antes de delegar ao `UncaughtExceptionHandler` padrão do Android.
+
+---
+
+## 9. Fluxos Visuais Adaptativos (Agenda, Telas Largas e Home)
+
+1. **Agenda Semanal por Restrições Reais (`AgendaScreen` + `BoxWithConstraints`):**
+   - Calcula automaticamente o modo de exibição conforme a largura útil disponível na área da Agenda (`maxWidth >= 720.dp` → grade simultânea dos 7 dias; `< 720.dp` → `LazyRow` deslizável com rolagem suave até o dia selecionado).
+   - Calcula dinamicamente a altura útil dos cartões semanais com base em `maxHeight` (`(maxHeight - 204.dp).coerceIn(240.dp, 560.dp)` em 2 painéis e `(maxHeight - 224.dp).coerceIn(220.dp, 540.dp)` em painel único).
+   - Preserva `selectedDate` e a semana consultada durante redimensionamentos de layout em composição (mantendo registrado que a persistência entre recriações de `Activity` em rotação — `BUG-001` — permanece fora deste lote visual).
+2. **Tablet Paisagem em 2 Painéis (`AgendaScreen`):**
+   - Quando `maxWidth >= 840.dp && maxHeight >= 480.dp && maxWidth > maxHeight`, a Agenda divide a área em painel esquerdo de navegação (Mês, Semana, cabeçalho de Dia/Lista) e painel direito de ocorrências/detalhes do `selectedDate`. Tocar em qualquer dia no painel esquerdo atualiza imediatamente os itens no painel direito.
+3. **Telas Largas (`>= 720.dp` / `>= 840.dp`):**
+   - `HomeScreen`, `TasksAndProjectsScreen`, `EventsScreen`, `PlanningGoalsScreen`, `FinanceScreen` e `MarketScreen` organizam cards e blocos em 2 colunas ou painéis paralelos quando a largura útil atinge `720.dp` (`840.dp` para 2 painéis em `MarketAssetDetailScreen`), evitando esticar cartões unitários.
+4. **Saudação da Home (`HomeScreen`):**
+   - Saudação e nome aparecem na mesma linha em capitalização convencional (`"Boa tarde, <Nome>"`), mantendo data e frase diária integradas no mesmo cabeçalho compacto.

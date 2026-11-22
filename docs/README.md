@@ -1,7 +1,7 @@
 # NEXUS — Documentação Oficial de Produto e Engenharia
 
 > **Entrada principal da documentação do repositório ativo `PROJETO-NEXUS-`.**  
-> **Última revisão documental:** 2026-11-20 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 7`, `versionName = "5.2.0"`, Room `DATABASE_VERSION = 6`, Backup `CURRENT_FORMAT_VERSION = 7`, Módulo Mercado Lotes `01–09` concluídos no código).
+> **Última revisão documental:** 2026-11-22 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 7`, `versionName = "5.2.0"`, Room `DATABASE_VERSION = 6`, Backup `CURRENT_FORMAT_VERSION = 7`, Módulo Mercado Lotes `01–09` + Evolução Visual e Adaptativa concluídos no código).
 
 ---
 

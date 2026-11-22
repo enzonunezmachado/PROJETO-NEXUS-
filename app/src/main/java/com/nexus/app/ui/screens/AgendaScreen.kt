@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -72,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nexus.app.core.DateTimeUtils
 import com.nexus.app.data.db.entity.CategoryEntity
@@ -84,7 +84,11 @@ import com.nexus.app.ui.AgendaViewMode
 import com.nexus.app.ui.components.NexusCard
 import com.nexus.app.ui.components.NexusEmptyState
 import com.nexus.app.ui.components.parseHexColorOrDefault
+import com.nexus.app.ui.theme.ColoredBorderRole
 import com.nexus.app.ui.theme.LocalNexusPalette
+import com.nexus.app.ui.theme.coloredBorder
+import com.nexus.app.ui.theme.coloredBorderColor
+import com.nexus.app.ui.theme.coloredBorderWidth
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -160,215 +164,359 @@ fun AgendaScreen(
     val dayBands = selectedDayItems.filter { it.kind == AgendaOccurrenceKind.EVENT && it.isAllDay }
     val dayRegularItems = selectedDayItems.filterNot { it.kind == AgendaOccurrenceKind.EVENT && it.isAllDay }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item(key = "agenda_header") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Agenda",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = palette.textPrimary
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    if (filter.viewMode == AgendaViewMode.MONTH || filter.viewMode == AgendaViewMode.WEEK) {
-                        IconButton(onClick = { isCalendarExpanded = !isCalendarExpanded }) {
-                            Icon(
-                                imageVector = if (isCalendarExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                                contentDescription = if (isCalendarExpanded) "Recolher calendário" else "Expandir calendário",
-                                tint = palette.textPrimary
-                            )
-                        }
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (activeFilterCount > 0) palette.surfaceElevated else palette.surface,
-                        border = BorderStroke(1.dp, if (activeFilterCount > 0) palette.accentNeon else palette.border),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { showFilterSheet = true }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Tune,
-                                contentDescription = "Filtrar Agenda",
-                                tint = if (activeFilterCount > 0) palette.accentNeon else palette.textPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = if (activeFilterCount > 0) "Filtros ($activeFilterCount)" else "Filtros",
-                                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-                                color = if (activeFilterCount > 0) palette.accentNeon else palette.textPrimary
-                            )
-                        }
-                    }
-                }
-            }
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val useTabletTwoPane = maxWidth >= 840.dp && maxHeight >= 480.dp && maxWidth > maxHeight
+        val weekCardHeight = if (useTabletTwoPane) {
+            (maxHeight - 204.dp).coerceIn(240.dp, 560.dp)
+        } else {
+            (maxHeight - 224.dp).coerceIn(220.dp, 540.dp)
         }
 
-        item(key = "agenda_view_modes") {
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                AgendaViewMode.entries.forEachIndexed { index, mode ->
-                    SegmentedButton(
-                        selected = filter.viewMode == mode,
-                        onClick = { onViewModeChange(mode) },
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = AgendaViewMode.entries.size
-                        ),
-                        label = { Text(mode.label, maxLines = 1) }
+        if (useTabletTwoPane) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    AgendaHeaderRow(
+                        viewMode = filter.viewMode,
+                        isCalendarExpanded = isCalendarExpanded,
+                        activeFilterCount = activeFilterCount,
+                        onToggleExpand = { isCalendarExpanded = !isCalendarExpanded },
+                        onOpenFilters = { showFilterSheet = true }
+                    )
+                    AgendaViewModeSelector(
+                        selectedMode = filter.viewMode,
+                        onViewModeChange = onViewModeChange
                     )
                 }
-            }
-        }
 
-        if (filter.viewMode != AgendaViewMode.LIST) {
-            item(key = "agenda_date_nav") {
-                DateNavigationBar(
-                    viewMode = filter.viewMode,
-                    selectedDate = filter.selectedDate,
-                    isCollapsed = (filter.viewMode == AgendaViewMode.MONTH || filter.viewMode == AgendaViewMode.WEEK) && !isCalendarExpanded,
-                    onToggleExpand = { isCalendarExpanded = !isCalendarExpanded },
-                    onDateChange = onDateChange
-                )
-            }
-        }
-
-        if (filter.viewMode == AgendaViewMode.MONTH && isCalendarExpanded) {
-            item(key = "agenda_month_grid") {
-                MonthCalendarGrid(
-                    selectedDate = filter.selectedDate,
-                    occurrences = occurrences,
-                    onDateSelected = onDateChange
-                )
-            }
-        }
-
-        if (conflictsInView.isNotEmpty()) {
-            item(key = "agenda_conflicts") {
-                NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.WarningAmber,
-                            contentDescription = "Alerta de conflito",
-                            tint = palette.warning
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Atenção: ${conflictsInView.size} compromisso(s) com conflito de horário neste período.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = palette.warning
-                        )
-                    }
-                }
-            }
-        }
-
-        when (filter.viewMode) {
-            AgendaViewMode.DAY, AgendaViewMode.MONTH -> {
-                if (selectedDayItems.isEmpty()) {
-                    item(key = "agenda_day_empty") {
-                        NexusEmptyState(
-                            icon = Icons.Outlined.CalendarMonth,
-                            title = "Nada marcado para ${DateTimeUtils.formatDayMonth(filter.selectedDate)}",
-                            subtitle = "Os compromissos, tarefas com data, eventos e vencimentos deste dia aparecem aqui.",
-                            actionLabel = "Novo compromisso",
-                            onAction = onCreateAppointment
-                        )
-                    }
-                } else {
-                    if (dayBands.isNotEmpty()) {
-                        items(dayBands, key = { "band_${it.stableKey}" }) { band ->
-                            AllDayEventBandCard(
-                                occurrence = band,
-                                onClick = { openOccurrence(band) }
-                            )
+                if (filter.viewMode == AgendaViewMode.LIST) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 96.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (conflictsInView.isNotEmpty()) {
+                            item(key = "agenda_conflicts_list_wide") {
+                                AgendaConflictNoticeCard(conflictCount = conflictsInView.size)
+                            }
+                        }
+                        if (displayedOccurrences.isEmpty()) {
+                            item(key = "agenda_list_empty_wide") {
+                                NexusEmptyState(
+                                    icon = Icons.Outlined.CalendarMonth,
+                                    title = "Nenhum item encontrado",
+                                    subtitle = "Ajuste os filtros ou registre um compromisso, tarefa com data, evento ou lançamento.",
+                                    actionLabel = "Novo compromisso",
+                                    onAction = onCreateAppointment
+                                )
+                            }
+                        } else {
+                            val pairs = displayedOccurrences.chunked(2)
+                            items(pairs, key = { "list_wide_${it.first().stableKey}" }) { pair ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        AgendaOccurrenceRow(
+                                            occurrence = pair[0],
+                                            showDateInMeta = true,
+                                            onClick = { openOccurrence(pair[0]) }
+                                        )
+                                    }
+                                    if (pair.size > 1) {
+                                        Box(modifier = Modifier.weight(1f)) {
+                                            AgendaOccurrenceRow(
+                                                occurrence = pair[1],
+                                                showDateInMeta = true,
+                                                onClick = { openOccurrence(pair[1]) }
+                                            )
+                                        }
+                                    } else {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
                         }
                     }
-                    items(dayRegularItems, key = { it.stableKey }) { occ ->
-                        AgendaOccurrenceRow(
-                            occurrence = occ,
-                            showDateInMeta = false,
-                            onClick = { openOccurrence(occ) }
-                        )
+                } else {
+                    val leftWeight = if (filter.viewMode == AgendaViewMode.WEEK) 0.54f else 0.45f
+                    val rightWeight = 1f - leftWeight
+
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(leftWeight)
+                                .fillMaxSize(),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            item(key = "agenda_two_pane_date_nav") {
+                                DateNavigationBar(
+                                    viewMode = filter.viewMode,
+                                    selectedDate = filter.selectedDate,
+                                    isCollapsed = (filter.viewMode == AgendaViewMode.MONTH || filter.viewMode == AgendaViewMode.WEEK) && !isCalendarExpanded,
+                                    onToggleExpand = { isCalendarExpanded = !isCalendarExpanded },
+                                    onDateChange = onDateChange
+                                )
+                            }
+
+                            if (conflictsInView.isNotEmpty()) {
+                                item(key = "agenda_two_pane_conflicts") {
+                                    AgendaConflictNoticeCard(conflictCount = conflictsInView.size)
+                                }
+                            }
+
+                            when (filter.viewMode) {
+                                AgendaViewMode.WEEK -> {
+                                    if (isCalendarExpanded) {
+                                        item(key = "agenda_two_pane_week") {
+                                            HorizontalWeekBoard(
+                                                weekDays = weekDays,
+                                                selectedDate = filter.selectedDate,
+                                                occurrences = displayedOccurrences,
+                                                cardHeight = weekCardHeight,
+                                                onSelectDay = onDateChange,
+                                                onOpenOccurrence = openOccurrence
+                                            )
+                                        }
+                                    }
+                                }
+                                AgendaViewMode.MONTH, AgendaViewMode.DAY -> {
+                                    if (filter.viewMode == AgendaViewMode.DAY || isCalendarExpanded) {
+                                        item(key = "agenda_two_pane_month") {
+                                            MonthCalendarGrid(
+                                                selectedDate = filter.selectedDate,
+                                                occurrences = occurrences,
+                                                onDateSelected = onDateChange
+                                            )
+                                        }
+                                    }
+                                }
+                                AgendaViewMode.LIST -> Unit
+                            }
+                        }
+
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(rightWeight)
+                                .fillMaxSize(),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            item(key = "agenda_two_pane_day_header") {
+                                NexusCard(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = DateTimeUtils.formatFullDateWithWeekday(filter.selectedDate),
+                                                style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
+                                                color = palette.textPrimary
+                                            )
+                                            Text(
+                                                text = "${selectedDayItems.size} ${if (selectedDayItems.size == 1) "item" else "itens"} neste dia",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                                                color = palette.textSecondary
+                                            )
+                                        }
+                                        TextButton(onClick = onCreateAppointment) {
+                                            Text("Novo", color = palette.info)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (selectedDayItems.isEmpty()) {
+                                item(key = "agenda_two_pane_day_empty") {
+                                    NexusEmptyState(
+                                        icon = Icons.Outlined.CalendarMonth,
+                                        title = "Nada marcado para ${DateTimeUtils.formatDayMonth(filter.selectedDate)}",
+                                        subtitle = "Os compromissos, tarefas com data, eventos e vencimentos deste dia aparecem aqui.",
+                                        actionLabel = "Novo compromisso",
+                                        onAction = onCreateAppointment
+                                    )
+                                }
+                            } else {
+                                if (dayBands.isNotEmpty()) {
+                                    items(dayBands, key = { "tp_band_${it.stableKey}" }) { band ->
+                                        AllDayEventBandCard(
+                                            occurrence = band,
+                                            onClick = { openOccurrence(band) }
+                                        )
+                                    }
+                                }
+                                items(dayRegularItems, key = { "tp_${it.stableKey}" }) { occ ->
+                                    AgendaOccurrenceRow(
+                                        occurrence = occ,
+                                        showDateInMeta = false,
+                                        onClick = { openOccurrence(occ) }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item(key = "agenda_header") {
+                    AgendaHeaderRow(
+                        viewMode = filter.viewMode,
+                        isCalendarExpanded = isCalendarExpanded,
+                        activeFilterCount = activeFilterCount,
+                        onToggleExpand = { isCalendarExpanded = !isCalendarExpanded },
+                        onOpenFilters = { showFilterSheet = true }
+                    )
+                }
 
-            AgendaViewMode.WEEK -> {
-                if (isCalendarExpanded) {
-                    item(key = "agenda_week_board") {
-                        HorizontalWeekBoard(
-                            weekDays = weekDays,
+                item(key = "agenda_view_modes") {
+                    AgendaViewModeSelector(
+                        selectedMode = filter.viewMode,
+                        onViewModeChange = onViewModeChange
+                    )
+                }
+
+                if (filter.viewMode != AgendaViewMode.LIST) {
+                    item(key = "agenda_date_nav") {
+                        DateNavigationBar(
+                            viewMode = filter.viewMode,
                             selectedDate = filter.selectedDate,
-                            occurrences = displayedOccurrences,
-                            onSelectDay = onDateChange,
-                            onOpenOccurrence = openOccurrence
+                            isCollapsed = (filter.viewMode == AgendaViewMode.MONTH || filter.viewMode == AgendaViewMode.WEEK) && !isCalendarExpanded,
+                            onToggleExpand = { isCalendarExpanded = !isCalendarExpanded },
+                            onDateChange = onDateChange
                         )
                     }
-                } else {
-                    // Quando a faixa semanal horizontal é recolhida, foca diretamente nos itens do dia selecionado sem duplicar cards.
-                    if (selectedDayItems.isEmpty()) {
-                        item(key = "agenda_week_collapsed_empty") {
-                            NexusEmptyState(
-                                icon = Icons.Outlined.CalendarMonth,
-                                title = "Nada marcado para ${DateTimeUtils.formatDayMonth(filter.selectedDate)}",
-                                subtitle = "Expanda a semana acima para ver todos os dias ou adicione um novo compromisso.",
-                                actionLabel = "Novo compromisso",
-                                onAction = onCreateAppointment
-                            )
-                        }
-                    } else {
-                        if (dayBands.isNotEmpty()) {
-                            items(dayBands, key = { "wcband_${it.stableKey}" }) { band ->
-                                AllDayEventBandCard(
-                                    occurrence = band,
-                                    onClick = { openOccurrence(band) }
+                }
+
+                if (filter.viewMode == AgendaViewMode.MONTH && isCalendarExpanded) {
+                    item(key = "agenda_month_grid") {
+                        MonthCalendarGrid(
+                            selectedDate = filter.selectedDate,
+                            occurrences = occurrences,
+                            onDateSelected = onDateChange
+                        )
+                    }
+                }
+
+                if (conflictsInView.isNotEmpty()) {
+                    item(key = "agenda_conflicts") {
+                        AgendaConflictNoticeCard(conflictCount = conflictsInView.size)
+                    }
+                }
+
+                when (filter.viewMode) {
+                    AgendaViewMode.DAY, AgendaViewMode.MONTH -> {
+                        if (selectedDayItems.isEmpty()) {
+                            item(key = "agenda_day_empty") {
+                                NexusEmptyState(
+                                    icon = Icons.Outlined.CalendarMonth,
+                                    title = "Nada marcado para ${DateTimeUtils.formatDayMonth(filter.selectedDate)}",
+                                    subtitle = "Os compromissos, tarefas com data, eventos e vencimentos deste dia aparecem aqui.",
+                                    actionLabel = "Novo compromisso",
+                                    onAction = onCreateAppointment
+                                )
+                            }
+                        } else {
+                            if (dayBands.isNotEmpty()) {
+                                items(dayBands, key = { "band_${it.stableKey}" }) { band ->
+                                    AllDayEventBandCard(
+                                        occurrence = band,
+                                        onClick = { openOccurrence(band) }
+                                    )
+                                }
+                            }
+                            items(dayRegularItems, key = { it.stableKey }) { occ ->
+                                AgendaOccurrenceRow(
+                                    occurrence = occ,
+                                    showDateInMeta = false,
+                                    onClick = { openOccurrence(occ) }
                                 )
                             }
                         }
-                        items(dayRegularItems, key = { "wc_${it.stableKey}" }) { occ ->
-                            AgendaOccurrenceRow(
-                                occurrence = occ,
-                                showDateInMeta = false,
-                                onClick = { openOccurrence(occ) }
-                            )
+                    }
+
+                    AgendaViewMode.WEEK -> {
+                        if (isCalendarExpanded) {
+                            item(key = "agenda_week_board") {
+                                HorizontalWeekBoard(
+                                    weekDays = weekDays,
+                                    selectedDate = filter.selectedDate,
+                                    occurrences = displayedOccurrences,
+                                    cardHeight = weekCardHeight,
+                                    onSelectDay = onDateChange,
+                                    onOpenOccurrence = openOccurrence
+                                )
+                            }
+                        } else {
+                            // Quando a faixa semanal horizontal é recolhida, foca diretamente nos itens do dia selecionado sem duplicar cards.
+                            if (selectedDayItems.isEmpty()) {
+                                item(key = "agenda_week_collapsed_empty") {
+                                    NexusEmptyState(
+                                        icon = Icons.Outlined.CalendarMonth,
+                                        title = "Nada marcado para ${DateTimeUtils.formatDayMonth(filter.selectedDate)}",
+                                        subtitle = "Expanda a semana acima para ver todos os dias ou adicione um novo compromisso.",
+                                        actionLabel = "Novo compromisso",
+                                        onAction = onCreateAppointment
+                                    )
+                                }
+                            } else {
+                                if (dayBands.isNotEmpty()) {
+                                    items(dayBands, key = { "wcband_${it.stableKey}" }) { band ->
+                                        AllDayEventBandCard(
+                                            occurrence = band,
+                                            onClick = { openOccurrence(band) }
+                                        )
+                                    }
+                                }
+                                items(dayRegularItems, key = { "wc_${it.stableKey}" }) { occ ->
+                                    AgendaOccurrenceRow(
+                                        occurrence = occ,
+                                        showDateInMeta = false,
+                                        onClick = { openOccurrence(occ) }
+                                    )
+                                }
+                            }
                         }
                     }
-                }
-            }
 
-            AgendaViewMode.LIST -> {
-                if (displayedOccurrences.isEmpty()) {
-                    item(key = "agenda_list_empty") {
-                        NexusEmptyState(
-                            icon = Icons.Outlined.CalendarMonth,
-                            title = "Nenhum item encontrado",
-                            subtitle = "Ajuste os filtros ou registre um compromisso, tarefa com data, evento ou lançamento.",
-                            actionLabel = "Novo compromisso",
-                            onAction = onCreateAppointment
-                        )
-                    }
-                } else {
-                    items(displayedOccurrences, key = { "list_${it.stableKey}" }) { occ ->
-                        AgendaOccurrenceRow(
-                            occurrence = occ,
-                            showDateInMeta = true,
-                            onClick = { openOccurrence(occ) }
-                        )
+                    AgendaViewMode.LIST -> {
+                        if (displayedOccurrences.isEmpty()) {
+                            item(key = "agenda_list_empty") {
+                                NexusEmptyState(
+                                    icon = Icons.Outlined.CalendarMonth,
+                                    title = "Nenhum item encontrado",
+                                    subtitle = "Ajuste os filtros ou registre um compromisso, tarefa com data, evento ou lançamento.",
+                                    actionLabel = "Novo compromisso",
+                                    onAction = onCreateAppointment
+                                )
+                            }
+                        } else {
+                            items(displayedOccurrences, key = { "list_${it.stableKey}" }) { occ ->
+                                AgendaOccurrenceRow(
+                                    occurrence = occ,
+                                    showDateInMeta = true,
+                                    onClick = { openOccurrence(occ) }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -385,6 +533,113 @@ fun AgendaScreen(
             onClearFilters = onClearFilters,
             onDismiss = { showFilterSheet = false }
         )
+    }
+}
+
+@Composable
+private fun AgendaHeaderRow(
+    viewMode: AgendaViewMode,
+    isCalendarExpanded: Boolean,
+    activeFilterCount: Int,
+    onToggleExpand: () -> Unit,
+    onOpenFilters: () -> Unit
+) {
+    val palette = LocalNexusPalette.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "Agenda",
+            style = MaterialTheme.typography.headlineMedium,
+            color = palette.textPrimary
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (viewMode == AgendaViewMode.MONTH || viewMode == AgendaViewMode.WEEK) {
+                IconButton(onClick = onToggleExpand) {
+                    Icon(
+                        imageVector = if (isCalendarExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        contentDescription = if (isCalendarExpanded) "Recolher calendário" else "Expandir calendário",
+                        tint = palette.textPrimary
+                    )
+                }
+            }
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (activeFilterCount > 0) palette.surfaceElevated else palette.surface,
+                border = if (activeFilterCount > 0) {
+                    palette.coloredBorder(palette.accentNeon, ColoredBorderRole.MEDIUM_ACCENT)
+                } else {
+                    BorderStroke(1.dp, palette.border)
+                },
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onOpenFilters)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Tune,
+                        contentDescription = "Filtrar Agenda",
+                        tint = if (activeFilterCount > 0) palette.accentNeon else palette.textPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = if (activeFilterCount > 0) "Filtros ($activeFilterCount)" else "Filtros",
+                        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                        color = if (activeFilterCount > 0) palette.accentNeon else palette.textPrimary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AgendaViewModeSelector(
+    selectedMode: AgendaViewMode,
+    onViewModeChange: (AgendaViewMode) -> Unit
+) {
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        AgendaViewMode.entries.forEachIndexed { index, mode ->
+            SegmentedButton(
+                selected = selectedMode == mode,
+                onClick = { onViewModeChange(mode) },
+                shape = SegmentedButtonDefaults.itemShape(
+                    index = index,
+                    count = AgendaViewMode.entries.size
+                ),
+                label = { Text(mode.label, maxLines = 1) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AgendaConflictNoticeCard(conflictCount: Int) {
+    val palette = LocalNexusPalette.current
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Outlined.WarningAmber,
+                contentDescription = "Alerta de conflito",
+                tint = palette.warning
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "Atenção: $conflictCount compromisso(s) com conflito de horário neste período.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.warning
+            )
+        }
     }
 }
 
@@ -577,133 +832,184 @@ private fun HorizontalWeekBoard(
     weekDays: List<LocalDate>,
     selectedDate: LocalDate,
     occurrences: List<AgendaOccurrence>,
+    cardHeight: Dp,
     onSelectDay: (LocalDate) -> Unit,
     onOpenOccurrence: (AgendaOccurrence) -> Unit
 ) {
-    val palette = LocalNexusPalette.current
     val today = DateTimeUtils.todayLocalDate()
     val byDay = remember(occurrences) { occurrences.groupBy { it.occurrenceDate } }
     val listState = rememberLazyListState()
-
     val selectedIndex = weekDays.indexOf(selectedDate).takeIf { it >= 0 } ?: 0
-    LaunchedEffect(selectedDate) {
-        listState.animateScrollToItem(selectedIndex)
-    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val cardWidth = if (maxWidth >= 640.dp) {
-            ((maxWidth - 36.dp) / 4f).coerceIn(170.dp, 240.dp)
+        val expandAllSeven = maxWidth >= 720.dp
+        val scrollableCardWidth = if (maxWidth >= 560.dp) {
+            ((maxWidth - 36.dp) / 4f).coerceIn(145.dp, 220.dp)
         } else {
-            ((maxWidth - 20.dp) / 2.25f).coerceIn(154.dp, 210.dp)
+            ((maxWidth - 20.dp) / 2.25f).coerceIn(148.dp, 205.dp)
         }
 
-        LazyRow(
-            state = listState,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(vertical = 2.dp)
-        ) {
-            items(weekDays, key = { it.toString() }) { day ->
-                val dayItems = byDay[day].orEmpty()
-                val isSelected = day == selectedDate
-                val isToday = day == today
-                val weekdayShort = day.dayOfWeek
-                    .getDisplayName(TextStyle.SHORT, DateTimeUtils.LOCALE_PT_BR)
-                    .replace(".", "")
-                    .uppercase(DateTimeUtils.LOCALE_PT_BR)
+        LaunchedEffect(selectedDate, expandAllSeven) {
+            if (!expandAllSeven) {
+                listState.animateScrollToItem(selectedIndex)
+            }
+        }
 
-                Surface(
-                    modifier = Modifier
-                        .width(cardWidth)
-                        .heightIn(min = 240.dp, max = 420.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    color = palette.surfaceElevated,
-                    border = BorderStroke(
-                        width = if (isSelected) 1.5.dp else 1.dp,
+        if (expandAllSeven) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                weekDays.forEach { day ->
+                    WeekDayBoardCard(
+                        day = day,
+                        dayItems = byDay[day].orEmpty(),
+                        isSelected = day == selectedDate,
+                        isToday = day == today,
+                        compactPadding = maxWidth < 840.dp,
+                        onSelectDay = { onSelectDay(day) },
+                        onOpenOccurrence = onOpenOccurrence,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(cardHeight)
+                    )
+                }
+            }
+        } else {
+            LazyRow(
+                state = listState,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(vertical = 2.dp)
+            ) {
+                items(weekDays, key = { it.toString() }) { day ->
+                    WeekDayBoardCard(
+                        day = day,
+                        dayItems = byDay[day].orEmpty(),
+                        isSelected = day == selectedDate,
+                        isToday = day == today,
+                        compactPadding = false,
+                        onSelectDay = { onSelectDay(day) },
+                        onOpenOccurrence = onOpenOccurrence,
+                        modifier = Modifier
+                            .width(scrollableCardWidth)
+                            .height(cardHeight)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeekDayBoardCard(
+    day: LocalDate,
+    dayItems: List<AgendaOccurrence>,
+    isSelected: Boolean,
+    isToday: Boolean,
+    compactPadding: Boolean,
+    onSelectDay: () -> Unit,
+    onOpenOccurrence: (AgendaOccurrence) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalNexusPalette.current
+    val weekdayShort = day.dayOfWeek
+        .getDisplayName(TextStyle.SHORT, DateTimeUtils.LOCALE_PT_BR)
+        .replace(".", "")
+        .uppercase(DateTimeUtils.LOCALE_PT_BR)
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = palette.surfaceElevated,
+        border = when {
+            isSelected -> palette.coloredBorder(palette.accentNeon, ColoredBorderRole.DAY_CARD_SELECTED)
+            isToday -> palette.coloredBorder(palette.info, ColoredBorderRole.DAY_CARD_TODAY)
+            else -> BorderStroke(1.dp, palette.border)
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(if (compactPadding) 8.dp else 10.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onSelectDay)
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = weekdayShort,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                         color = when {
                             isSelected -> palette.accentNeon
                             isToday -> palette.info
-                            else -> palette.border
+                            else -> palette.textSecondary
                         }
                     )
+                    Text(
+                        text = DateTimeUtils.formatDayMonth(day),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = if (isSelected || isToday) FontWeight.SemiBold else FontWeight.Medium,
+                            fontFeatureSettings = "tnum"
+                        ),
+                        color = palette.textPrimary
+                    )
+                }
+                if (dayItems.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = palette.surface
+                    ) {
+                        Text(
+                            text = "${dayItems.size}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = if (dayItems.any { it.isOverdue }) palette.danger else palette.textSecondary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 6.dp))
+
+            if (dayItems.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onSelectDay),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onSelectDay(day) }
-                                .padding(horizontal = 4.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = weekdayShort,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                    color = when {
-                                        isSelected -> palette.accentNeon
-                                        isToday -> palette.info
-                                        else -> palette.textSecondary
-                                    }
-                                )
-                                Text(
-                                    text = DateTimeUtils.formatDayMonth(day),
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = if (isSelected || isToday) FontWeight.SemiBold else FontWeight.Medium,
-                                        fontFeatureSettings = "tnum"
-                                    ),
-                                    color = palette.textPrimary
-                                )
-                            }
-                            if (dayItems.isNotEmpty()) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = palette.surface
-                                ) {
-                                    Text(
-                                        text = "${dayItems.size}",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontFeatureSettings = "tnum"
-                                        ),
-                                        color = if (dayItems.any { it.isOverdue }) palette.danger else palette.textSecondary,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 6.dp))
-
-                        if (dayItems.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "Livre",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = palette.textSecondary
-                                )
-                            }
-                        } else {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                dayItems.forEach { occ ->
-                                    WeekCardOccurrenceItem(
-                                        occurrence = occ,
-                                        onClick = { onOpenOccurrence(occ) }
-                                    )
-                                }
-                            }
-                        }
+                    Text(
+                        text = "Livre",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    dayItems.forEach { occ ->
+                        WeekCardOccurrenceItem(
+                            occurrence = occ,
+                            onClick = { onOpenOccurrence(occ) }
+                        )
                     }
                 }
             }
@@ -733,7 +1039,11 @@ private fun WeekCardOccurrenceItem(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         color = palette.surface,
-        border = BorderStroke(1.dp, if (occurrence.hasConflict) palette.warning.copy(alpha = 0.6f) else palette.border)
+        border = if (occurrence.hasConflict) {
+            palette.coloredBorder(palette.warning, ColoredBorderRole.COMPACT_ITEM)
+        } else {
+            BorderStroke(1.dp, palette.border)
+        }
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
@@ -797,7 +1107,7 @@ private fun AllDayEventBandCard(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(10.dp),
         color = palette.surfaceElevated,
-        border = BorderStroke(1.dp, statusColor.copy(alpha = 0.6f))
+        border = palette.coloredBorder(statusColor, ColoredBorderRole.MEDIUM_ACCENT)
     ) {
         Row(
             modifier = Modifier
@@ -948,6 +1258,7 @@ private fun AgendaKindBadge(
     statusColor: Color,
     isDone: Boolean
 ) {
+    val palette = LocalNexusPalette.current
     when (kind) {
         AgendaOccurrenceKind.TASK -> {
             Box(
@@ -956,7 +1267,11 @@ private fun AgendaKindBadge(
                     .size(22.dp)
                     .clip(RoundedCornerShape(4.dp))
                     .background(if (isDone) statusColor.copy(alpha = 0.16f) else Color.Transparent)
-                    .border(1.5.dp, statusColor, RoundedCornerShape(4.dp)),
+                    .border(
+                        palette.coloredBorderWidth(ColoredBorderRole.SMALL_BADGE_DEFINED),
+                        palette.coloredBorderColor(statusColor, ColoredBorderRole.SMALL_BADGE_DEFINED),
+                        RoundedCornerShape(4.dp)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 if (isDone) {
@@ -985,7 +1300,11 @@ private fun AgendaKindBadge(
                     .padding(top = 1.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(statusColor.copy(alpha = 0.12f))
-                    .border(1.dp, statusColor, RoundedCornerShape(6.dp))
+                    .border(
+                        palette.coloredBorderWidth(ColoredBorderRole.SMALL_BADGE_SUBTLE),
+                        palette.coloredBorderColor(statusColor, ColoredBorderRole.SMALL_BADGE_SUBTLE),
+                        RoundedCornerShape(6.dp)
+                    )
                     .padding(horizontal = 5.dp, vertical = 3.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -1002,7 +1321,11 @@ private fun AgendaKindBadge(
                 modifier = Modifier
                     .padding(top = 1.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .border(1.dp, statusColor.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                    .border(
+                        palette.coloredBorderWidth(ColoredBorderRole.SMALL_BADGE_SUBTLE),
+                        palette.coloredBorderColor(statusColor, ColoredBorderRole.SMALL_BADGE_SUBTLE),
+                        RoundedCornerShape(6.dp)
+                    )
                     .padding(horizontal = 5.dp, vertical = 2.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -1175,7 +1498,7 @@ private fun MonthCalendarGrid(
                             shape = RoundedCornerShape(8.dp),
                             color = if (isSelected) palette.highlight else palette.surface,
                             border = if (isToday && !isSelected) {
-                                BorderStroke(1.dp, palette.accentNeon)
+                                palette.coloredBorder(palette.accentNeon, ColoredBorderRole.COMPACT_ITEM)
                             } else {
                                 null
                             }

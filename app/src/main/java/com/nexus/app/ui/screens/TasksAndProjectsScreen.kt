@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -215,11 +217,13 @@ fun TasksAndProjectsScreen(
                 }
             }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val isWide = maxWidth >= 720.dp
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                 if (filter.tabMode == TasksTabMode.TODAY && overdueCount > 0) {
                     item(key = "today_overdue_banner") {
                         AlertBannerCard(
@@ -277,7 +281,12 @@ fun TasksAndProjectsScreen(
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                         }
-                        items(section.items, key = { it.task.id }) { item ->
+                        adaptiveTwoColumnTaskItems(
+                            itemsList = section.items,
+                            isWide = isWide,
+                            keyPrefix = "sec_${section.group.name}",
+                            keyOf = { it.task.id }
+                        ) { item ->
                             TaskRowCard(
                                 item = item,
                                 onClick = { onOpenTask(item.task.id) },
@@ -297,7 +306,12 @@ fun TasksAndProjectsScreen(
                     } else {
                         tasks
                     }
-                    items(orderedTasks, key = { it.task.id }) { item ->
+                    adaptiveTwoColumnTaskItems(
+                        itemsList = orderedTasks,
+                        isWide = isWide,
+                        keyPrefix = "ord",
+                        keyOf = { it.task.id }
+                    ) { item ->
                         TaskRowCard(
                             item = item,
                             onClick = { onOpenTask(item.task.id) },
@@ -335,6 +349,42 @@ fun TasksAndProjectsScreen(
                             }
                         }
                     }
+                }
+            }
+            }
+        }
+    }
+}
+
+private fun <T> LazyListScope.adaptiveTwoColumnTaskItems(
+    itemsList: List<T>,
+    isWide: Boolean,
+    keyPrefix: String,
+    keyOf: (T) -> Any,
+    itemContent: @Composable (T) -> Unit
+) {
+    if (!isWide) {
+        items(itemsList, key = { "${keyPrefix}_${keyOf(it)}" }) { item ->
+            itemContent(item)
+        }
+    } else {
+        items(
+            items = itemsList.chunked(2),
+            key = { row -> "${keyPrefix}_row_${keyOf(row.first())}" }
+        ) { pair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    itemContent(pair[0])
+                }
+                if (pair.size > 1) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        itemContent(pair[1])
+                    }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -659,84 +709,92 @@ private fun ProjectsListContent(
     onCreateProject: () -> Unit
 ) {
     val palette = LocalNexusPalette.current
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        if (projects.isEmpty()) {
-            item {
-                NexusEmptyState(
-                    icon = Icons.Outlined.FolderOpen,
-                    title = "Nenhum projeto criado",
-                    subtitle = "Agrupe tarefas em projetos e acompanhe o progresso calculado automaticamente.",
-                    actionLabel = "Novo projeto",
-                    onAction = onCreateProject
-                )
-            }
-        } else {
-            items(projects, key = { it.project.id }) { pw ->
-                val project = pw.project
-                NexusCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevated = true,
-                    onClick = { onOpenProject(project.id) }
-                ) {
-                    Row(
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isWide = maxWidth >= 720.dp
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (projects.isEmpty()) {
+                item {
+                    NexusEmptyState(
+                        icon = Icons.Outlined.FolderOpen,
+                        title = "Nenhum projeto criado",
+                        subtitle = "Agrupe tarefas em projetos e acompanhe o progresso calculado automaticamente.",
+                        actionLabel = "Novo projeto",
+                        onAction = onCreateProject
+                    )
+                }
+            } else {
+                adaptiveTwoColumnTaskItems(
+                    itemsList = projects,
+                    isWide = isWide,
+                    keyPrefix = "proj",
+                    keyOf = { it.project.id }
+                ) { pw ->
+                    val project = pw.project
+                    NexusCard(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        elevated = true,
+                        onClick = { onOpenProject(project.id) }
                     ) {
-                        Text(
-                            text = project.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = palette.textPrimary,
-                            modifier = Modifier.weight(1f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = project.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = palette.textPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "${pw.progressPercent}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (pw.progressPercent == 100 && pw.totalTasks > 0) palette.positive else palette.textPrimary
+                            )
+                        }
+                        if (project.description.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = project.description,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = palette.textSecondary,
+                                maxLines = 2
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { pw.progressFraction },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = if (pw.progressPercent == 100 && pw.totalTasks > 0) palette.positive else palette.highlight,
+                            trackColor = palette.border
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val meta = buildList {
+                            add(project.status.label)
+                            add("Prioridade ${project.priority.label}")
+                            add("${pw.completedTasks}/${pw.totalTasks} tarefas concluídas")
+                            project.deadlineAt?.let { add("Prazo ${DateTimeUtils.formatDate(it)}") }
+                        }.joinToString(" · ")
                         Text(
-                            text = "${pw.progressPercent}%",
+                            text = meta,
                             style = MaterialTheme.typography.labelMedium,
-                            color = if (pw.progressPercent == 100 && pw.totalTasks > 0) palette.positive else palette.textPrimary
+                            color = palette.textSecondary
                         )
-                    }
-                    if (project.description.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = project.description,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = palette.textSecondary,
-                            maxLines = 2
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    LinearProgressIndicator(
-                        progress = { pw.progressFraction },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(4.dp)),
-                        color = if (pw.progressPercent == 100 && pw.totalTasks > 0) palette.positive else palette.highlight,
-                        trackColor = palette.border
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val meta = buildList {
-                        add(project.status.label)
-                        add("Prioridade ${project.priority.label}")
-                        add("${pw.completedTasks}/${pw.totalTasks} tarefas concluídas")
-                        project.deadlineAt?.let { add("Prazo ${DateTimeUtils.formatDate(it)}") }
-                    }.joinToString(" · ")
-                    Text(
-                        text = meta,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = palette.textSecondary
-                    )
-                    if (pw.linkedTransactionsCount > 0) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Financeiro (${pw.linkedTransactionsCount}): ${DateTimeUtils.formatBrl(pw.estimatedCostCents)} · Pago: ${DateTimeUtils.formatBrl(pw.paidCostCents)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.info
-                        )
+                        if (pw.linkedTransactionsCount > 0) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Financeiro (${pw.linkedTransactionsCount}): ${DateTimeUtils.formatBrl(pw.estimatedCostCents)} · Pago: ${DateTimeUtils.formatBrl(pw.paidCostCents)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.info
+                            )
+                        }
                     }
                 }
             }

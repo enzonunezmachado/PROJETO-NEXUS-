@@ -28,7 +28,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -48,9 +47,7 @@ import androidx.compose.runtime.setValue
 import com.nexus.app.ui.components.ConfirmDiscardChangesDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nexus.app.data.db.entity.AppointmentEntity
@@ -70,7 +67,7 @@ import com.nexus.app.notifications.NexusNotificationScheduler
 import com.nexus.app.ui.FinanceTabMode
 import com.nexus.app.ui.NexusViewModel
 import com.nexus.app.ui.TasksTabMode
-import com.nexus.app.ui.components.NexusMonogramIcon
+import com.nexus.app.ui.components.NexusWordmark
 import com.nexus.app.ui.screens.AgendaScreen
 import com.nexus.app.ui.screens.AppointmentEditorSheet
 import com.nexus.app.ui.screens.BackupScreen
@@ -490,23 +487,11 @@ private fun NexusAppRoot(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    NexusMonogramIcon(
-                                        size = 18.dp,
-                                        tint = palette.accentNeon
-                                    )
-                                    Text(
-                                        text = "NEXUS",
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.SemiBold,
-                                            letterSpacing = 1.6.sp
-                                        ),
-                                        color = palette.highlight
-                                    )
-                                }
+                                NexusWordmark(
+                                    height = 17.dp,
+                                    color = palette.highlight,
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     IconButton(onClick = { navigateToSubRoute(SubRoute.Market) }) {
                                         Icon(

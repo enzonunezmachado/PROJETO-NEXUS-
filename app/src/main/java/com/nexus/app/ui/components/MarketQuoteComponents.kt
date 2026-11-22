@@ -29,7 +29,9 @@ import com.nexus.app.domain.model.MarketQuoteCalculations
 import com.nexus.app.domain.model.MarketQuoteUiState
 import com.nexus.app.domain.model.QuoteTrend
 import com.nexus.app.ui.market.MarketStatusSeverity
+import com.nexus.app.ui.theme.ColoredBorderRole
 import com.nexus.app.ui.theme.LocalNexusPalette
+import com.nexus.app.ui.theme.coloredBorder
 
 @Composable
 fun MarketModalityBadge(
@@ -79,7 +81,7 @@ fun MarketChangeBadge(
         modifier = modifier,
         shape = RoundedCornerShape(6.dp),
         color = trendColor.copy(alpha = 0.14f),
-        border = BorderStroke(1.dp, trendColor.copy(alpha = 0.35f))
+        border = palette.coloredBorder(trendColor, ColoredBorderRole.SMALL_BADGE_SUBTLE)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -193,7 +195,7 @@ fun MarketQuoteStatusBadge(
         modifier = modifier,
         shape = RoundedCornerShape(6.dp),
         color = tint.copy(alpha = 0.12f),
-        border = BorderStroke(1.dp, tint.copy(alpha = 0.30f))
+        border = palette.coloredBorder(tint, ColoredBorderRole.SMALL_BADGE_SUBTLE)
     ) {
         Text(
             text = label,

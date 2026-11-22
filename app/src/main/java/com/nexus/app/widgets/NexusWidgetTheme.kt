@@ -43,40 +43,40 @@ enum class WidgetSizeTier {
 
 object NexusWidgetColors {
     val Background: ColorProvider = DayNightColorProvider(
-        day = Color(0xFFF6F6F6),
+        day = Color(0xFFD4D7DC),
         night = Color(0xFF050505)
     )
     val Surface: ColorProvider = DayNightColorProvider(
-        day = Color(0xFFFFFFFF),
+        day = Color(0xFFE3E5E8),
         night = Color(0xFF0C0C0C)
     )
     val SurfaceElevated: ColorProvider = DayNightColorProvider(
-        day = Color(0xFFEDEDED),
+        day = Color(0xFFC9CED4),
         night = Color(0xFF121212)
     )
     val Border: ColorProvider = DayNightColorProvider(
-        day = Color(0xFFDCDCDC),
+        day = Color(0xFFB0B6BF),
         night = Color(0xFF242424)
     )
     val TextMuted: ColorProvider = DayNightColorProvider(
-        day = Color(0xFF6B6B6B),
+        day = Color(0xFF545B66),
         night = Color(0xFF777777)
     )
     val TextSecondary: ColorProvider = DayNightColorProvider(
-        day = Color(0xFF5A5A5A),
+        day = Color(0xFF424852),
         night = Color(0xFF9A9A9A)
     )
     val TextPrimary: ColorProvider = DayNightColorProvider(
-        day = Color(0xFF111111),
+        day = Color(0xFF121417),
         night = Color(0xFFF2F2F2)
     )
     val Highlight: ColorProvider = DayNightColorProvider(
-        day = Color(0xFF000000),
+        day = Color(0xFF121417),
         night = Color(0xFFFFFFFF)
     )
 
     val Positive: ColorProvider = DayNightColorProvider(
-        day = Color(0xFF1E8E3E),
+        day = Color(0xFF136B31),
         night = Color(0xFF34C759)
     )
     val OnPositive: ColorProvider = DayNightColorProvider(
@@ -84,15 +84,15 @@ object NexusWidgetColors {
         night = Color(0xFF050505)
     )
     val Warning: ColorProvider = DayNightColorProvider(
-        day = Color(0xFFB26A00),
+        day = Color(0xFF874E00),
         night = Color(0xFFE5A000)
     )
     val Danger: ColorProvider = DayNightColorProvider(
-        day = Color(0xFFC62828),
+        day = Color(0xFFAD1E1E),
         night = Color(0xFFE5484D)
     )
     val Info: ColorProvider = DayNightColorProvider(
-        day = Color(0xFF1A73E8),
+        day = Color(0xFF1353A6),
         night = Color(0xFF4C8BF5)
     )
 }
@@ -115,22 +115,14 @@ fun NexusWidgetShell(
     modifier: GlanceModifier = GlanceModifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Box(
+    Column(
         modifier = modifier
             .fillMaxSize()
-            .background(NexusWidgetColors.Border)
+            .background(NexusWidgetColors.Background)
             .cornerRadius(16.dp)
-            .padding(1.dp)
-    ) {
-        Column(
-            modifier = GlanceModifier
-                .fillMaxSize()
-                .background(NexusWidgetColors.Background)
-                .cornerRadius(15.dp)
-                .padding(12.dp),
-            content = content
-        )
-    }
+            .padding(12.dp),
+        content = content
+    )
 }
 
 @Composable

@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -115,79 +117,53 @@ fun MarketScreen(
     Column(modifier = modifier.fillMaxSize()) {
         TopSubScreenBar(title = "Mercado", onBack = onBack)
 
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item(key = "mkt_overview_summary") {
-                MarketOverviewSummaryCard(
-                    overview = overview,
-                    onRefreshAll = onRefreshAll
-                )
-            }
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isWide = maxWidth >= 720.dp
 
-            item(key = "mkt_category_filters") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MarketFilterCategory.entries.forEach { filter ->
-                        val isSelected = selectedFilter == filter
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedFilter = filter },
-                            label = { Text(filter.label, maxLines = 1) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = palette.surfaceElevated,
-                                selectedLabelColor = palette.highlight,
-                                containerColor = palette.surface,
-                                labelColor = palette.textSecondary
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = isSelected,
-                                borderColor = palette.border,
-                                selectedBorderColor = palette.highlight
-                            )
-                        )
-                    }
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item(key = "mkt_overview_summary") {
+                    MarketOverviewSummaryCard(
+                        overview = overview,
+                        onRefreshAll = onRefreshAll
+                    )
                 }
-            }
 
-            if (selectedFilter == MarketFilterCategory.ALL) {
-                item(key = "mkt_section_watchlist") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader(
-                            title = "Acompanhamento",
-                            trailing = if (overview.watchlist.isEmpty()) {
-                                "Sem favoritos"
-                            } else {
-                                "${overview.watchlist.size} favorito(s)"
-                            }
-                        )
-                        if (overview.watchlist.isEmpty()) {
-                            MarketWatchlistEmptyCard(
-                                onExploreAssets = {
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(4)
-                                    }
-                                }
-                            )
-                        } else {
-                            MarketWatchlistCard(
-                                rows = overview.watchlist,
-                                onOpenAssetDetail = onOpenAssetDetail,
-                                onToggleFavorite = onToggleFavorite
+                item(key = "mkt_category_filters") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MarketFilterCategory.entries.forEach { filter ->
+                            val isSelected = selectedFilter == filter
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { selectedFilter = filter },
+                                label = { Text(filter.label, maxLines = 1) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = palette.surfaceElevated,
+                                    selectedLabelColor = palette.highlight,
+                                    containerColor = palette.surface,
+                                    labelColor = palette.textSecondary
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = isSelected,
+                                    borderColor = palette.border,
+                                    selectedBorderColor = palette.highlight
+                                )
                             )
                         }
                     }
                 }
 
-                item(key = "mkt_section_alerts") {
+                if (selectedFilter == MarketFilterCategory.ALL) {
                     val waitingCount = alerts.count { it.status == MarketAlertStatus.WAITING }
                     val triggeredCount = alerts.count { it.status == MarketAlertStatus.TRIGGERED }
                     val alertsSummary = when {
@@ -195,111 +171,209 @@ fun MarketScreen(
                         triggeredCount > 0 -> "$waitingCount ativo(s) · $triggeredCount disparado(s)"
                         else -> "$waitingCount ativo(s)"
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader(
-                            title = "Alertas",
-                            trailing = alertsSummary,
-                            actionLabel = "Novo alerta",
-                            onAction = {
-                                alertEditorState = MarketAlertEditorState(
-                                    initialAssetCode = favoriteCodes.firstOrNull()
-                                        ?: MarketAssetCatalog.USD_BRL_CODE,
-                                    lockAssetSelection = false
+                    val openNewAlertEditor = {
+                        alertEditorState = MarketAlertEditorState(
+                            initialAssetCode = favoriteCodes.firstOrNull()
+                                ?: MarketAssetCatalog.USD_BRL_CODE,
+                            lockAssetSelection = false
+                        )
+                    }
+
+                    if (isWide) {
+                        item(key = "mkt_section_watchlist_alerts_row") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(0.48f),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    SectionHeader(
+                                        title = "Acompanhamento",
+                                        trailing = if (overview.watchlist.isEmpty()) {
+                                            "Sem favoritos"
+                                        } else {
+                                            "${overview.watchlist.size} favorito(s)"
+                                        }
+                                    )
+                                    if (overview.watchlist.isEmpty()) {
+                                        MarketWatchlistEmptyCard(
+                                            onExploreAssets = {
+                                                coroutineScope.launch {
+                                                    listState.animateScrollToItem(3)
+                                                }
+                                            }
+                                        )
+                                    } else {
+                                        MarketWatchlistCard(
+                                            rows = overview.watchlist,
+                                            onOpenAssetDetail = onOpenAssetDetail,
+                                            onToggleFavorite = onToggleFavorite
+                                        )
+                                    }
+                                }
+
+                                Column(
+                                    modifier = Modifier.weight(0.52f),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    SectionHeader(
+                                        title = "Alertas",
+                                        trailing = alertsSummary,
+                                        actionLabel = "Novo alerta",
+                                        onAction = openNewAlertEditor
+                                    )
+                                    MarketAlertsSectionCard(
+                                        alertRows = alertRows,
+                                        hasNotificationPermission = hasNotificationPermission,
+                                        onRequestNotificationPermission = requestNotificationPermission,
+                                        onCreateAlert = openNewAlertEditor,
+                                        onEditAlert = { alert ->
+                                            alertEditorState = MarketAlertEditorState(
+                                                existingAlert = alert,
+                                                initialAssetCode = alert.assetCode,
+                                                lockAssetSelection = true
+                                            )
+                                        },
+                                        onToggleAlertActive = { alert, active ->
+                                            onToggleAlertActive(alert.id, alert.assetCode, active)
+                                        },
+                                        onDeleteAlert = { alert -> onDeleteAlert(alert.id) },
+                                        onOpenAssetDetail = onOpenAssetDetail
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        item(key = "mkt_section_watchlist") {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                SectionHeader(
+                                    title = "Acompanhamento",
+                                    trailing = if (overview.watchlist.isEmpty()) {
+                                        "Sem favoritos"
+                                    } else {
+                                        "${overview.watchlist.size} favorito(s)"
+                                    }
+                                )
+                                if (overview.watchlist.isEmpty()) {
+                                    MarketWatchlistEmptyCard(
+                                        onExploreAssets = {
+                                            coroutineScope.launch {
+                                                listState.animateScrollToItem(4)
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    MarketWatchlistCard(
+                                        rows = overview.watchlist,
+                                        onOpenAssetDetail = onOpenAssetDetail,
+                                        onToggleFavorite = onToggleFavorite
+                                    )
+                                }
+                            }
+                        }
+
+                        item(key = "mkt_section_alerts") {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                SectionHeader(
+                                    title = "Alertas",
+                                    trailing = alertsSummary,
+                                    actionLabel = "Novo alerta",
+                                    onAction = openNewAlertEditor
+                                )
+                                MarketAlertsSectionCard(
+                                    alertRows = alertRows,
+                                    hasNotificationPermission = hasNotificationPermission,
+                                    onRequestNotificationPermission = requestNotificationPermission,
+                                    onCreateAlert = openNewAlertEditor,
+                                    onEditAlert = { alert ->
+                                        alertEditorState = MarketAlertEditorState(
+                                            existingAlert = alert,
+                                            initialAssetCode = alert.assetCode,
+                                            lockAssetSelection = true
+                                        )
+                                    },
+                                    onToggleAlertActive = { alert, active ->
+                                        onToggleAlertActive(alert.id, alert.assetCode, active)
+                                    },
+                                    onDeleteAlert = { alert -> onDeleteAlert(alert.id) },
+                                    onOpenAssetDetail = onOpenAssetDetail
                                 )
                             }
-                        )
-                        MarketAlertsSectionCard(
-                            alertRows = alertRows,
-                            hasNotificationPermission = hasNotificationPermission,
-                            onRequestNotificationPermission = requestNotificationPermission,
-                            onCreateAlert = {
-                                alertEditorState = MarketAlertEditorState(
-                                    initialAssetCode = favoriteCodes.firstOrNull()
-                                        ?: MarketAssetCatalog.USD_BRL_CODE,
-                                    lockAssetSelection = false
-                                )
-                            },
-                            onEditAlert = { alert ->
-                                alertEditorState = MarketAlertEditorState(
-                                    existingAlert = alert,
-                                    initialAssetCode = alert.assetCode,
-                                    lockAssetSelection = true
-                                )
-                            },
-                            onToggleAlertActive = { alert, active ->
-                                onToggleAlertActive(alert.id, alert.assetCode, active)
-                            },
-                            onDeleteAlert = { alert -> onDeleteAlert(alert.id) },
-                            onOpenAssetDetail = onOpenAssetDetail
-                        )
+                        }
                     }
                 }
-            }
 
-            if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.CURRENCY) {
-                item(key = "mkt_section_currencies") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader(
-                            title = "Moedas",
-                            trailing = "${overview.currencies.size} ativos · BRL"
-                        )
-                        MarketAssetGroupCard(
-                            rows = overview.currencies,
-                            onOpenAssetDetail = onOpenAssetDetail,
-                            onRefreshAsset = onRefreshAsset,
-                            onToggleFavorite = onToggleFavorite
-                        )
+                if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.CURRENCY) {
+                    item(key = "mkt_section_currencies") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SectionHeader(
+                                title = "Moedas",
+                                trailing = "${overview.currencies.size} ativos · BRL"
+                            )
+                            MarketAssetGroupCard(
+                                rows = overview.currencies,
+                                isWide = isWide,
+                                onOpenAssetDetail = onOpenAssetDetail,
+                                onRefreshAsset = onRefreshAsset,
+                                onToggleFavorite = onToggleFavorite
+                            )
+                        }
                     }
                 }
-            }
 
-            if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.CRYPTO) {
-                item(key = "mkt_section_crypto") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader(
-                            title = "Criptomoedas",
-                            trailing = "${overview.cryptos.size} ativos · 24h"
-                        )
-                        MarketAssetGroupCard(
-                            rows = overview.cryptos,
-                            onOpenAssetDetail = onOpenAssetDetail,
-                            onRefreshAsset = onRefreshAsset,
-                            onToggleFavorite = onToggleFavorite
-                        )
+                if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.CRYPTO) {
+                    item(key = "mkt_section_crypto") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SectionHeader(
+                                title = "Criptomoedas",
+                                trailing = "${overview.cryptos.size} ativos · 24h"
+                            )
+                            MarketAssetGroupCard(
+                                rows = overview.cryptos,
+                                isWide = isWide,
+                                onOpenAssetDetail = onOpenAssetDetail,
+                                onRefreshAsset = onRefreshAsset,
+                                onToggleFavorite = onToggleFavorite
+                            )
+                        }
                     }
                 }
-            }
 
-            if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.INDEX) {
-                item(key = "mkt_section_indices") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader(
-                            title = "Índices",
-                            trailing = "${overview.indices.size} ativos · B3 e EUA"
-                        )
-                        MarketAssetGroupCard(
-                            rows = overview.indices,
-                            onOpenAssetDetail = onOpenAssetDetail,
-                            onRefreshAsset = onRefreshAsset,
-                            onToggleFavorite = onToggleFavorite
-                        )
+                if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.INDEX) {
+                    item(key = "mkt_section_indices") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SectionHeader(
+                                title = "Índices",
+                                trailing = "${overview.indices.size} ativos · B3 e EUA"
+                            )
+                            MarketAssetGroupCard(
+                                rows = overview.indices,
+                                isWide = isWide,
+                                onOpenAssetDetail = onOpenAssetDetail,
+                                onRefreshAsset = onRefreshAsset,
+                                onToggleFavorite = onToggleFavorite
+                            )
+                        }
                     }
                 }
-            }
 
-            if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.STOCK) {
-                item(key = "mkt_section_stocks") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader(
-                            title = "Ações",
-                            trailing = "${overview.stocks.size} ativos · B3 e Nasdaq"
-                        )
-                        MarketAssetGroupCard(
-                            rows = overview.stocks,
-                            onOpenAssetDetail = onOpenAssetDetail,
-                            onRefreshAsset = onRefreshAsset,
-                            onToggleFavorite = onToggleFavorite
-                        )
+                if (selectedFilter == MarketFilterCategory.ALL || selectedFilter == MarketFilterCategory.STOCK) {
+                    item(key = "mkt_section_stocks") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SectionHeader(
+                                title = "Ações",
+                                trailing = "${overview.stocks.size} ativos · B3 e Nasdaq"
+                            )
+                            MarketAssetGroupCard(
+                                rows = overview.stocks,
+                                isWide = isWide,
+                                onOpenAssetDetail = onOpenAssetDetail,
+                                onRefreshAsset = onRefreshAsset,
+                                onToggleFavorite = onToggleFavorite
+                            )
+                        }
                     }
                 }
             }
@@ -579,24 +653,61 @@ private fun MarketWatchlistCompactRow(
 @Composable
 private fun MarketAssetGroupCard(
     rows: List<MarketAssetRowPresentation>,
+    isWide: Boolean,
     onOpenAssetDetail: (String) -> Unit,
     onRefreshAsset: (String) -> Unit,
     onToggleFavorite: (String) -> Unit
 ) {
     val palette = LocalNexusPalette.current
     NexusCard(modifier = Modifier.fillMaxWidth()) {
-        rows.forEachIndexed { index, row ->
-            if (index > 0) {
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = palette.border)
-                Spacer(modifier = Modifier.height(10.dp))
+        if (!isWide || rows.size <= 1) {
+            rows.forEachIndexed { index, row ->
+                if (index > 0) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = palette.border)
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+                MarketAssetCompactRow(
+                    row = row,
+                    onOpen = { onOpenAssetDetail(row.descriptor.code) },
+                    onRefresh = { onRefreshAsset(row.descriptor.code) },
+                    onToggleFavorite = { onToggleFavorite(row.descriptor.code) }
+                )
             }
-            MarketAssetCompactRow(
-                row = row,
-                onOpen = { onOpenAssetDetail(row.descriptor.code) },
-                onRefresh = { onRefreshAsset(row.descriptor.code) },
-                onToggleFavorite = { onToggleFavorite(row.descriptor.code) }
-            )
+        } else {
+            val pairs = rows.chunked(2)
+            pairs.forEachIndexed { pairIndex, pair ->
+                if (pairIndex > 0) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = palette.border)
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        MarketAssetCompactRow(
+                            row = pair[0],
+                            onOpen = { onOpenAssetDetail(pair[0].descriptor.code) },
+                            onRefresh = { onRefreshAsset(pair[0].descriptor.code) },
+                            onToggleFavorite = { onToggleFavorite(pair[0].descriptor.code) }
+                        )
+                    }
+                    if (pair.size > 1) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            MarketAssetCompactRow(
+                                row = pair[1],
+                                onOpen = { onOpenAssetDetail(pair[1].descriptor.code) },
+                                onRefresh = { onRefreshAsset(pair[1].descriptor.code) },
+                                onToggleFavorite = { onToggleFavorite(pair[1].descriptor.code) }
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 }
@@ -854,58 +965,119 @@ fun MarketAssetDetailScreen(
     Column(modifier = modifier.fillMaxSize()) {
         TopSubScreenBar(title = detail.descriptor.displayName, onBack = onBack)
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item(key = "detail_hero") {
-                MarketAssetDetailHeroCard(
-                    detail = detail,
-                    onRefresh = { onRefreshAsset(descriptor.code) },
-                    onToggleFavorite = { onToggleFavorite(descriptor.code) }
-                )
-            }
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isTwoPane = maxWidth >= 840.dp
 
-            item(key = "detail_history_chart") {
-                MarketHistoryChartCard(
-                    descriptor = descriptor,
-                    selectedRange = selectedRange,
-                    supportedRanges = supportedRanges,
-                    historyState = activeHistoryState,
-                    onSelectRange = { range -> selectedRange = range },
-                    onRefreshRange = { onLoadHistory(descriptor.code, selectedRange, true) }
-                )
-            }
-
-            item(key = "detail_alerts") {
-                MarketAssetAlertsCard(
-                    descriptor = descriptor,
-                    alertRows = assetAlertRows,
-                    hasNotificationPermission = hasNotificationPermission,
-                    onRequestNotificationPermission = requestNotificationPermission,
-                    onCreateAlertForAsset = {
-                        alertEditorState = MarketAlertEditorState(
-                            initialAssetCode = descriptor.code,
-                            lockAssetSelection = true
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (isTwoPane) {
+                    item(key = "detail_two_pane") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(0.44f),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                MarketAssetDetailHeroCard(
+                                    detail = detail,
+                                    onRefresh = { onRefreshAsset(descriptor.code) },
+                                    onToggleFavorite = { onToggleFavorite(descriptor.code) }
+                                )
+                                MarketAssetDetailMetadataCard(detail = detail)
+                            }
+                            Column(
+                                modifier = Modifier.weight(0.56f),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                MarketHistoryChartCard(
+                                    descriptor = descriptor,
+                                    selectedRange = selectedRange,
+                                    supportedRanges = supportedRanges,
+                                    historyState = activeHistoryState,
+                                    onSelectRange = { range -> selectedRange = range },
+                                    onRefreshRange = { onLoadHistory(descriptor.code, selectedRange, true) }
+                                )
+                                MarketAssetAlertsCard(
+                                    descriptor = descriptor,
+                                    alertRows = assetAlertRows,
+                                    hasNotificationPermission = hasNotificationPermission,
+                                    onRequestNotificationPermission = requestNotificationPermission,
+                                    onCreateAlertForAsset = {
+                                        alertEditorState = MarketAlertEditorState(
+                                            initialAssetCode = descriptor.code,
+                                            lockAssetSelection = true
+                                        )
+                                    },
+                                    onEditAlert = { alert ->
+                                        alertEditorState = MarketAlertEditorState(
+                                            existingAlert = alert,
+                                            initialAssetCode = alert.assetCode,
+                                            lockAssetSelection = true
+                                        )
+                                    },
+                                    onToggleAlertActive = { alert, active ->
+                                        onToggleAlertActive(alert.id, alert.assetCode, active)
+                                    },
+                                    onDeleteAlert = { alert -> onDeleteAlert(alert.id) }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    item(key = "detail_hero") {
+                        MarketAssetDetailHeroCard(
+                            detail = detail,
+                            onRefresh = { onRefreshAsset(descriptor.code) },
+                            onToggleFavorite = { onToggleFavorite(descriptor.code) }
                         )
-                    },
-                    onEditAlert = { alert ->
-                        alertEditorState = MarketAlertEditorState(
-                            existingAlert = alert,
-                            initialAssetCode = alert.assetCode,
-                            lockAssetSelection = true
-                        )
-                    },
-                    onToggleAlertActive = { alert, active ->
-                        onToggleAlertActive(alert.id, alert.assetCode, active)
-                    },
-                    onDeleteAlert = { alert -> onDeleteAlert(alert.id) }
-                )
-            }
+                    }
 
-            item(key = "detail_metadata") {
-                MarketAssetDetailMetadataCard(detail = detail)
+                    item(key = "detail_history_chart") {
+                        MarketHistoryChartCard(
+                            descriptor = descriptor,
+                            selectedRange = selectedRange,
+                            supportedRanges = supportedRanges,
+                            historyState = activeHistoryState,
+                            onSelectRange = { range -> selectedRange = range },
+                            onRefreshRange = { onLoadHistory(descriptor.code, selectedRange, true) }
+                        )
+                    }
+
+                    item(key = "detail_alerts") {
+                        MarketAssetAlertsCard(
+                            descriptor = descriptor,
+                            alertRows = assetAlertRows,
+                            hasNotificationPermission = hasNotificationPermission,
+                            onRequestNotificationPermission = requestNotificationPermission,
+                            onCreateAlertForAsset = {
+                                alertEditorState = MarketAlertEditorState(
+                                    initialAssetCode = descriptor.code,
+                                    lockAssetSelection = true
+                                )
+                            },
+                            onEditAlert = { alert ->
+                                alertEditorState = MarketAlertEditorState(
+                                    existingAlert = alert,
+                                    initialAssetCode = alert.assetCode,
+                                    lockAssetSelection = true
+                                )
+                            },
+                            onToggleAlertActive = { alert, active ->
+                                onToggleAlertActive(alert.id, alert.assetCode, active)
+                            },
+                            onDeleteAlert = { alert -> onDeleteAlert(alert.id) }
+                        )
+                    }
+
+                    item(key = "detail_metadata") {
+                        MarketAssetDetailMetadataCard(detail = detail)
+                    }
+                }
             }
         }
     }
