@@ -843,6 +843,7 @@ private fun HorizontalWeekBoard(
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val expandAllSeven = maxWidth >= 720.dp
+        val useCompactWeekPadding = maxWidth < 840.dp
         val scrollableCardWidth = if (maxWidth >= 560.dp) {
             ((maxWidth - 36.dp) / 4f).coerceIn(145.dp, 220.dp)
         } else {
@@ -868,7 +869,7 @@ private fun HorizontalWeekBoard(
                         dayItems = byDay[day].orEmpty(),
                         isSelected = day == selectedDate,
                         isToday = day == today,
-                        compactPadding = maxWidth < 840.dp,
+                        compactPadding = useCompactWeekPadding,
                         onSelectDay = { onSelectDay(day) },
                         onOpenOccurrence = onOpenOccurrence,
                         modifier = Modifier

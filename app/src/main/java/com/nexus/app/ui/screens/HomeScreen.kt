@@ -51,12 +51,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.app.core.DateTimeUtils
 import com.nexus.app.domain.model.AgendaItem
+import com.nexus.app.domain.model.CategorySpendPoint
 import com.nexus.app.domain.model.DailyBriefingSnapshot
 import com.nexus.app.domain.model.DailyQuoteSelection
 import com.nexus.app.domain.model.DashboardBlockConfig
 import com.nexus.app.domain.model.DashboardBlockType
 import com.nexus.app.domain.model.DashboardSnapshot
 import com.nexus.app.domain.model.FinancialStatus
+import com.nexus.app.domain.model.MonthlyCashflowPoint
 import com.nexus.app.domain.model.NexusDateFormat
 import com.nexus.app.domain.model.StatementStatus
 import com.nexus.app.domain.model.TransactionType
@@ -1021,7 +1023,7 @@ private fun DashboardChartsBlock(
 
 @Composable
 private fun HomeCashflowCard(
-    points: List<com.nexus.app.domain.rules.MonthlyCashflowPoint>,
+    points: List<MonthlyCashflowPoint>,
     selectedMonthId: String?,
     onSelectMonth: (String?) -> Unit
 ) {
@@ -1053,7 +1055,7 @@ private fun HomeCashflowCard(
 
 @Composable
 private fun HomeCategoryDonutCard(
-    categories: List<com.nexus.app.domain.rules.CategorySpendPoint>,
+    categories: List<CategorySpendPoint>,
     selectedCategoryKey: String?,
     onSelectCategory: (String?) -> Unit
 ) {

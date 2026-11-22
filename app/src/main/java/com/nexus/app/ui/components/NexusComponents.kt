@@ -268,9 +268,17 @@ fun NexusMonogramIcon(
             .size(size)
             .semantics { contentDescription = "NEXUS" }
     ) {
+        val canvasSize = this.size
         withTransform({
-            translate(left = -6f * (size.width / 56f), top = -4f * (size.height / 56f))
-            scale(scaleX = size.width / 56f, scaleY = size.height / 56f, pivot = Offset.Zero)
+            translate(
+                left = -6f * (canvasSize.width / 56f),
+                top = -4f * (canvasSize.height / 56f)
+            )
+            scale(
+                scaleX = canvasSize.width / 56f,
+                scaleY = canvasSize.height / 56f,
+                pivot = Offset.Zero
+            )
         }) {
             drawPath(path = NexusN1VectorPath, color = tint)
         }
