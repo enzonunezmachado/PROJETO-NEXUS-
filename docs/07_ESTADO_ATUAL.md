@@ -39,7 +39,7 @@
 
 | Área / Funcionalidade | Status Atual | Evidência Real no Código |
 | --- | --- | --- |
-| **Shell, `MainTab` (`TASKS, AGENDA, HOME, FINANCE, EVENTS`), `SubRoute`, `BackHandler`** | `IMPLEMENTADA` / `INCONSISTENTE` | `MainActivity.kt` conecta `activeEditorDirty` ao `BackHandler` e `BackNavigationRules` distingue `TOP_LEVEL_SUBROUTE` vs `MORE_CHILD_SUBROUTE`. **Em aberto (`BUG-001`):** estados de navegação/editores locais usam `remember` (sem `rememberSaveable`/`SavedStateHandle`) e `onCreate` reatribui `incomingIntentFlow` sem guarda de recriação. |
+| **Shell, `MainTab` (`TASKS, AGENDA, HOME, FINANCE, EVENTS`), `SubRoute`, `BackHandler`** | `IMPLEMENTADA` / `INCONSISTENTE` | `MainActivity.kt` conecta `activeEditorDirty` ao `BackHandler` e `BackNavigationRules` distingue `TOP_LEVEL_SUBROUTE` vs `MORE_CHILD_SUBROUTE`. **Em aberto (`BUG-001`, persistência confirmada por novo relato de uso):** após instalar/testar o lote visual/adaptativo, o usuário voltou a observar retorno à tela inicial ao girar celular/tablet em diferentes abas; exemplo explícito: edição de tarefa já existente. A inspeção anterior apontou estados de navegação/editores locais usando `remember` (sem `rememberSaveable`/`SavedStateHandle`) e reatribuição de `incomingIntentFlow` em `onCreate` sem guarda de recriação. Essas hipóteses precisam ser revalidadas no código atual; o relato confirma a persistência do defeito, não fecha sozinho o diagnóstico. |
 | **Dependência `navigation-compose:2.8.5`** | `INCONSISTENTE` | Declarada em `app/build.gradle.kts:65`, porém sem nenhum uso (navegação é por estado). |
 | **Identidade Visual N-1, `COR-001` e `core-splashscreen` (`REQ-003`)** | `PARCIALMENTE IMPLEMENTADA` | `NexusWordmark` (`N-1` + `E,X,U,S` *Kinetik Cut*) implementado na TopBar de `MainActivity.kt` sem `N` verde (`COR-001`); launcher icon adaptativo **N-1** branco/preto (`ic_launcher_nexus_*.xml`, `mipmap-anydpi-v26/ic_launcher*.xml`, `AndroidManifest.xml`). **Pendente:** `androidx.core:core-splashscreen` (`Theme.NEXUS.Splash`). |
 | **Tema Claro Grafite Suave e `ColoredBorderRole`** | `IMPLEMENTADA` | `LightPalette` atualizada em `NexusTheme.kt` (`#D4D7DC`, `#E3E5E8`, `#C9CED4`, `#B0B6BF`); `ColoredBorderRole` padroniza contornos coloridos proporcionais em ambos os temas preservando bordas neutras. |
@@ -60,7 +60,7 @@
 
 | ID | Descrição | Situação Real Hoje no Código |
 | --- | --- | --- |
-| `BUG-001` | Perda de estado de navegação/formulário na rotação/recriação da `Activity` | **EM ABERTO** (fora do escopo do lote visual/adaptativo; `MainActivity` e formulários ainda usam `remember`) |
+| `BUG-001` | Perda de estado de navegação/formulário na rotação/recriação da `Activity` | **EM ABERTO — persistiu no teste pós-lote visual/adaptativo**. Novo relato: rotação em diferentes abas, inclusive editando tarefa existente, retorna à tela inicial. Causa e abrangência por tela ainda exigem auditoria atual do código. |
 | `INT-01` | `observeUnifiedAgenda` paralelo ao `AgendaEngine` | **EM ABERTO** (`NexusRepository.kt:494` ainda alimenta Dashboard, Briefing e NightReview) |
 | `INT-02` | `TransactionWithDetails` sem `task` e card sem `"Tarefa: ..."` | **RESOLVIDO** (`DomainModels.kt:78` + `FinanceScreen.kt`) |
 | `INT-03` | Subtarefa salva no Room antes de clicar "Salvar" / gasto força save | **PARCIALMENTE EM ABERTO** (`onToggleSubtask` persiste direto; `"Registrar gasto"` pede confirmação explícita `showSaveForExpenseConfirm`) |
