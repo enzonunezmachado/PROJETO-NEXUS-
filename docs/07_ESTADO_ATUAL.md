@@ -1,6 +1,7 @@
 # 07 — Estado Real do Sistema (Auditoria Factual do Código)
 
-> **Data de referência da auditoria:** 2026-11-22  
+> **Data de referência da inspeção de código:** 2026-11-22  
+**Atualização de comportamento relatado pelo usuário:** 2026-11-22 (pós-instalação do lote visual/adaptativo; não é nova auditoria de código)  
 > **Escopo auditado:** inspeção direta de todos os arquivos-fonte `.kt`, `.xml`, `.kts`, `.toml` e `.yml` do repositório ativo.  
 > **Princípio absoluto:** nenhum item é marcado como aprovado em compilação/runtime sem execução real.
 
