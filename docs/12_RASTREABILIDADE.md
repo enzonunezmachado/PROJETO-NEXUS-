@@ -34,3 +34,24 @@
 | `REQ-024` | Busca Global unificada com detecção de conflitos em todo o conjunto de compromissos | 12 — Busca | `MoreSettingsBackupDiagnosticsScreens.kt` (`GlobalSearchScreen`), `NexusRepository.kt` (`observeGlobalSearch`) | Lê todas as principais tabelas de domínio | §7 | `NexusPhase1UnitTests` |
 | `REQ-025` | Backup JSON `v7` transacional via SAF (`v1..v7`), rollback Room ↔ Mercado, CSV 15 colunas e Diagnóstico | 13 — Backup/Diag. | `BackupModels.kt`, `BackupManager.kt`, `MoreSettingsBackupDiagnosticsScreens.kt`, `GlobalErrorHandler.kt` | 27 tabelas Room + `marketConfig` (`SharedPreferences` + JSON alertas) + `error_logs` | §7 | `NexusPhase6UnitTests`, `NexusStage2UnitTests`, `MarketBackupIntegrationUnitTests` · `ADR-004`, `ADR-013` |
 | `REQ-026` | Backup completo `.zip` (`data.json` + `banners/`) *(não implementada)* | 13 — Backup | Planejado no Roadmap (§2 item 1 de `10_ROADMAP.md`) | — | — | — |
+
+
+---
+
+## 2. Rastreabilidade de defeitos transversais e validação
+
+### BUG-001 — Preservação de navegação e edição durante rotação
+
+| Campo | Registro |
+|---|---|
+| Natureza | Defeito funcional transversal, não requisito de módulo isolado |
+| Áreas envolvidas | Shell/navegação (MainActivity.kt, estado de NexusAppRoot), editores e formulários em diferentes módulos |
+| Estado documentado | **EM ABERTO — relato de persistência após o lote visual/adaptativo** |
+| Evidência mais recente | Relato do usuário após instalar/testar a versão visual: ao girar celular/tablet em diferentes abas, inclusive durante edição de tarefa já existente, o app pode retornar à tela inicial |
+| Causa | Ainda não confirmada integralmente |
+| Relação com REQ | Afeta a continuidade operacional dos fluxos de REQ-001 e de módulos que usam editores; não é um novo requisito funcional de domínio |
+| Investigação | Rastrear estado de rota, aba, editor ativo, entidade em edição, rascunhos, seleções, diálogos e intents na recriação da Activity |
+| Validação exigida | Abrir edição existente e criação em diferentes módulos; alterar campos; girar em etapas diferentes; confirmar permanência na tela, nos dados e no progresso; repetir em celular e tablet |
+| Exclusões | Não considerar layout adaptativo, build verde ou teste unitário isolado como prova de correção |
+
+**Regra:** qualquer implementação de correção deve atualizar esta matriz com arquivos/componentes reais, estado de implementação, testes efetivamente executados e evidência. Só marcar como resolvido/validado após teste funcional em dispositivo cobrindo o fluxo.
