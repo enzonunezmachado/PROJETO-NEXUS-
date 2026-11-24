@@ -42,11 +42,13 @@ Em `17/11/2026` (documentado em [`archive/DIAGNOSTICO_COMPILACAO_2026-11-17.md`]
 
 ---
 
-## 3. Regras Permanentes de Arquitetura e Código
+## 3. Regras Vigentes de Arquitetura e Código
 
-1. **Incrementalidade obrigatória:** nunca reescrever o app nem remover módulos funcionais existentes.
+Estas regras orientam o trabalho enquanto as decisões e a arquitetura correspondentes permanecerem ativas. Mudanças exigem proposta, análise e aprovação explícita; não devem ser introduzidas por interpretação de brainstorms ou documentos históricos.
+
+1. **Evolução incremental como padrão:** preservar módulos e comportamentos funcionais. Reescrita ou remoção só pode ser considerada quando houver justificativa técnica/produto demonstrada e aprovação explícita.
 2. **Offline-first verdadeiro:** nenhuma tela principal pode bloquear esperando rede; dados de negócio vêm de `Room` (`Flow`) ou cache local.
-3. **Sem backend, login ou chaves secretas:** não introduzir Firebase, backend proprietário ou API keys embutidas no código/repositório.
+3. **Sem dependência obrigatória de backend ou login:** enquanto o ADR-003 estiver ativo, não introduzir Firebase, backend proprietário, conta obrigatória ou sincronização em nuvem como requisito do núcleo. Integrações externas opcionais precisam de avaliação e aprovação; nunca embutir credenciais privadas no código/repositório.
 4. **Proibido dados inventados:** nunca gerar cotações falsas, frases embutidas fictícias, lançamentos ou taxas automáticas.
 5. **Regras puras em `domain/rules/` ou modelos de domínio puros:**
    - Cálculos de agenda vão em `AgendaEngine`.
