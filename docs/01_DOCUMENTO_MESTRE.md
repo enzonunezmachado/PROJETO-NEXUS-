@@ -18,7 +18,9 @@ Em vez de espalhar tarefas, calendário, projetos, objetivos, eventos, contas a 
 
 ---
 
-## 2. Pilares e Princípios Permanentes
+## 2. Princípios técnicos vigentes (revisáveis)
+
+Os itens abaixo descrevem a orientação técnica atualmente adotada, não um conjunto de proibições eternas. Para revisão de qualquer princípio estrutural, aplicar o fluxo de governança e atualizar o ADR correspondente antes de implementar.
 
 1. **Offline-first verdadeiro:** todo o núcleo produtivo e financeiro funciona sem rede. Somente a atualização remota do **Módulo Mercado** utiliza `INTERNET` e `ACCESS_NETWORK_STATE`, preservando o último cache válido em falhas ou modo avião.
 2. **Registrar uma vez, ver em vários lugares:** integrações são feitas por chaves estrangeiras opcionais (`ON DELETE SET NULL`), projeções puras (`AgendaEngine`, `FinanceRules`, `RecurrenceEngine`) e reatividade via `Flow`.
