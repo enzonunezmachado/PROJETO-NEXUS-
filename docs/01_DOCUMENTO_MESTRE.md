@@ -9,7 +9,7 @@
 
 O **NEXUS** é um aplicativo Android nativo, em **português brasileiro (`pt-BR`)**, concebido como um **centro de comando pessoal e financeiro offline-first**.
 
-Em vez de espalhar tarefas, calendário, projetos, objetivos, eventos, contas a pagar e cotações em aplicativos desconexos, o NEXUS centraliza esses domínios sobre um único núcleo local com **fonte única da verdade**, operando **100% sem login, sem servidor proprietário e sem dependência de nuvem**.
+Em vez de espalhar tarefas, calendário, projetos, objetivos, eventos, contas a pagar e cotações em aplicativos desconexos, o NEXUS conecta esses domínios sobre um núcleo local com **fonte única da verdade**, priorizando funcionamento offline-first e autonomia dos dados, sem exigir login, servidor proprietário ou sincronização em nuvem para o uso essencial.
 
 ### Problema que resolve
 - **Fragmentação de rotina e finanças pessoais:** reduz o atrito entre saber *o que precisa ser feito* (tarefas/compromissos/projetos/objetivos), *quando acontece* (agenda unificada) e *quanto custa* (despesas, cartões, faturas, eventos).
@@ -29,11 +29,15 @@ Em vez de espalhar tarefas, calendário, projetos, objetivos, eventos, contas a 
 
 ---
 
-## 3. Evolução dos Princípios e Documentos
+## 3. Autoridade e estado desta visão
+
+Este documento resume a direção e a realidade técnica conhecida na data de sua revisão. Para interpretar conflitos, propostas e decisões, a leitura obrigatória começa em [`00_ORIENTACAO_E_AUTORIDADE.md`](./00_ORIENTACAO_E_AUTORIDADE.md). Ideias e propostas não modificam princípios ou arquitetura vigentes sem aprovação explícita.
+
+## 4. Evolução dos Princípios e Documentos
 
 Os princípios desta seção descrevem compromissos estruturais vigentes, mas não tornam os documentos imutáveis. A visão do produto, especificações, arquitetura e decisões podem ser revisadas quando novas necessidades ou evidências justificarem a mudança. Revisões devem preservar contexto, histórico e rastreabilidade conforme docs/13_GOVERNANCA_DOCUMENTAL.md; uma decisão anterior não deve ser interpretada como proibição eterna sem verificar seu contexto e status.
 
-## 4. Escopo Atual do Sistema (Visão Consolidada)
+## 5. Escopo Atual do Sistema (Visão Consolidada)
 
 ### Núcleo Implementado no Código
 - **Dashboard (`HomeScreen`):** saudação personalizada + data + frase diária discreta no cabeçalho, gráfico de anel de tarefas do mês (`TaskRingChart`), alertas críticos reais (`AlertBannerCard`), próximos compromissos/eventos/pagamentos, gráfico de fluxo financeiro de 6 meses (`BarGroupChart`), gráfico de rosca por categoria (`DonutChart`), projetos e objetivos, tudo ordenável e ligável/desligável via `DashboardCustomizationScreen`.
@@ -53,7 +57,7 @@ Os princípios desta seção descrevem compromissos estruturais vigentes, mas n�
 
 ---
 
-## 5. Visão Técnica Resumida
+## 6. Visão Técnica Resumida
 
 | Dimensão | Valor Real Confirmado no Código |
 | --- | --- |
