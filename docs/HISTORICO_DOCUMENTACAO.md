@@ -109,3 +109,41 @@ Esta entrada documenta a relação com a memória estratégica; não significa q
 ## Modelo para próximos registros
 
 Registrar data, tipo, motivação, evidência/origem, documentos afetados (com caminhos e repositórios), mudanças introduzidas, estado resultante, limites, itens não alterados e próximos passos. Toda atualização documental relevante em /docs/ deve ser registrada neste arquivo.
+
+
+## 2026-11-23 — Hierarquia de autoridade e prevenção de contradições
+
+**Tipo:** revisão estrutural de governança e clareza documental.
+
+### Motivação
+O responsável identificou risco de agentes encontrarem decisões técnicas vigentes e propostas posteriores de revisão sem indicação explícita de que a proposta não revoga a decisão. O exemplo principal era a arquitetura local/offline-first e a possibilidade futura de serviços online, sincronização e integrações.
+
+### Diagnóstico
+- O índice técnico possuía hierarquia de fontes, mas não definia suficientemente o efeito normativo de propostas e brainstorms.
+- O ADR-003 usava “Permanente”, embora a governança permita revisar decisões.
+- Memória estratégica e documentação técnica convivem em repositórios distintos.
+- “100% sem internet” é impreciso em sentido literal, pois o Mercado utiliza provedores externos.
+
+### Mudanças
+1. Criado `docs/00_ORIENTACAO_E_AUTORIDADE.md`, leitura obrigatória antes dos demais documentos.
+2. Reforçada no README a precedência entre código, documentação técnica, espelho, propostas e histórico.
+3. Ajustado o Documento Mestre para descrever arquitetura local-first/offline-first, sem dependência obrigatória de nuvem e sem sugerir ausência absoluta de rede.
+4. Revisado o status do ADR-003 de “Aceita e Permanente” para “Aceita e Ativa — vigente até eventual revisão formal”.
+5. Acrescentada regra explícita de que propostas, brainstorms e relatórios não revogam decisões vigentes por data ou presença documental.
+
+### Limites
+- Nenhuma decisão sobre sincronização, backend, login, Open Finance ou IA foi aprovada.
+- Arquitetura implementada e código Android não foram alterados.
+- Nenhum teste ou build foi executado.
+- Espelho e memória estratégica ainda precisam ser sincronizados; artefatos internos do AI Studio não foram acessados.
+
+### Arquivos afetados
+- `docs/00_ORIENTACAO_E_AUTORIDADE.md` (novo)
+- `docs/README.md`
+- `docs/01_DOCUMENTO_MESTRE.md`
+- `docs/11_DECISOES_ADRS.md`
+- `docs/13_GOVERNANCA_DOCUMENTAL.md`
+- `docs/HISTORICO_DOCUMENTACAO.md`
+
+### Resultado esperado
+Agentes distinguem arquitetura vigente de propostas de evolução. Uma proposta não produz comportamento contraditório antes de ser aprovada e refletida nos documentos normativos.
