@@ -26,12 +26,13 @@
 
 ---
 
-### `ADR-003` — Arquitetura 100% Offline-First Sem Backend, Login ou Nuvem
-- **Status:** Aceita e Permanente (`AndroidManifest.xml`, `NexusDatabase.kt`).
+### `ADR-003` — Arquitetura Local-First / Offline-First, Sem Dependência Obrigatória de Backend, Login ou Nuvem
+- **Status:** Aceita e Ativa — vigente até eventual revisão formal (`AndroidManifest.xml`, `NexusDatabase.kt`). Não classificar como permanente ou irrevisável.
 - **Contexto:** centro de comando pessoal com privacidade local e disponibilidade contínua sem conexão.
-- **Decisão:** manter toda persistência no dispositivo (`Room` + arquivos internos + `SharedPreferences`), desabilitar backup automático em nuvem (`android:allowBackup="false"`) e restringir backups à exportação/importação explícita via SAF.
+- **Decisão vigente:** manter os dados pessoais e funcionais persistidos localmente (`Room` + arquivos internos + `SharedPreferences`), desabilitar backup automático em nuvem (`android:allowBackup="false"`) e usar exportação/importação explícita via SAF. O núcleo deve permanecer útil sem conexão; integrações externas específicas, como o Mercado, podem usar rede e cache local.
+- **Limite de interpretação:** esta decisão descreve a arquitetura adotada hoje, não uma proibição eterna de avaliar sincronização, serviços externos ou outros modelos. Qualquer mudança estrutural exige proposta, avaliação de impacto e aprovação explícita antes da implementação.
 - **Alternativas:** sincronização em nuvem, Firebase ou conta de usuário.
-- **Consequências:** zero custo operacional de servidor e privacidade máxima; em contrapartida, troca de aparelho depende exclusivamente de backup exportado pelo usuário.
+- **Consequências:** reduz dependência operacional de infraestrutura própria e mantém controle local dos dados; em contrapartida, a transferência entre aparelhos depende do mecanismo de backup/exportação atualmente disponível. Não prometer privacidade absoluta nem ausência total de tráfego externo: consultar permissões, provedores e comportamento real do código.
 
 ---
 
