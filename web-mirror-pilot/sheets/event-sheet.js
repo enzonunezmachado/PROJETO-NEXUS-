@@ -164,7 +164,10 @@
               }).join('') : '<span class="nx-body-sm">Nenhum lançamento financeiro vinculado a este evento.</span>'}
 
               <hr class="nx-divider"/>
-              <div class="nx-title-md">Tarefas do evento (${details.linkedTasks.length})</div>
+              <div class="nx-row-between">
+                <span class="nx-title-md">Tarefas do evento (${details.linkedTasks.length})</span>
+                <button type="button" class="nx-btn-text" data-action="add-event-task" data-event-id="${esc(existing.id)}">+ Nova tarefa</button>
+              </div>
               ${details.linkedTasks.length ? details.linkedTasks.map((t) => renderTaskRowCard(t, state)).join('') : '<span class="nx-body-sm">Nenhuma tarefa vinculada.</span>'}
             ` : ''}
 

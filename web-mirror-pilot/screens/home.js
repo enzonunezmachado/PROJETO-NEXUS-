@@ -1,16 +1,18 @@
 /*
- * NEXUS Web Mirror Pilot — HomeScreen + Secondary Tab Previews (Tasks / Agenda) + SubRoutes (More / GlobalSearch)
- * Fonte Android: HomeScreen.kt, MainActivity.kt (TopBar, NavigationBar, FAB)
+ * NEXUS Web Mirror Pilot — HomeScreen
+ * Fonte Android: HomeScreen.kt
  */
 (function () {
   const {
     LABELS,
     formatBrl,
     formatDateBr,
+    formatDateByPattern,
     computeFinanceSelectors,
     computeTaskDistribution,
     computeEventDetails,
-    computeDailyBriefing
+    computeDailyBriefing,
+    computeGoalDetails
   } = window.NexusPilot.Data;
   const {
     esc,
@@ -46,11 +48,11 @@
             <div data-nexus-component="GreetingBlock" data-nexus-source="HomeScreen.kt:HomeScreen" data-nexus-status="reproduzido" style="display:flex;flex-direction:column;gap:2px;padding-top:4px">
               <div class="nx-row-between">
                 <h2 class="nx-headline-md">Boa tarde, ${esc(state.userName)}</h2>
-                <button type="button" class="nx-icon-btn" data-action="open-customize-dashboard" aria-label="Personalizar painel" title="Personalizar painel">
+                <button type="button" class="nx-icon-btn" data-action="open-subroute" data-subroute="CUSTOMIZE" aria-label="Personalizar painel" title="Personalizar painel">
                   ${ICONS.customize}
                 </button>
               </div>
-              <span class="nx-label-lg nx-text-secondary">Segunda-feira, 23 de novembro de 2026</span>
+              <span class="nx-label-lg nx-text-secondary">${esc(formatDateByPattern(state.todayIso, state.settings.dateFormatPattern))}</span>
             </div>
           `);
           break;
@@ -58,11 +60,11 @@
         case 'DAILY_QUOTE': {
           if (!state.personalization.showDailyQuoteOnDashboard) break;
           htmlBlocks.push(`
-            <div data-nexus-component="DailyQuoteBlock" data-nexus-source="HomeScreen.kt:HomeScreen" data-nexus-status="reproduzido" style="padding:2px 0">
-              <p class="nx-body-md nx-text-secondary" style="font-style:italic">
-                “${esc(state.dailyQuote.text)}” <span style="font-style:normal">— ${esc(state.dailyQuote.author)}</span>
-              </p>
-            </div>
+            <button type="button" class="nx-btn-text" style="text-align:left;padding:2px 0;white-space:normal" data-nexus-component="DailyQuoteBlock" data-nexus-source="HomeScreen.kt:HomeScreen" data-nexus-status="reproduzido" data-action="open-subroute" data-subroute="QUOTES">
+              <span class="nx-body-md nx-text-secondary" style="font-style:italic">
+                “${esc(state.dailyQuote.text)}” ${state.dailyQuote.author ? `<span style="font-style:normal">— ${esc(state.dailyQuote.author)}</span>` : ''}
+              </span>
+            </button>
           `);
           break;
         }
@@ -77,13 +79,13 @@
                 actionAttr: 'data-action="open-tasks-tab"'
               })}
               <div class="nx-card">
-                ${renderTaskRingChart(taskDist, 'Consolidado')}
+                ${renderTaskRingChart(taskDist, 'Consolidado', { showMetricSummary: state.personalization.showMetricSummaryOnDashboard })}
               </div>
               ${(block.showOverdueOrAlerts && taskDist.overdueCount > 0) ? renderAlertBanner({
                 title: `${taskDist.overdueCount} tarefa(s) atrasada(s)`,
-                subtitle: 'Toque para revisar pendências vencidas.',
+                subtitle: 'Toque para revisar na aba Atrasadas.',
                 severity: 'danger',
-                actionAttr: 'data-action="open-routine-assistant" data-routine-tab="0"'
+                actionAttr: 'data-action="open-tasks-overdue"'
               }) : ''}
               ${allFocusTasks.length ? `
                 <div class="nx-grid-2">
@@ -124,7 +126,7 @@
                 title: 'Conflito de horário detectado hoje',
                 subtitle: `${conflictCount} compromissos com sobreposição entre 10:00 e 11:15.`,
                 severity: 'warning',
-                actionAttr: 'data-action="open-routine-assistant" data-routine-tab="0"'
+                actionAttr: 'data-action="open-agenda-tab"'
               }) : ''}
               <div class="nx-grid-2">
                 ${briefing.todayAppointments.slice(0, block.maxItems || 3).map((a) => renderAppointmentCompactCard(a, true)).join('')}
@@ -293,26 +295,27 @@
         }
         case 'GOALS': {
           const pGoal = state.personalGoals[0];
+          const pDetails = pGoal ? computeGoalDetails(state, pGoal) : null;
           const fGoal = state.financialGoals[0];
           const fPct = fGoal && fGoal.targetAmountCents > 0 ? Math.round((fGoal.currentAmountCents * 100) / fGoal.targetAmountCents) : 0;
           htmlBlocks.push(`
             <section data-nexus-component="GoalsBlock" data-nexus-source="HomeScreen.kt:HomeScreen" data-nexus-status="reproduzido" style="display:flex;flex-direction:column;gap:10px">
               ${renderSectionHeader({
-                title: 'Metas',
+                title: 'Metas e objetivos',
                 actionLabel: 'Planejamento',
-                actionAttr: 'data-action="open-finance-tab" data-finance-tab="PLANNING"'
+                actionAttr: 'data-action="open-subroute" data-subroute="PLANNING"'
               })}
               <div class="nx-grid-2">
-                ${pGoal ? `
-                  <div class="nx-card">
-                    <span class="nx-label-sm nx-text-secondary">Meta pessoal</span>
-                    <div class="nx-title-sm">${esc(pGoal.title)}</div>
-                    <div class="nx-progress-track"><div class="nx-progress-fill" style="width:${pGoal.progressPercent}%;background:var(--nx-accent-neon)"></div></div>
-                    <span class="nx-label-sm nx-text-secondary tnum">${pGoal.progressPercent}% · ${esc(pGoal.subtitle)}</span>
-                  </div>
+                ${pDetails ? `
+                  <button type="button" class="nx-card is-elevated is-clickable" data-action="open-personal-goal-in-planning" data-goal-id="${esc(pGoal.id)}">
+                    <span class="nx-label-sm nx-text-secondary">Objetivo pessoal</span>
+                    <div class="nx-title-sm" style="text-align:left">${esc(pGoal.title)}</div>
+                    <div class="nx-progress-track"><div class="nx-progress-fill" style="width:${pDetails.progressPercent}%;background:var(--nx-accent-neon)"></div></div>
+                    <span class="nx-label-sm nx-text-secondary tnum">${pDetails.progressPercent}% · ${pDetails.completedMilestonesCount}/${pDetails.milestones.length} marcos · ${pDetails.linkedTasks.length} tarefas</span>
+                  </button>
                 ` : ''}
                 ${fGoal ? `
-                  <div class="nx-card">
+                  <button type="button" class="nx-card is-elevated is-clickable" data-action="open-finance-tab" data-finance-tab="PLANNING">
                     <span class="nx-label-sm nx-text-secondary">Meta financeira</span>
                     ${renderProgressBarRow({
                       label: fGoal.name,
@@ -321,7 +324,7 @@
                       usedPercent: fPct,
                       exceededCents: 0
                     })}
-                  </div>
+                  </button>
                 ` : ''}
               </div>
             </section>
@@ -335,7 +338,7 @@
 
     htmlBlocks.push(`
       <div style="padding-top:4px;display:flex;justify-content:center">
-        <button type="button" class="nx-btn-outlined" data-action="open-customize-dashboard">
+        <button type="button" class="nx-btn-outlined" data-action="open-subroute" data-subroute="CUSTOMIZE">
           ${ICONS.customize} <span>Personalizar painel</span>
         </button>
       </div>
@@ -344,114 +347,9 @@
     return htmlBlocks.join('');
   }
 
-  function renderTasksBoundaryPreview(state) {
-    const taskDist = computeTaskDistribution(state);
-    return `
-      <div data-nexus-component="TasksTabBoundaryView" data-nexus-source="TasksScreen.kt" data-nexus-status="parcial" style="display:flex;flex-direction:column;gap:12px">
-        <div class="nx-screen-header-row">
-          <h2 class="nx-headline-md">Tarefas</h2>
-          <button type="button" class="nx-btn-text" data-action="open-routine-assistant" data-routine-tab="0">Briefing</button>
-        </div>
-        ${renderAlertBanner({
-          title: 'Aba Tarefas (espelho de fronteira — Etapa 1)',
-          subtitle: 'Lista completa espelhada a partir dos dados relacionais de Gabriel; editor completo permanece fora do escopo inicial.',
-          severity: 'info',
-          actionAttr: 'data-action="open-home-tab"'
-        })}
-        <div class="nx-card">${renderTaskRingChart(taskDist, 'Visão geral')}</div>
-        <div class="nx-grid-2">
-          ${state.tasks.map((t) => renderTaskRowCard(t, state, { showPostpone: t.status !== 'COMPLETED' })).join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderAgendaBoundaryPreview(state) {
-    return `
-      <div data-nexus-component="AgendaTabBoundaryView" data-nexus-source="AgendaScreen.kt" data-nexus-status="parcial" style="display:flex;flex-direction:column;gap:12px">
-        <div class="nx-screen-header-row">
-          <h2 class="nx-headline-md">Agenda</h2>
-          <button type="button" class="nx-btn-text" data-action="open-routine-assistant" data-routine-tab="0">Briefing Diário</button>
-        </div>
-        ${renderAlertBanner({
-          title: 'Aba Agenda (espelho de fronteira — Etapa 1)',
-          subtitle: 'Mostra os compromissos de hoje (23/11) e amanhã (24/11) com detecção de conflitos ligada ao Briefing.',
-          severity: 'info',
-          actionAttr: 'data-action="open-routine-assistant" data-routine-tab="0"'
-        })}
-        <div class="nx-title-md">Hoje · 23/11/2026</div>
-        <div class="nx-grid-2">
-          ${state.appointments.filter((a) => a.dateIso === state.todayIso).map((a) => renderAppointmentCompactCard(a, true)).join('')}
-        </div>
-        <div class="nx-title-md" style="margin-top:4px">Amanhã · 24/11/2026</div>
-        <div class="nx-grid-2">
-          ${state.appointments.filter((a) => a.dateIso === '2026-11-24').map((a) => renderAppointmentCompactCard(a, false)).join('')}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderMoreSubRoute(state) {
-    const items = [
-      { title: 'Assistente de Rotina', subtitle: 'Briefing Diário, Revisão Noturna e Notificações', action: 'data-action="open-routine-assistant" data-routine-tab="0"', status: 'reproduzido' },
-      { title: 'Personalizar painel da Home', subtitle: 'Ativar, desativar e reordenar os 9 blocos da Home', action: 'data-action="open-customize-dashboard"', status: 'reproduzido' },
-      { title: 'Finanças · Cartões e faturas', subtitle: 'Nubank Ultravioleta e Itaú Click Platinum', action: 'data-action="open-finance-tab" data-finance-tab="CARDS"', status: 'reproduzido' },
-      { title: 'Eventos e custos vinculados', subtitle: 'Conferência Kotlin Brasil & Workshop Design Mobile', action: 'data-action="open-events-tab"', status: 'reproduzido' },
-      { title: 'Busca global do piloto', subtitle: 'Pesquisar transações, eventos, tarefas e cartões', action: 'data-action="open-global-search"', status: 'parcial' },
-      { title: 'Mercado (Resumo simulado)', subtitle: 'Módulo dedicado fica para etapa posterior; cotações demonstrativas estão em Finanças', action: 'data-action="open-finance-tab" data-finance-tab="OVERVIEW"', status: 'simulado' }
-    ];
-    return `
-      <div data-nexus-component="MoreScreen" data-nexus-source="MoreScreen.kt" data-nexus-status="parcial" style="display:flex;flex-direction:column;gap:10px">
-        ${items.map((it) => `
-          <button type="button" class="nx-card is-elevated is-clickable" ${it.action}>
-            <div class="nx-row-between" style="width:100%">
-              <span class="nx-title-md">${esc(it.title)}</span>
-              <span class="pilot-trace-tag ${it.status}">${esc(it.status)}</span>
-            </div>
-            <span class="nx-label-md nx-text-secondary">${esc(it.subtitle)}</span>
-          </button>
-        `).join('')}
-      </div>
-    `;
-  }
-
-  function renderGlobalSearchSubRoute(state, query) {
-    const q = (query || '').trim().toLowerCase();
-    const txHits = q ? state.transactions.filter((t) => t.description.toLowerCase().includes(q) || (t.notes || '').toLowerCase().includes(q)) : state.transactions.slice(0, 4);
-    const evHits = q ? state.events.filter((e) => e.name.toLowerCase().includes(q) || (e.locationName || '').toLowerCase().includes(q)) : state.events;
-    const taskHits = q ? state.tasks.filter((t) => t.title.toLowerCase().includes(q)) : state.tasks.slice(0, 3);
-
-    return `
-      <div data-nexus-component="GlobalSearchScreen" data-nexus-source="GlobalSearchScreen.kt" data-nexus-status="parcial" style="display:flex;flex-direction:column;gap:12px">
-        <div class="nx-field">
-          <label class="nx-field-label" for="nx-search-input">Buscar em Finanças, Eventos e Tarefas</label>
-          <input id="nx-search-input" class="nx-input" type="search" placeholder="Ex.: Kotlin, Ultravioleta, Aluguel, QR..." value="${esc(query || '')}" data-input="global-search" autofocus />
-        </div>
-        <div class="nx-title-sm">Lançamentos (${txHits.length})</div>
-        ${txHits.map((tx) => `
-          <button type="button" class="nx-card is-elevated is-clickable" data-action="open-tx" data-tx-id="${esc(tx.id)}">
-            <div class="nx-row-between" style="width:100%">
-              <span class="nx-title-sm">${esc(tx.description)}</span>
-              <span class="nx-title-sm tnum">${esc(formatBrl(tx.amountCents))}</span>
-            </div>
-            <span class="nx-label-md nx-text-secondary tnum">${esc(formatDateBr(tx.dueDateIso))} · ${esc(LABELS.FinancialStatus[tx.status])}</span>
-          </button>
-        `).join('') || '<p class="nx-body-sm">Nenhum lançamento encontrado.</p>'}
-        <div class="nx-title-sm">Eventos (${evHits.length})</div>
-        ${evHits.map((ev) => renderEventSummaryCard(computeEventDetails(state, ev))).join('') || '<p class="nx-body-sm">Nenhum evento encontrado.</p>'}
-        <div class="nx-title-sm">Tarefas (${taskHits.length})</div>
-        ${taskHits.map((t) => renderTaskRowCard(t, state)).join('') || '<p class="nx-body-sm">Nenhuma tarefa encontrada.</p>'}
-      </div>
-    `;
-  }
-
   window.NexusPilot = window.NexusPilot || {};
   window.NexusPilot.Screens = window.NexusPilot.Screens || {};
   window.NexusPilot.Screens.Home = {
-    renderHomeScreen,
-    renderTasksBoundaryPreview,
-    renderAgendaBoundaryPreview,
-    renderMoreSubRoute,
-    renderGlobalSearchSubRoute
+    renderHomeScreen
   };
 })();

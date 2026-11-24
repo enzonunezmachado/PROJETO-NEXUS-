@@ -1,5 +1,5 @@
 /*
- * NEXUS Web Mirror Pilot — FinanceScreen (Resumo, Lançamentos, Cartões, Parcelas/Recorrentes, Orçamentos/Metas)
+ * NEXUS Web Mirror Pilot — FinanceScreen (Resumo, Lançamentos, Cartões, Parcelas/Recorrentes, Orçamentos/Metas/Empréstimos/Auditoria)
  * Fonte Android: FinanceScreen.kt
  */
 (function () {
@@ -8,6 +8,7 @@
     formatBrl,
     formatDateBr,
     formatMonthTitle,
+    formatMarketValue,
     computeFinanceSelectors
   } = window.NexusPilot.Data;
   const {
@@ -64,6 +65,9 @@
       secondaryValueCents: cashflowMode === 'REALIZED' ? m.realizedExpense : m.plannedExpense
     }));
     const selectedBarId = ui.financeBarMonthId || '2026-11';
+    const fc = fin.forecast30Days;
+
+    const marketHighlightCodes = ['USD-BRL', 'EUR-BRL', 'BTC-BRL', 'ETH-BRL'];
 
     return `
       <div data-nexus-component="FinanceOverviewTab" data-nexus-source="FinanceScreen.kt:OverviewTabContent" data-nexus-status="reproduzido" style="display:flex;flex-direction:column;gap:12px">
@@ -174,20 +178,51 @@
             })).join('')}
           </div>
 
-          <div class="nx-card" data-nexus-component="MarketSummarySimulatedCard" data-nexus-source="FinanceScreen.kt:MarketSummarySection" data-nexus-status="simulado">
+          <div class="nx-card" data-nexus-component="OverviewForecast30DaysCard" data-nexus-source="FinanceScreen.kt:OverviewForecast30DaysCard" data-nexus-status="reproduzido">
             <div class="nx-row-between">
-              <span class="nx-title-md">Mercado & Referência (Simulado)</span>
-              <span class="pilot-trace-tag simulado">Cotações fictícias offline</span>
+              <span class="nx-title-md">Previsão dos próximos 30 dias</span>
+              <button type="button" class="nx-btn-text" data-action="open-finance-tab" data-finance-tab="TRANSACTIONS">Lançamentos</button>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
-              ${state.marketDemoQuotes.map((q) => `
-                <div class="nx-card is-elevated" style="padding:10px;gap:2px">
-                  <span class="nx-label-sm nx-text-secondary">${esc(q.symbol)}</span>
-                  <span class="nx-title-sm tnum">${esc(q.value)}</span>
-                  <span class="nx-label-sm tnum" style="color:${q.positive ? 'var(--nx-positive)' : 'var(--nx-danger)'}">${esc(q.change)}</span>
-                </div>
-              `).join('')}
+            <div class="nx-row-2col tnum">
+              <div>
+                <div class="nx-label-sm nx-text-secondary">Receitas previstas</div>
+                <div class="nx-title-sm nx-positive">${esc(formatBrl(fc.plannedIncomeCents))}</div>
+              </div>
+              <div>
+                <div class="nx-label-sm nx-text-secondary">Despesas a vencer</div>
+                <div class="nx-title-sm nx-warning">${esc(formatBrl(fc.upcomingExpensesCents))}</div>
+              </div>
             </div>
+            ${fc.topUpcomingExpenses.length ? `
+              <hr class="nx-divider"/>
+              ${fc.topUpcomingExpenses.map((tx) => renderTransactionRowCard(tx, state, { compact: true })).join('')}
+            ` : '<span class="nx-body-sm">Nenhuma despesa prevista nos próximos 30 dias.</span>'}
+          </div>
+        </div>
+
+        <div class="nx-card" data-nexus-component="MarketSummarySimulatedCard" data-nexus-source="FinanceScreen.kt:MarketSummarySection" data-nexus-status="simulado">
+          <div class="nx-row-between">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="nx-title-md">Moedas & Criptomoedas</span>
+              <span class="pilot-trace-tag simulado">Simulado</span>
+            </div>
+            <button type="button" class="nx-btn-text" data-action="open-subroute" data-subroute="MARKET">Ver Mercado (12)</button>
+          </div>
+          <div class="nx-grid-2">
+            ${marketHighlightCodes.map((code) => {
+              const q = state.marketQuotes[code];
+              if (!q) return '';
+              const cat = code.endsWith('BRL') && (code.startsWith('USD') || code.startsWith('EUR')) ? 'CURRENCY' : 'CRYPTO';
+              return `
+                <button type="button" class="nx-card is-elevated is-clickable" style="padding:10px 12px" data-action="open-market-asset" data-asset-code="${esc(code)}">
+                  <div class="nx-row-between" style="width:100%">
+                    <span class="nx-title-sm">${esc(code)}</span>
+                    <span class="nx-badge ${q.changePercent >= 0 ? 'is-positive' : 'is-danger'} tnum">${q.changePercent >= 0 ? '+' : ''}${q.changePercent.toFixed(2)}%</span>
+                  </div>
+                  <span class="nx-title-md tnum">${esc(formatMarketValue(q.price, cat, 'BRL'))}</span>
+                </button>
+              `;
+            }).join('')}
           </div>
         </div>
       </div>
@@ -259,12 +294,16 @@
     const highlightedStmtId = ui.highlightedStatementId;
     return `
       <div data-nexus-component="CardsTabContent" data-nexus-source="FinanceScreen.kt:CardsTabContent" data-nexus-status="reproduzido" style="display:flex;flex-direction:column;gap:12px">
-        ${renderSectionHeader({
-          title: 'Cartões e faturas',
-          trailing: `${fin.cardsWithStatements.length} cartões`,
-          actionLabel: '+ Novo lançamento',
-          actionAttr: 'data-action="new-tx" data-tx-type="EXPENSE"'
-        })}
+        <div class="nx-row-between">
+          <div>
+            <h3 class="nx-title-md">Cartões e faturas</h3>
+            <span class="nx-label-sm nx-text-secondary tnum">${fin.cardsWithStatements.length} cartão(ões)</span>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="nx-btn-outlined" data-action="new-credit-card">+ Cartão</button>
+            <button type="button" class="nx-btn-outlined" data-action="new-tx" data-tx-type="EXPENSE">+ Despesa</button>
+          </div>
+        </div>
 
         ${fin.cardsWithStatements.map((cw) => {
           const usedCents = Math.max(0, cw.card.totalLimitCents - cw.computedRemainingLimitCents);
@@ -276,7 +315,10 @@
                   <div class="nx-title-lg">${esc(cw.card.name)}</div>
                   <div class="nx-label-md nx-text-secondary">${esc(cw.card.institution)} · Fecha dia ${cw.card.closingDay} · Vence dia ${cw.card.dueDay}</div>
                 </div>
-                <span class="nx-accent">${ICONS.card}</span>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <button type="button" class="nx-icon-btn" data-action="edit-credit-card" data-card-id="${esc(cw.card.id)}" aria-label="Editar cartão">${ICONS.edit}</button>
+                  <span class="nx-accent">${ICONS.card}</span>
+                </div>
               </div>
 
               <div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
@@ -341,48 +383,199 @@
     `;
   }
 
-  function renderRecurringBoundaryTab(state) {
-    const recurringTxs = state.transactions.filter((t) => t.creditCardId || t.id === 'tx_aluguel' || t.id === 'tx_internet' || t.id === 'tx_cloud_dez');
+  function renderRecurringTab(state) {
     return `
-      <div data-nexus-component="FinanceRecurringBoundaryTab" data-nexus-source="FinanceScreen.kt:RecurringTabContent" data-nexus-status="parcial" style="display:flex;flex-direction:column;gap:12px">
-        ${renderAlertBanner({
-          title: 'Parcelas e Recorrentes (visão resumida na Etapa 1)',
-          subtitle: 'Lista as despesas recorrentes/assinaturas derivadas dos dados de Gabriel; regras completas de geração automática serão expandidas na Etapa 2.',
-          severity: 'info',
-          actionAttr: 'data-action="open-finance-tab" data-finance-tab="TRANSACTIONS"'
+      <div data-nexus-component="RecurringAndInstallmentsTabContent" data-nexus-source="FinanceScreen.kt:RecurringAndInstallmentsTabContent" data-nexus-status="reproduzido" style="display:flex;flex-direction:column;gap:14px">
+        ${renderSectionHeader({
+          title: 'Parcelamentos',
+          trailing: `${state.installmentPurchases.length}`,
+          actionLabel: '+ Parcelamento',
+          actionAttr: 'data-action="new-installment"'
         })}
-        ${recurringTxs.map((tx) => renderTransactionRowCard(tx, state)).join('')}
+
+        ${state.installmentPurchases.length ? `
+          <div class="nx-grid-2">
+            ${state.installmentPurchases.map((inst) => {
+              const card = state.creditCards.find((c) => c.id === inst.creditCardId);
+              const cat = state.categories.find((c) => c.id === inst.categoryId);
+              const pct = inst.installmentCount > 0 ? Math.round((inst.paidCount * 100) / inst.installmentCount) : 100;
+              const remainingCents = inst.remainingCount * inst.installmentAmountCents;
+              return `
+                <div class="nx-card is-elevated" data-nexus-entity="installment:${esc(inst.id)}">
+                  <div class="nx-row-between">
+                    <span class="nx-title-md">${esc(inst.description)}</span>
+                    <span class="nx-badge ${inst.remainingCount === 0 ? 'is-positive' : 'is-info'} tnum">${inst.paidCount}/${inst.installmentCount}</span>
+                  </div>
+                  <div class="nx-label-md nx-text-secondary tnum">
+                    Parcela: ${esc(formatBrl(inst.installmentAmountCents))} · Total: ${esc(formatBrl(inst.totalAmountCents))}${card ? ` · ${card.name}` : ''}${cat ? ` · ${cat.name}` : ''}
+                  </div>
+                  <div class="nx-progress-track">
+                    <div class="nx-progress-fill" style="width:${pct}%;background:${inst.remainingCount === 0 ? 'var(--nx-positive)' : 'var(--nx-accent-neon)'}"></div>
+                  </div>
+                  <div class="nx-row-between nx-label-sm nx-text-secondary tnum">
+                    <span>Restam ${inst.remainingCount} parcela(s) (${esc(formatBrl(remainingCents))})</span>
+                    <span>1º venc.: ${esc(formatDateBr(inst.firstDueDateIso))}</span>
+                  </div>
+                  <div class="nx-row-end">
+                    ${inst.remainingCount > 0 ? `<button type="button" class="nx-btn-text" data-action="pay-installment-one" data-inst-id="${esc(inst.id)}">Pagar 1 parcela</button>` : ''}
+                    ${inst.remainingCount > 1 ? `<button type="button" class="nx-btn-text nx-btn-positive-text" data-action="pay-installment-all" data-inst-id="${esc(inst.id)}">Quitar restantes</button>` : ''}
+                    <button type="button" class="nx-btn-text nx-btn-danger-text" data-action="delete-installment" data-inst-id="${esc(inst.id)}">Excluir</button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : `<div class="nx-card"><span class="nx-body-sm">Nenhum parcelamento ativo.</span></div>`}
+
+        ${renderSectionHeader({
+          title: 'Regras recorrentes',
+          trailing: `${state.recurringRules.length}`,
+          actionLabel: '+ Recorrente',
+          actionAttr: 'data-action="new-recurring-rule"'
+        })}
+
+        ${state.recurringRules.length ? `
+          <div class="nx-grid-2">
+            ${state.recurringRules.map((rec) => {
+              const cat = state.categories.find((c) => c.id === rec.categoryId);
+              return `
+                <div class="nx-card is-elevated" data-nexus-entity="recurring:${esc(rec.id)}">
+                  <div class="nx-row-between">
+                    <div>
+                      <div class="nx-title-md">${esc(rec.description)}</div>
+                      <div class="nx-label-md nx-text-secondary tnum">
+                        ${esc(LABELS.TransactionType[rec.type])} · ${esc(LABELS.RecurrenceFrequency[rec.frequency])} · Próxima: ${esc(formatDateBr(rec.nextOccurrenceIso))}
+                      </div>
+                    </div>
+                    <span class="nx-title-md tnum" style="font-weight:600;color:${rec.type === 'INCOME' ? 'var(--nx-positive)' : 'var(--nx-text-primary)'}">
+                      ${esc(formatBrl(rec.amountCents))}
+                    </span>
+                  </div>
+                  <div class="nx-label-sm nx-text-secondary">${esc(LABELS.PaymentMethod[rec.paymentMethod])}${cat ? ` · ${esc(cat.name)}` : ''}</div>
+                  <div class="nx-row-between">
+                    <div style="display:flex;gap:6px">
+                      <button type="button" class="nx-btn-text" data-action="generate-recurring-tx" data-rec-id="${esc(rec.id)}">Gerar próximo</button>
+                      <button type="button" class="nx-btn-text nx-btn-danger-text" data-action="delete-recurring-rule" data-rec-id="${esc(rec.id)}">Excluir</button>
+                    </div>
+                    <button type="button" class="nx-switch ${rec.isActive ? 'is-on' : ''}" data-action="toggle-recurring-active" data-rec-id="${esc(rec.id)}" aria-label="Ativar ou pausar regra"></button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        ` : `<div class="nx-card"><span class="nx-body-sm">Nenhuma regra recorrente cadastrada.</span></div>`}
       </div>
     `;
   }
 
-  function renderPlanningBoundaryTab(state, fin) {
-    const fGoal = state.financialGoals[0];
-    const fPct = fGoal && fGoal.targetAmountCents > 0 ? Math.round((fGoal.currentAmountCents * 100) / fGoal.targetAmountCents) : 0;
+  function renderPlanningTab(state, fin) {
     return `
-      <div data-nexus-component="FinancePlanningBoundaryTab" data-nexus-source="FinanceScreen.kt:PlanningTabContent" data-nexus-status="parcial" style="display:flex;flex-direction:column;gap:12px">
+      <div data-nexus-component="PlanningAndLoansTabContent" data-nexus-source="FinanceScreen.kt:PlanningAndLoansTabContent" data-nexus-status="reproduzido" style="display:flex;flex-direction:column;gap:14px">
+        ${renderSectionHeader({
+          title: `Orçamentos de ${formatMonthTitle(state.selectedMonthIso)}`,
+          trailing: `${fin.budgetProgress.length}`,
+          actionLabel: '+ Orçamento',
+          actionAttr: 'data-action="new-budget"'
+        })}
         <div class="nx-card">
-          <div class="nx-title-md">Orçamentos de ${esc(formatMonthTitle(state.selectedMonthIso))}</div>
-          ${fin.budgetProgress.map((bp) => renderProgressBarRow({
-            label: bp.category.name,
-            currentCents: bp.spentCents,
-            targetCents: bp.budget.limitCents,
-            usedPercent: bp.usedPercent,
-            exceededCents: bp.exceededCents
-          })).join('')}
+          ${fin.budgetProgress.length ? fin.budgetProgress.map((bp) => `
+            <div style="display:flex;flex-direction:column;gap:4px">
+              ${renderProgressBarRow({
+                label: bp.category.name,
+                currentCents: bp.spentCents,
+                targetCents: bp.budget.limitCents,
+                usedPercent: bp.usedPercent,
+                exceededCents: bp.exceededCents
+              })}
+              <div class="nx-row-end">
+                <button type="button" class="nx-btn-text" data-action="edit-budget" data-budget-id="${esc(bp.budget.id)}">Editar</button>
+                <button type="button" class="nx-btn-text nx-btn-danger-text" data-action="delete-budget" data-budget-id="${esc(bp.budget.id)}">Excluir</button>
+              </div>
+            </div>
+          `).join('<hr class="nx-divider"/>') : '<span class="nx-body-sm">Nenhum orçamento configurado.</span>'}
         </div>
-        ${fGoal ? `
-          <div class="nx-card">
-            <div class="nx-title-md">Metas financeiras</div>
-            ${renderProgressBarRow({
-              label: fGoal.name,
-              currentCents: fGoal.currentAmountCents,
-              targetCents: fGoal.targetAmountCents,
-              usedPercent: fPct,
-              exceededCents: 0
-            })}
-          </div>
-        ` : ''}
+
+        ${renderSectionHeader({
+          title: 'Metas financeiras',
+          trailing: `${state.financialGoals.length}`,
+          actionLabel: '+ Meta',
+          actionAttr: 'data-action="new-financial-goal"'
+        })}
+        <div class="nx-grid-2">
+          ${state.financialGoals.map((fg) => {
+            const pct = fg.targetAmountCents > 0 ? Math.round((fg.currentAmountCents * 100) / fg.targetAmountCents) : 0;
+            return `
+              <div class="nx-card is-elevated">
+                ${renderProgressBarRow({
+                  label: fg.name,
+                  currentCents: fg.currentAmountCents,
+                  targetCents: fg.targetAmountCents,
+                  usedPercent: pct,
+                  exceededCents: 0
+                })}
+                <div class="nx-row-between">
+                  <span class="nx-label-sm nx-text-secondary tnum">${fg.targetDateIso ? `Alvo: ${formatDateBr(fg.targetDateIso)}` : 'Sem prazo'}</span>
+                  <div style="display:flex;gap:4px">
+                    <button type="button" class="nx-btn-text" data-action="open-fgoal-amount" data-fgoal-id="${esc(fg.id)}">Atualizar valor</button>
+                    <button type="button" class="nx-btn-text nx-btn-danger-text" data-action="delete-financial-goal" data-fgoal-id="${esc(fg.id)}">Excluir</button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('') || '<div class="nx-card"><span class="nx-body-sm">Nenhuma meta financeira cadastrada.</span></div>'}
+        </div>
+
+        ${renderSectionHeader({
+          title: 'Empréstimos e financiamentos',
+          trailing: `${state.loans.length}`,
+          actionLabel: '+ Empréstimo',
+          actionAttr: 'data-action="new-loan"'
+        })}
+        <div class="nx-grid-2">
+          ${state.loans.map((ln) => {
+            const paidPct = ln.totalInstallments > 0 ? Math.round((ln.paidInstallments * 100) / ln.totalInstallments) : 100;
+            const isSettled = ln.paidInstallments >= ln.totalInstallments || ln.remainingCents <= 0;
+            return `
+              <div class="nx-card is-elevated" data-nexus-entity="loan:${esc(ln.id)}">
+                <div class="nx-row-between">
+                  <div>
+                    <div class="nx-title-md">${esc(ln.name)}</div>
+                    <div class="nx-label-sm nx-text-secondary">${esc(ln.lender)} · Dia ${ln.dueDay}${ln.interestNote ? ` · ${esc(ln.interestNote)}` : ''}</div>
+                  </div>
+                  <span class="nx-badge ${isSettled ? 'is-positive' : 'is-warning'} tnum">${ln.paidInstallments}/${ln.totalInstallments}</span>
+                </div>
+                <div class="nx-progress-track">
+                  <div class="nx-progress-fill" style="width:${paidPct}%;background:${isSettled ? 'var(--nx-positive)' : 'var(--nx-accent-neon)'}"></div>
+                </div>
+                <div class="nx-row-between nx-label-md tnum">
+                  <span class="nx-text-secondary">Saldo devedor: <strong class="nx-text-primary">${esc(formatBrl(ln.remainingCents))}</strong></span>
+                  <span class="nx-text-secondary">Parcela: ${esc(formatBrl(ln.monthlyInstallmentCents))}</span>
+                </div>
+                <div class="nx-row-end">
+                  ${!isSettled ? `<button type="button" class="nx-btn-text nx-btn-positive-text" data-action="pay-loan-installment" data-loan-id="${esc(ln.id)}">Pagar parcela</button>` : ''}
+                  <button type="button" class="nx-btn-text" data-action="edit-loan" data-loan-id="${esc(ln.id)}">Editar</button>
+                  <button type="button" class="nx-btn-text nx-btn-danger-text" data-action="delete-loan" data-loan-id="${esc(ln.id)}">Excluir</button>
+                </div>
+              </div>
+            `;
+          }).join('') || '<div class="nx-card"><span class="nx-body-sm">Nenhum empréstimo registrado.</span></div>'}
+        </div>
+
+        ${renderSectionHeader({
+          title: 'Histórico recente de alterações',
+          trailing: `${state.auditHistory.length}`
+        })}
+        <div class="nx-card" data-nexus-component="FinanceAuditHistoryCard" data-nexus-source="FinanceScreen.kt:AuditHistorySection" data-nexus-status="reproduzido">
+          ${state.auditHistory.slice(0, 8).map((aud) => `
+            <div style="display:flex;flex-direction:column;gap:2px;padding:4px 0">
+              <div class="nx-row-between">
+                <span class="nx-label-sm nx-accent">${esc(aud.actionType)} · ${esc(aud.entityType)}</span>
+                <span class="nx-label-sm nx-text-secondary tnum">${esc(aud.timestamp)}</span>
+              </div>
+              <span class="nx-body-sm" style="color:var(--nx-text-primary)">${esc(aud.summary)}</span>
+            </div>
+          `).join('<hr class="nx-divider"/>')}
+        </div>
       </div>
     `;
   }
@@ -395,8 +588,8 @@
     if (activeTab === 'OVERVIEW') tabBody = renderOverviewTab(state, ui, fin);
     else if (activeTab === 'TRANSACTIONS') tabBody = renderTransactionsTab(state, ui);
     else if (activeTab === 'CARDS') tabBody = renderCardsTab(state, ui, fin);
-    else if (activeTab === 'RECURRING') tabBody = renderRecurringBoundaryTab(state);
-    else tabBody = renderPlanningBoundaryTab(state, fin);
+    else if (activeTab === 'RECURRING') tabBody = renderRecurringTab(state);
+    else tabBody = renderPlanningTab(state, fin);
 
     return `
       <div class="nx-tabs-bar" data-nexus-component="FinanceScrollableTabs" data-nexus-source="FinanceScreen.kt:FinanceScreen" data-nexus-status="reproduzido" role="tablist">

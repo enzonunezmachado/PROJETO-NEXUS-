@@ -2,7 +2,7 @@
  * NEXUS Web Mirror Pilot — Design Tokens
  * Fonte Android: app/src/main/java/com/nexus/app/ui/theme/NexusTheme.kt
  * Mantem exatamente as paletas Dark (#050505) e Light Grafite Suave (#D4D7DC),
- * alem dos 8 papeis de borda ColoredBorderRole e escala tipografica.
+ * todos os 8 papeis de borda ColoredBorderRole e escala tipografica.
  */
 
 :root,
@@ -34,12 +34,17 @@
   --nx-chart-7: #4DE1C1;
   --nx-chart-8: #A3B1C6;
 
-  /* ColoredBorderRole (NexusTheme.kt lines 59-98) */
+  /* Todos os 8 papeis de borda ColoredBorderRole (NexusTheme.kt lines 59-98) */
   --nx-border-alert-large: 1.5px solid rgba(229, 72, 77, 0.68);
   --nx-border-alert-warning: 1.5px solid rgba(229, 160, 0, 0.68);
   --nx-border-alert-info: 1.5px solid rgba(76, 139, 245, 0.68);
   --nx-border-day-selected: 1.75px solid rgba(124, 255, 178, 0.80);
+  --nx-border-day-today: 1.25px solid rgba(76, 139, 245, 0.65);
+  --nx-border-highlighted-btn: 1.25px solid rgba(255, 255, 255, 0.72);
   --nx-border-medium-accent: 1.25px solid rgba(76, 139, 245, 0.68);
+  --nx-border-medium-accent-neon: 1.25px solid rgba(124, 255, 178, 0.68);
+  --nx-border-compact-item: 1px solid rgba(124, 255, 178, 0.55);
+  --nx-border-small-defined: 1px solid rgba(154, 154, 154, 0.56);
   --nx-border-small-subtle: 1px solid rgba(154, 154, 154, 0.46);
 
   --nx-scrim: rgba(0, 0, 0, 0.72);
@@ -84,7 +89,12 @@
   --nx-border-alert-warning: 1.5px solid rgba(135, 78, 0, 0.86);
   --nx-border-alert-info: 1.5px solid rgba(19, 83, 166, 0.86);
   --nx-border-day-selected: 1.75px solid rgba(19, 107, 49, 0.94);
+  --nx-border-day-today: 1.25px solid rgba(19, 83, 166, 0.84);
+  --nx-border-highlighted-btn: 1.25px solid rgba(18, 20, 23, 0.84);
   --nx-border-medium-accent: 1.25px solid rgba(19, 83, 166, 0.84);
+  --nx-border-medium-accent-neon: 1.25px solid rgba(19, 107, 49, 0.84);
+  --nx-border-compact-item: 1px solid rgba(19, 107, 49, 0.72);
+  --nx-border-small-defined: 1px solid rgba(66, 72, 82, 0.74);
   --nx-border-small-subtle: 1px solid rgba(66, 72, 82, 0.62);
 
   --nx-scrim: rgba(18, 20, 23, 0.45);

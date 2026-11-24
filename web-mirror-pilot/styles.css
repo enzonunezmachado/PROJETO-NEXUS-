@@ -138,7 +138,7 @@ button, input, select, textarea {
   max-width: 100%;
   height: 820px;
   max-height: calc(100vh - 108px);
-  min-height: 600px;
+  min-height: 580px;
   background: var(--nx-bg);
   color: var(--nx-text-primary);
   border: 1px solid var(--nx-border);
@@ -147,16 +147,22 @@ button, input, select, textarea {
   display: flex;
   flex-direction: column;
   position: relative;
-  transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1), height 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.nexus-device-frame.viewport-tablet {
-  width: 900px;
+.nexus-device-frame.viewport-tablet-portrait {
+  width: 768px;
+  height: 900px;
+}
+
+.nexus-device-frame.viewport-tablet-landscape {
+  width: 1024px;
+  height: 680px;
 }
 
 .nexus-device-frame.viewport-fluid {
   width: 100%;
-  max-width: 1140px;
+  max-width: 1180px;
 }
 
 /* TopBar (MainActivity.kt lines 477-522) */
@@ -1043,3 +1049,368 @@ button, input, select, textarea {
     max-width: 900px;
   }
 }
+
+/* =========================================================================
+ * Novos módulos fiéis ao Android (Tasks/Kanban, Agenda, Mercado, Busca, Widgets)
+ * ========================================================================= */
+.nx-screen-scroll.is-compact {
+  gap: 8px;
+}
+
+.nx-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 15px;
+  border: var(--nx-border-small-subtle);
+  white-space: nowrap;
+}
+
+.nx-badge.is-defined {
+  border: var(--nx-border-small-defined);
+}
+
+.nx-badge.is-positive {
+  color: var(--nx-positive);
+  background: rgba(52, 199, 89, 0.12);
+  border-color: rgba(52, 199, 89, 0.42);
+}
+
+.nx-badge.is-danger {
+  color: var(--nx-danger);
+  background: rgba(229, 72, 77, 0.12);
+  border-color: rgba(229, 72, 77, 0.42);
+}
+
+.nx-badge.is-warning {
+  color: var(--nx-warning);
+  background: rgba(229, 160, 0, 0.12);
+  border-color: rgba(229, 160, 0, 0.42);
+}
+
+.nx-badge.is-info {
+  color: var(--nx-info);
+  background: rgba(76, 139, 245, 0.12);
+  border-color: rgba(76, 139, 245, 0.42);
+}
+
+.nx-badge.is-neutral {
+  color: var(--nx-text-secondary);
+  background: var(--nx-surface-elevated);
+}
+
+.nx-btn-outlined.is-highlighted-role {
+  border: var(--nx-border-highlighted-btn);
+}
+
+/* Search TopBar (GlobalSearchScreen.kt) */
+.nx-search-topbar {
+  background: var(--nx-bg);
+  border-bottom: 1px solid var(--nx-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 6px;
+  min-height: 58px;
+  flex-shrink: 0;
+}
+
+/* Kanban Board (TasksAndProjectsScreen.kt) */
+.nx-kanban-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  align-items: flex-start;
+}
+
+.nx-kanban-col {
+  flex: 0 0 256px;
+  min-width: 256px;
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-border);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nx-kanban-card {
+  background: var(--nx-surface-elevated);
+  border: 1px solid var(--nx-border);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Agenda — Segmented 4-way + HorizontalWeekBoard + MonthCalendarGrid + TwoPane */
+.nx-seg-full {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  width: 100%;
+  background: var(--nx-surface-elevated);
+  border: 1px solid var(--nx-border);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.nx-seg-full .nx-seg-item {
+  padding: 7px 6px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.nx-week-board {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.nx-week-day-card {
+  flex: 0 0 148px;
+  min-width: 148px;
+  height: 236px;
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-border);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.nexus-device-frame.is-wide .nx-week-board {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  overflow-x: visible;
+}
+
+.nexus-device-frame.is-wide .nx-week-day-card {
+  flex: initial;
+  min-width: 0;
+  height: 270px;
+}
+
+.nx-week-day-card.is-today {
+  border: var(--nx-border-day-today);
+}
+
+.nx-week-day-card.is-selected {
+  background: var(--nx-surface-elevated);
+  border: var(--nx-border-day-selected);
+}
+
+.nx-week-day-items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.nx-week-mini-item {
+  background: var(--nx-surface-elevated);
+  border: 1px solid var(--nx-border);
+  border-left-width: 3px;
+  border-radius: 7px;
+  padding: 5px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.nx-week-day-card.is-selected .nx-week-mini-item {
+  background: var(--nx-bg);
+}
+
+/* MonthCalendarGrid */
+.nx-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.nx-cal-weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--nx-text-secondary);
+  padding-bottom: 4px;
+}
+
+.nx-cal-cell {
+  appearance: none;
+  border: 0;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: var(--nx-surface);
+  color: var(--nx-text-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+}
+
+.nx-cal-cell.is-today {
+  border: var(--nx-border-compact-item);
+  font-weight: 600;
+}
+
+.nx-cal-cell.is-selected {
+  background: var(--nx-highlight);
+  color: var(--nx-bg);
+  font-weight: 700;
+}
+
+.nx-cal-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--nx-accent-neon);
+}
+
+.nx-cal-cell.is-selected .nx-cal-dot {
+  background: var(--nx-bg);
+}
+
+/* AgendaOccurrenceRow & Kind Badges */
+.nx-occ-badge-task {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: var(--nx-border-small-defined);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.nx-occ-badge-task.is-done {
+  background: rgba(52, 199, 89, 0.16);
+  border-color: var(--nx-positive);
+  color: var(--nx-positive);
+}
+
+.nx-occ-bar-appt {
+  width: 5px;
+  height: 26px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  margin: 2px 6px;
+}
+
+.nx-occ-badge-box {
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: var(--nx-border-small-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* Tablet Landscape Two-Pane Layouts (AgendaScreen.kt & MarketScreen.kt) */
+.nx-two-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nexus-device-frame.is-two-pane .nx-two-pane-agenda {
+  display: grid;
+  grid-template-columns: 0.46fr 0.54fr;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+.nexus-device-frame.is-two-pane .nx-two-pane-market {
+  display: grid;
+  grid-template-columns: 0.44fr 0.56fr;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+.nexus-device-frame.is-two-pane .nx-pane-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 2px;
+}
+
+/* Market Chart & Cards */
+.nx-chart-surface {
+  background: var(--nx-surface-elevated);
+  border: 1px solid var(--nx-border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nx-star-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--nx-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.nx-star-btn.is-fav {
+  color: var(--nx-warning);
+}
+
+/* Glance Widget Preview (WidgetsHubScreen) */
+.nx-widget-preview {
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-border);
+  border-radius: 18px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nx-code-block {
+  font-family: var(--nx-font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  background: var(--nx-bg);
+  border: 1px solid var(--nx-border);
+  border-radius: 10px;
+  padding: 10px;
+  color: var(--nx-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}
+

@@ -1,9 +1,9 @@
 /*
  * NEXUS Web Mirror Pilot — Interactive SVG Charts
- * Fonte Android: ui/components/charts/{TaskRingChart,BarGroupChart,DonutChart,ProgressBarRow}.kt
+ * Fonte Android: ui/components/charts/{TaskRingChart,BarGroupChart,DonutChart,ProgressBarRow}.kt e MarketAlertSheetsAndCards.kt
  */
 (function () {
-  const { formatBrl } = window.NexusPilot.Data;
+  const { formatBrl, formatMarketValue } = window.NexusPilot.Data;
   const { esc } = window.NexusPilot.Primitives;
 
   function polarToCartesian(cx, cy, r, angleDeg) {
@@ -22,7 +22,7 @@
     return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${r} ${r} 0 ${largeArcFlag} 1 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
   }
 
-  function renderTaskRingChart(dist, periodLabel) {
+  function renderTaskRingChart(dist, periodLabel, { showMetricSummary = true } = {}) {
     const total = Math.max(0, dist.completedCount + dist.inProgressCount + dist.pendingCount);
     const completionPercent = total === 0 ? 0 : Math.floor((dist.completedCount * 100) / total);
     const segments = [
@@ -76,14 +76,16 @@
             `).join('')}
           </div>
         </div>
-        <hr class="nx-divider"/>
-        <div class="nx-row-between">
-          <button type="button" class="nx-btn-text" style="padding:2px 4px;display:inline-flex;align-items:center;gap:6px" data-action="open-tasks-tab">
-            <span class="nx-dot" style="background:${dist.overdueCount > 0 ? 'var(--nx-danger)' : 'var(--nx-text-secondary)'}"></span>
-            <span class="nx-label-md tnum" style="color:${dist.overdueCount > 0 ? 'var(--nx-danger)' : 'var(--nx-text-secondary)'}">${esc(overdueText)}</span>
-          </button>
-          ${dist.undatedPendingCount > 0 ? `<span class="nx-label-sm nx-text-secondary tnum">${dist.undatedPendingCount} sem prazo</span>` : ''}
-        </div>
+        ${showMetricSummary ? `
+          <hr class="nx-divider"/>
+          <div class="nx-row-between">
+            <button type="button" class="nx-btn-text" style="padding:2px 4px;display:inline-flex;align-items:center;gap:6px" data-action="${dist.overdueCount > 0 ? 'open-tasks-overdue' : 'open-tasks-tab'}">
+              <span class="nx-dot" style="background:${dist.overdueCount > 0 ? 'var(--nx-danger)' : 'var(--nx-text-secondary)'}"></span>
+              <span class="nx-label-md tnum" style="color:${dist.overdueCount > 0 ? 'var(--nx-danger)' : 'var(--nx-text-secondary)'}">${esc(overdueText)}</span>
+            </button>
+            ${dist.undatedPendingCount > 0 ? `<span class="nx-label-sm nx-text-secondary tnum">${dist.undatedPendingCount} sem prazo</span>` : ''}
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -225,10 +227,95 @@
     `;
   }
 
+  function renderMarketHistoryChartSvg({ asset, series, range, selectedIdx, alertTargets = [] }) {
+    if (!series || !series.length) {
+      return '<p class="nx-body-sm">Série histórica indisponível.</p>';
+    }
+    const minVal = Math.min(...series);
+    const maxVal = Math.max(...series);
+    const span = Math.max(0.0001, maxVal - minVal);
+    const first = series[0];
+    const last = series[series.length - 1];
+    const isPositive = last >= first;
+    const strokeColor = isPositive ? 'var(--nx-positive)' : 'var(--nx-danger)';
+    const idx = selectedIdx != null && selectedIdx >= 0 && selectedIdx < series.length ? selectedIdx : series.length - 1;
+    const selVal = series[idx];
+
+    const w = 360;
+    const h = 148;
+    const padX = 8;
+    const padY = 14;
+    const plotW = w - padX * 2;
+    const plotH = h - padY * 2;
+
+    const coords = series.map((v, i) => {
+      const x = padX + (series.length === 1 ? plotW / 2 : (i / (series.length - 1)) * plotW);
+      const y = padY + (1 - (v - minVal) / span) * plotH;
+      return { x, y, v, i };
+    });
+
+    const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(' ');
+    const areaPath = `${linePath} L ${coords[coords.length - 1].x.toFixed(1)} ${(h - padY).toFixed(1)} L ${coords[0].x.toFixed(1)} ${(h - padY).toFixed(1)} Z`;
+    const selCoord = coords[idx];
+
+    const alertLinesSvg = alertTargets
+      .filter((a) => a.targetPrice >= minVal * 0.96 && a.targetPrice <= maxVal * 1.04)
+      .map((a) => {
+        const clamped = Math.min(maxVal, Math.max(minVal, a.targetPrice));
+        const ay = padY + (1 - (clamped - minVal) / span) * plotH;
+        const col = a.status === 'TRIGGERED' ? 'var(--nx-positive)' : 'var(--nx-warning)';
+        return `<line x1="${padX}" y1="${ay.toFixed(1)}" x2="${w - padX}" y2="${ay.toFixed(1)}" stroke="${col}" stroke-width="1.3" stroke-dasharray="4 4"/>`;
+      })
+      .join('');
+
+    const hitTargetsSvg = coords.map((c) => `
+      <circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="7" fill="transparent" style="cursor:pointer" data-action="select-market-point" data-point-idx="${c.i}"/>
+    `).join('');
+
+    const periodPct = first > 0 ? ((last - first) / first) * 100 : 0;
+
+    return `
+      <div class="nx-chart-surface" data-nexus-component="MarketHistoryChartCard" data-nexus-source="MarketAlertSheetsAndCards.kt" data-nexus-status="simulado">
+        <div class="nx-row-between">
+          <div>
+            <span class="nx-label-sm nx-text-secondary">Ponto ${idx + 1}/${series.length} (${esc(range)})</span>
+            <div class="nx-title-md tnum" style="font-weight:700">${esc(formatMarketValue(selVal, asset.category, asset.quoteSymbol))}</div>
+          </div>
+          <span class="nx-badge ${periodPct >= 0 ? 'is-positive' : 'is-danger'} tnum">
+            ${periodPct >= 0 ? '+' : ''}${periodPct.toFixed(2)}% no período
+          </span>
+        </div>
+
+        <svg viewBox="0 0 ${w} ${h}" width="100%" height="148" style="display:block;overflow:visible">
+          <defs>
+            <linearGradient id="nxMktGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.28"/>
+              <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.01"/>
+            </linearGradient>
+          </defs>
+          <line x1="${padX}" y1="${padY}" x2="${w - padX}" y2="${padY}" stroke="var(--nx-border)" stroke-dasharray="2 4" stroke-width="1"/>
+          <line x1="${padX}" y1="${h - padY}" x2="${w - padX}" y2="${h - padY}" stroke="var(--nx-border)" stroke-dasharray="2 4" stroke-width="1"/>
+          ${alertLinesSvg}
+          <path d="${areaPath}" fill="url(#nxMktGrad)"/>
+          <path d="${linePath}" fill="none" stroke="${strokeColor}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+          <line x1="${selCoord.x.toFixed(1)}" y1="${padY}" x2="${selCoord.x.toFixed(1)}" y2="${h - padY}" stroke="var(--nx-text-secondary)" stroke-dasharray="3 3" stroke-width="1"/>
+          <circle cx="${selCoord.x.toFixed(1)}" cy="${selCoord.y.toFixed(1)}" r="4.8" fill="${strokeColor}" stroke="var(--nx-bg)" stroke-width="2"/>
+          ${hitTargetsSvg}
+        </svg>
+
+        <div class="nx-row-between nx-label-sm nx-text-secondary tnum">
+          <span>Mín: ${esc(formatMarketValue(minVal, asset.category, asset.quoteSymbol))}</span>
+          <span>Máx: ${esc(formatMarketValue(maxVal, asset.category, asset.quoteSymbol))}</span>
+        </div>
+      </div>
+    `;
+  }
+
   window.NexusPilot.Charts = {
     renderTaskRingChart,
     renderBarGroupChart,
     renderDonutChart,
-    renderProgressBarRow
+    renderProgressBarRow,
+    renderMarketHistoryChartSvg
   };
 })();
