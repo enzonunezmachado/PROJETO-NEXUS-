@@ -1,85 +1,99 @@
-# NEXUS — Mapa de Rastreabilidade do Espelho Web de Alta Fidelidade
+# NEXUS — Mapa de Rastreabilidade e Auditoria de Fidelidade do Espelho Web
 
-Este documento registra o espelhamento **visual, funcional, estrutural e adaptativo** entre o aplicativo Android nativo (`app/` — Kotlin / Jetpack Compose / Material 3 / Room) e o espelho web estático em HTML, CSS e JavaScript (`web-mirror-pilot/`).
+Este documento registra o espelhamento **visual, funcional, estrutural, de domínio e adaptativo** entre o aplicativo Android nativo (`app/` — Kotlin / Jetpack Compose / Material 3 / Room) e o espelho web estático em HTML, CSS e JavaScript (`web-mirror-pilot/`).
 
 ---
 
-## 1. Arquitetura Modular do Espelho Web
+## 1. Taxonomia Oficial da Auditoria de Fidelidade
+
+Classificação utilizada nesta auditoria e cruzada com o atributo DOM `data-nexus-status` (`reproduzido` / `parcial` / `simulado` / `não aplicável`):
+
+- **`FIEL`**: Estrutura visual, regras de negócio, fluxos, estados, ordenações e interações reproduzidos com precisão equivalente ao Android.
+- **`PARCIAL`**: Fluxo e interface reproduzidos com adaptações inerentes ao navegador ou simplificações controladas documentadas (ex.: persistência em memória em vez de Room SQLite físico; ausência de geração automática de parcelamento de ingresso em `EventEditorSheet`).
+- **`DIVERGENTE`**: Havia diferença relevante corrigida nesta auditoria ou residual documentada.
+- **`AUSENTE`**: Funcionalidade existente no Android que ainda não existe no espelho web (se aplicável).
+- **`SIMULADO`**: Dependente de rede HTTP externa ou APIs exclusivas do sistema operacional Android (`AlarmManager`, `WorkManager`, Jetpack Glance launcher widgets, AwesomeAPI/CoinGecko/Yahoo/B3), operando no espelho web com dados e ações simuladas claramente sinalizadas.
+- **`NÃO APLICÁVEL`**: Recursos exclusivos de hardware/SO Android sem equivalente em SPA estática (ex.: permissão `SCHEDULE_EXACT_ALARM`, `BootCompletedReceiver`, atalho nativo de launcher via `AppWidgetManager`).
+
+---
+
+## 2. Arquitetura Modular do Espelho Web
 
 | Arquivo Web | Papel Arquitetural | Referências Android (`app/`) |
 |---|---|---|
 | `web-mirror-pilot/index.html` | Casca HTML estática (`#nexus-app-shell` isolado de `#pilot-lab-bar`) com 4 viewports e alternância Dark/Light | `MainActivity.kt`, `Theme.kt` |
 | `web-mirror-pilot/tokens.css` | Tokens Dark (`#050505`), Light **Grafite Suave** (`#D4D7DC`) e os 8 `ColoredBorderRole` proporcionais | `ui/theme/Theme.kt`, `ui/theme/Color.kt`, `ColoredBorderRole` |
-| `web-mirror-pilot/styles.css` | Breakpoints adaptativos (`390px`, `768px`, `1024px`, fluido), dois painéis (`is-two-pane`), Kanban, calendários, sheets e diálogos | `MainActivity.kt`, `NexusComponents.kt`, `HomeScreen.kt`, `AgendaScreen.kt`, `MarketScreen.kt` |
-| `web-mirror-pilot/data/pilot-data.js` | Store relacional completo de Gabriel (`2026-11`), catálogo de 12 ativos e motores puros de domínio | `NexusEntities.kt`, `DomainModels.kt`, `FinanceRules.kt`, `TaskRules.kt`, `AgendaEngine.kt`, `GoalProgressRules.kt`, `MarketPresentation.kt`, `NexusDatabase.kt` |
-| `web-mirror-pilot/components/primitives.js` | Wordmark `Kinetik Cut + N-1` (`318x64`), cards, banners, `MonthYearSelectorBar`, `ProjectCard` e `AgendaOccurrenceRow` | `NexusComponents.kt` |
+| `web-mirror-pilot/styles.css` | Breakpoints adaptativos (`390px`, `768px`, `1024px`, fluido), pesos two-pane da Agenda (`0.45fr 0.55fr` / `0.54fr 0.46fr` no modo Semana), Kanban, calendários, sheets e diálogos | `MainActivity.kt`, `NexusComponents.kt`, `HomeScreen.kt`, `AgendaScreen.kt`, `MarketScreen.kt` |
+| `web-mirror-pilot/data/pilot-data.js` | Store relacional de Gabriel (`2026-11`), entidades normalizadas `taskRecurrences` + `recurrenceExceptions`, `RecurrenceEngine`, `TaskRules`, `AgendaEngine`, `FinanceRules`, `GoalProgressRules` e catálogo de 12 ativos | `NexusEntities.kt`, `DomainModels.kt`, `RecurrenceEngine.kt`, `TaskRules.kt`, `AgendaEngine.kt`, `FinanceRules.kt`, `GoalProgressRules.kt`, `MarketPresentation.kt`, `NexusDatabase.kt` |
+| `web-mirror-pilot/components/primitives.js` | Wordmark `Kinetik Cut + N-1` (`318x64`), `TaskRowCard`, `ProjectCard`, `AgendaOccurrenceRow` (4 ícones/marcadores por origem, materialização virtual, conflito de horário, sinalização `+`/`-`), `MonthYearSelectorBar`, banners | `NexusComponents.kt`, `AgendaScreen.kt`, `TasksAndProjectsScreen.kt` |
 | `web-mirror-pilot/components/charts.js` | `TaskRingChart`, `BarGroupChart`, `DonutChart`, `ProgressBarRow` e `MarketHistoryChartSvg` interativo | `ui/components/charts/*.kt`, `MarketScreen.kt` |
-| `web-mirror-pilot/screens/home.js` | `HomeScreen` configurável (9 blocos) com ordenação/visibilidade/densidade compacta e métricas no anel | `HomeScreen.kt` |
-| `web-mirror-pilot/screens/tasks.js` | `TasksAndProjectsScreen`: 7 abas (`Hoje`, `Próximas`, `Atrasadas`, `Todas`, `Concluídas`, `Kanban`, `Projetos`), agrupamento e filtros | `TasksAndProjectsScreen.kt` |
-| `web-mirror-pilot/screens/agenda.js` | `AgendaScreen`: 4 modos (`Dia`, `Semana`, `Mês`, `Lista`), grade mensal, quadro semanal, faixas `Dia inteiro`, conflitos e two-pane | `AgendaScreen.kt`, `AgendaEngine.kt` |
-| `web-mirror-pilot/screens/finance.js` | `FinanceScreen`: 5 abas completas (`Resumo`, `Lançamentos`, `Cartões`, `Parcelamentos & Recorrências`, `Orçamentos, Metas & Empréstimos`), projeção 30d e histórico | `FinanceScreen.kt`, `NexusViewModel.kt` |
+| `web-mirror-pilot/screens/home.js` | `HomeScreen` configurável (9 blocos) com ordenação/visibilidade/densidade compacta, métricas no anel e alertas dinâmicos | `HomeScreen.kt` |
+| `web-mirror-pilot/screens/tasks.js` | `TasksAndProjectsScreen`: 7 abas (`Hoje`, `Próximas`, `Atrasadas`, `Todas`, `Concluídas`, `Kanban` 6 colunas incluindo `Canceladas`, `Projetos`), agrupamento `TaskRules` (6 grupos) e filtros | `TasksAndProjectsScreen.kt`, `TaskRules.kt` |
+| `web-mirror-pilot/screens/agenda.js` | `AgendaScreen`: visão inicial `Mês` (`MONTH`), 4 modos (`Dia`, `Semana`, `Mês`, `Lista`), `MonthCalendarGrid` (`S T Q Q S S D`), `HorizontalWeekBoard` sem duplicação de lista no mobile quando expandido, `AllDayEventBandCard`, `AgendaFilterBottomSheet` com categorias contextuais e toggle `Mostrar já pagos` restrito a `Tudo`/`Financeiro` | `AgendaScreen.kt`, `AgendaEngine.kt` |
+| `web-mirror-pilot/screens/finance.js` | `FinanceScreen`: 5 abas (`Resumo`, `Lançamentos`, `Cartões`, `Parcelamentos & Recorrências`, `Orçamentos, Metas & Empréstimos`), projeção 30d e auditoria | `FinanceScreen.kt`, `NexusViewModel.kt` |
 | `web-mirror-pilot/screens/events.js` | `EventsScreen` com filtros (`Próximos`, `Ingresso pendente`, `Todos`) e grid adaptativo | `EventsScreen.kt` |
-| `web-mirror-pilot/screens/market.js` | `MarketScreen` (12 ativos, Watchlist, alertas de preço) e `MarketAssetDetailScreen` (gráfico multi-faixa, conversão USD→BRL, two-pane) | `MarketScreen.kt`, `MarketAlertSheetsAndCards.kt` |
+| `web-mirror-pilot/screens/market.js` | `MarketScreen` (12 ativos, Watchlist, alertas `PRICE_ABOVE`/`PRICE_BELOW`) e `MarketAssetDetailScreen` (gráfico multi-faixa, conversão USD→BRL, two-pane) | `MarketScreen.kt`, `MarketAlertSheetsAndCards.kt`, `MarketAlertModels.kt` |
 | `web-mirror-pilot/screens/planning.js` | `PlanningGoalsScreen` e `GoalDetailSheet` (marcos, logs de progresso, vínculo ao vivo com tarefas e projetos) | `PlanningGoalsScreen.kt` |
-| `web-mirror-pilot/screens/routine-assistant.js` | `RoutineAssistantScreen` (3 abas: Briefing Diário, Revisão Noturna, Notificações/Lembretes) | `RoutineAssistantScreen.kt` |
-| `web-mirror-pilot/screens/more-subroutes.js` | `MoreScreen` (10 itens), `GlobalSearchScreen` (7 entidades), `DashboardCustomizationScreen`, `QuoteLibraryScreen`, `SettingsScreen`, `BackupScreen` (v7), `DiagnosticsScreen` (27 tabelas) e `WidgetsHubScreen` (4 widgets) | `MoreSettingsBackupDiagnosticsScreens.kt`, `DashboardCustomizationAndQuotesScreens.kt` |
+| `web-mirror-pilot/screens/routine-assistant.js` | `RoutineAssistantScreen` (Briefing Diário, Revisão Noturna com data dinâmica de amanhã, Notificações/Lembretes) | `RoutineAssistantScreen.kt` |
+| `web-mirror-pilot/screens/more-subroutes.js` | `MoreScreen`, `GlobalSearchScreen`, `DashboardCustomizationScreen`, `QuoteLibraryScreen`, `SettingsScreen`, `BackupScreen` (v7 incluindo `taskRecurrences` e `recurrenceExceptions`), `DiagnosticsScreen` (tabelas Room equivalentes) e `WidgetsHubScreen` | `MoreSettingsBackupDiagnosticsScreens.kt`, `DashboardCustomizationAndQuotesScreens.kt` |
 | `web-mirror-pilot/sheets/transaction-sheet.js` | `TransactionEditorSheet` com vínculo bidirecional a Cartão/Fatura, Evento e Tarefa | `FinanceEditors.kt` |
 | `web-mirror-pilot/sheets/event-sheet.js` | `EventEditorSheet` com custos vinculados, `+ Adicionar custo` e `+ Nova tarefa` | `EventsScreen.kt` |
-| `web-mirror-pilot/sheets/entity-sheets.js` | `TaskEditorSheet` (subtarefas, recorrência, gasto vinculado), `AppointmentEditorSheet` (detecção ao vivo de conflito) e `ProjectEditorSheet` | `EntityEditors.kt` |
-| `web-mirror-pilot/sheets/finance-extra-sheets.js` | Modais CRUD para Cartão, Parcelamento, Recorrência, Orçamento, Meta Financeira, Empréstimo, Objetivo Pessoal, Alerta de Preço, Frase, Categoria e prévia Backup v7 | `FinanceEditors.kt`, `MarketAlertSheetsAndCards.kt`, `PlanningGoalsScreen.kt`, `DashboardCustomizationAndQuotesScreens.kt`, `MoreSettingsBackupDiagnosticsScreens.kt` |
-| `web-mirror-pilot/app.js` | Motor unidirecional, pilha real `subRouteStack`, `MainTopBar` (3 ícones), `QuickAddChooserSheet` (5 ações), auditoria e preservação de foco em buscas | `MainActivity.kt`, `NexusViewModel.kt` |
+| `web-mirror-pilot/sheets/entity-sheets.js` | `TaskEditorSheet` (subtarefas, série recorrente completa com 6 frequências + máscara semanal + início/fim, `ReminderLeadTimeSelector`, atalho `Abrir evento`, despesas vinculadas clicáveis, `Concluir`/`Reabrir`), `AppointmentEditorSheet` (conflito ao vivo) e `ProjectEditorSheet` | `EntityEditors.kt` |
+| `web-mirror-pilot/sheets/finance-extra-sheets.js` | Modais CRUD de Finanças, Planejamento, Mercado, Frases, Categorias e prévia Backup v7 | `FinanceEditors.kt`, `MarketAlertSheetsAndCards.kt`, `PlanningGoalsScreen.kt`, `DashboardCustomizationAndQuotesScreens.kt`, `MoreSettingsBackupDiagnosticsScreens.kt` |
+| `web-mirror-pilot/app.js` | Motor unidirecional, `subRouteStack`, materialização virtual de ocorrências recorrentes, prompts `RecurringEditScope`, sugestão inteligente de categoria ao registrar gasto da tarefa, preservação de filtros/rascunhos entre tema e viewport | `MainActivity.kt`, `NexusViewModel.kt`, `NexusRepository.kt` |
 
 ---
 
-## 2. Classificação de Fidelidade por Módulo e Recurso
+## 3. Auditoria de Fidelidade por Módulo e Correções Aplicadas
 
-Legenda usada também no atributo DOM `data-nexus-status`:
-- **`reproduzido`**: Estrutura, hierarquia, regras de negócio, relacionamentos e interações principais reproduzidos fielmente em memória.
-- **`parcial`**: Estrutura e regras reproduzidas, mas adaptadas para ambiente browser sem APIs exclusivas de sistema (ex.: SAF nativo, Room SQLite físico).
-- **`simulado`**: Funcionalidade que no Android depende de rede HTTP ou sistema operacional (`AlarmManager`, `WorkManager`, Jetpack Glance launcher widgets, AwesomeAPI/CoinGecko/Yahoo/B3) e opera no navegador com dados locais/simulados e sinalização explícita.
-- **`não aplicável`**: Recursos exclusivos do SO Android sem equivalente direto em SPA estática (ex.: permissão `SCHEDULE_EXACT_ALARM`, boot receiver, atalho de launcher nativo).
+### 3.1 Agenda (`AgendaScreen.kt`, `AgendaEngine.kt`, `RecurrenceEngine.kt`)
 
-### 2.1 Navegação Principal, Identidade e Responsividade
-
-| Elemento Web | Origem Android | Status | Observações |
+| Item / Regra | Origem Android | Classificação | Detalhamento |
 |---|---|---|---|
-| `MainTopBar` + `NexusWordmark` | `MainActivity.kt:477-522`, `NexusComponents.kt` | `reproduzido` | Wordmark vetorial `Kinetik Cut + N-1` (`318x64`) e **exatamente 3 ações** (`Mercado`, `Pesquisa global`, `Mais`). |
-| `BottomNavigationBar` + `QuickAddFab` | `MainActivity.kt:525-565` | `reproduzido` | Ordem exata (`Tarefas \| Agenda \| Início \| Finanças \| Eventos`), oculta automaticamente quando `subRouteStack` não está vazia. |
-| `QuickAddChooserSheet` | `EntityEditors.kt:QuickAddChooserSheet` | `reproduzido` | 5 opções nativas: `Nova tarefa`, `Novo compromisso`, `Novo lançamento financeiro`, `Novo evento`, `Novo projeto`. |
-| Pilha `subRouteStack` | `MainActivity.kt:SubRoute` | `reproduzido` | Suporta empilhamento (ex.: `Mais` → `Planejamento`, `Mercado` → `Detalhe do Ativo`, `Personalizar` → `Frases`). |
-| Breakpoints adaptativos (`390px`, `768px`, `1024px`, `Fluido`) | `MainActivity.kt`, `HomeScreen.kt`, `AgendaScreen.kt`, `MarketScreen.kt` | `reproduzido` | `>=720px` ativa grids 2 colunas (`.is-wide`); `>=1024px` / Fluido ativa layout de dois painéis (`.is-two-pane`) em `Agenda` e `Detalhe do Ativo`. |
-| Temas `Dark` (`#050505`) e `Grafite Suave` (`#D4D7DC`) | `Theme.kt`, `Color.kt` | `reproduzido` | 8 `ColoredBorderRole` com bordas e alfas proporcionais nos dois temas. |
+| Visão padrão inicial | `AgendaFilterState(viewMode = MONTH)` | `FIEL` | Corrigido de `WEEK` para `MONTH` na inicialização da UI. |
+| 6 fontes de ocorrências | `AgendaEngine.kt` (`APPOINTMENT`, `TASK`, `EVENT`, `TRANSACTION` +/–, `STATEMENT` > 0, `PROJECT` ativo/pausado) | `FIEL` | Inclui agora receitas (`INCOME`), faturas apenas com `totalCents > 0`, status `OVERDUE` dinâmico para transações e faturas, projetos sem prefixo `"Prazo: "` e exclusão de projetos `COMPLETED`/`ARCHIVED`. |
+| Projeção virtual de recorrências | `AgendaEngine.kt` + `RecurrenceEngine.kt` | `FIEL` | Projeta ocorrências virtuais para todas as 6 frequências respeitando `recurrenceExceptions` (`SKIP`/`OVERRIDE`), exibindo ícone `repeat` neon sem sufixo `"(recorrência)"` e materializando ao tocar ou concluir checkbox. |
+| Comportamento do modo `WEEK` | `AgendaScreen.kt` (`HorizontalWeekBoard` vs `SelectedDayPanel`) | `FIEL` | Em viewport de coluna única (`mobile` e `tablet-portrait`), `WEEK` expandido renderiza exclusivamente o `HorizontalWeekBoard` (sem duplicar `SelectedDayPanel`); colapsado exibe ocorrências do dia ou mensagem orientadora. Em `two-pane`, mantém proporções `0.45fr / 0.55fr` e `0.54fr / 0.46fr`. |
+| `MonthCalendarGrid` e `DateNavigationBar` | `AgendaScreen.kt` | `FIEL` | Cabeçalhos semanais `S T Q Q S S D`, `"Semana DD/MM – DD/MM"`, dica `"Toque para voltar a hoje"` fora de hoje e instrução quando mês/semana está recolhido. |
+| Filtros contextuais de categoria e `showPaid` | `AgendaFilterBottomSheet` em `AgendaScreen.kt` | `FIEL` | Lista de categorias se adapta ao `kindFilter` selecionado, limpa `categoryFilterId` incompatível ao trocar tipo, e exibe `"Mostrar já pagos"` apenas quando `kindFilter == null` ou `FINANCE`. |
+| Renderização dos itens (`AgendaOccurrenceRow`) | `AgendaScreen.kt:AgendaOccurrenceRow` | `FIEL` | Checkbox quadrado para tarefas, ícone calendário para eventos, `R$` para faturas, bandeira para projetos; card elevado apenas para `APPOINTMENT` e `EVENT`; tachado apenas em tarefas concluídas/canceladas; valor financeiro com sinal `+`/`-`. |
 
-### 2.2 Telas Principais (Bottom Bar)
+### 3.2 Tarefas & Projetos (`TasksAndProjectsScreen.kt`, `TaskRules.kt`, `RecurrenceEngine.kt`, `EntityEditors.kt`)
 
-| Tela / Fluxo | Origem Android | Status | Observações |
+| Item / Regra | Origem Android | Classificação | Detalhamento |
 |---|---|---|---|
-| `HomeScreen` (9 blocos configuráveis) | `HomeScreen.kt` | `reproduzido` | Ordem, visibilidade, `showPrimaryDetail`, `showOverdueOrAlerts`, `maxItems`, `compactDashboardMode`, `showMetricSummaryOnDashboard`, clique em `Frase` → `QUOTES` e `Objetivo` → `PLANNING`. |
-| `TasksAndProjectsScreen` (7 abas + CRUD) | `TasksAndProjectsScreen.kt`, `EntityEditors.kt` | `reproduzido` | Abas `Hoje`, `Próximas`, `Atrasadas (N)`, `Todas`, `Concluídas`, `Kanban` (seletor rápido de coluna) e `Projetos`; filtros por status/prioridade/projeto; `TaskEditorSheet` com subtarefas, recorrência e `"Registrar gasto"`; `ProjectEditorSheet`. |
-| `AgendaScreen` (4 visões + 6 fontes + Two-Pane) | `AgendaScreen.kt`, `AgendaEngine.kt` | `reproduzido` | Modos `Dia`, `Semana`, `Mês`, `Lista`; `MonthCalendarGrid`, `HorizontalWeekBoard`, `AllDayEventBandCard`, detecção de conflitos de horário, filtros de tipo/categoria/`showPaid`, abertura contextual de cada origem e `AppointmentEditorSheet`. |
-| `FinanceScreen` (5 abas + projeção + auditoria) | `FinanceScreen.kt`, `FinanceEditors.kt`, `FinanceRules.kt` | `reproduzido` | `Resumo` (saldo, donut com toggle Pago/Previsto, barras 6 meses, projeção 30d, card Mercado clicável), `Lançamentos` (filtros + CSV), `Cartões` (`+ Cartão`, editar, fechar/pagar fatura), `Parcelamentos & Recorrências` (quitar 1/todas, gerar próximo, pausar), `Orçamentos, Metas & Empréstimos` (CRUD completo + `Histórico de Auditoria`). |
-| `EventsScreen` + `EventEditorSheet` | `EventsScreen.kt` | `reproduzido` | Filtros (`Próximos`, `Ingresso pendente`, `Todos`), cálculo automático de custos vinculados, `+ Adicionar custo` e `+ Nova tarefa` direto do evento. |
+| Abas e agrupamento (`TaskRules`) | `TasksAndProjectsScreen.kt`, `TaskRules.kt` | `FIEL` | Corrigido `isTaskOverdue` considerando `hasDueTime` + horário atual (`nowTime`); aba `Todas` preserva `CANCELLED`; 6 grupos exatos (`Atrasadas`, `Hoje`, `Esta semana`, `Próximas`, `Sem prazo`, `Concluídas e canceladas`) com ordenação completa do Android. |
+| Kanban completo (6 colunas) | `TasksAndProjectsScreen.kt:TasksKanbanView` | `FIEL` | Expandido de 5 para todas as 6 colunas incluindo `Canceladas` (`CANCELLED`), além de cartões com prazo contextual, projeto, prioridade e indicador `Atrasada`. |
+| Ciclo de conclusão, reabertura e série recorrente | `NexusViewModel.kt`, `NexusRepository.kt`, `RecurrenceEngine.kt` | `FIEL` | Reabrir tarefa concluída move para `IN_PROGRESS` (não `NOT_STARTED`); concluir ocorrência recorrente materializa automaticamente a próxima ocorrência livre respeitando `SKIP`; diálogos `SAVE_TASK_SCOPE` (`Só esta ocorrência` vs `Toda a série`), `CONFIRM_RECURRENCE_RULE_CHANGE` e `DELETE_TASK_RECURRING` implementados. |
+| `TaskEditorSheet` e vínculo financeiro | `EntityEditors.kt`, `NexusViewModel.suggestExpenseCategoryIdForTask` | `FIEL` | Seletor completo de recorrência (6 frequências, `CUSTOM_DAYS`, chips `Seg..Dom`, início, término sem fim/até data/máx. ocorrências), `ReminderLeadTimeSelector` (`Padrão`, `0`, `15`, `30`, `60`, `-1`), atalho `Abrir evento`, lista clicável de lançamentos vinculados, sugestão automática de categoria de despesa ao registrar gasto e botão `Concluir`/`Reabrir`. |
+| `ProjectCard` e estados vazios | `TasksAndProjectsScreen.kt`, `NexusComponents.kt` | `FIEL` | Texto `"X/Y tarefas concluídas"`, botão `"Novo projeto"` e títulos contextuais por aba vazia (`Nenhuma tarefa agendada para hoje`, etc.). |
 
-### 2.3 SubRotas (`Mais`, `Mercado`, `Planejamento`, `Sistema`)
+### 3.3 Demais Telas e Fluxos Transversais
 
-| SubRota | Origem Android | Status | Observações |
+| Tela / Fluxo | Origem Android | Classificação | Observações da Auditoria |
 |---|---|---|---|
-| `MoreScreen` (10 itens) | `MoreSettingsBackupDiagnosticsScreens.kt` | `reproduzido` | Lista completa dos 10 atalhos do Android, sem itens mortos. |
-| `PlanningGoalsScreen` + `GoalDetailSheet` | `PlanningGoalsScreen.kt`, `GoalProgressRules.kt` | `reproduzido` | Busca, filtros por status/categoria, cálculo `AUTO` (média de marcos, tarefas e projetos) e `MANUAL`, marcos interativos, logs de progresso e vínculo ao vivo de tarefas/projetos existentes. |
-| `MarketScreen` + `MarketAssetDetailScreen` | `MarketScreen.kt`, `MarketAlertSheetsAndCards.kt` | `simulado` | Catálogo completo de **12 ativos** (Moedas, Cripto, Índices, Ações), Watchlist, conversão `USD → BRL` em `MELI`, gráfico SVG com 5 períodos (`1D..1A`), pontos selecionáveis, linhas de alerta e CRUD de alertas com avaliação simulada no clique em `Atualizar`. Sem chamadas HTTP reais. |
-| `RoutineAssistantScreen` | `RoutineAssistantScreen.kt` | `reproduzido` / `simulado` | Briefing Diário e Revisão Noturna reproduzidos com mutações reais em tarefas/contas; testes e agendamento de notificação marcados como `simulado` (sem `AlarmManager`). |
-| `DashboardCustomizationScreen` & `QuoteLibraryScreen` | `DashboardCustomizationAndQuotesScreens.kt` | `reproduzido` | Controles globais + expansão por bloco (`showPrimaryDetail`, `showOverdueOrAlerts`, `maxItems`), restauração padrão e biblioteca completa de frases. |
-| `GlobalSearchScreen` | `MoreSettingsBackupDiagnosticsScreens.kt` | `reproduzido` | Pesquisa em tempo real (com preservação de cursor) nas **7 entidades**: Tarefas, Eventos, Lançamentos, Cartões, Projetos, Objetivos Pessoais e Compromissos. |
-| `SettingsScreen` | `MoreSettingsBackupDiagnosticsScreens.kt` | `reproduzido` | Nome de usuário, Tema Escuro/Grafite Suave, modo compacto, 4 padrões de data e CRUD de Categorias. |
-| `BackupScreen` (v7) | `MoreSettingsBackupDiagnosticsScreens.kt` | `parcial` | Exportação `.json` real e importação via arquivo/texto com validação de esquema v7 e diálogo `BackupRestorePreviewDialog`; sem Storage Access Framework (SAF) nativo do Android. |
-| `DiagnosticsScreen` | `MoreSettingsBackupDiagnosticsScreens.kt` | `parcial` | Exibe versão do esquema (`Room v18`), contagem exata das **27 tabelas** derivada do store em memória e logs locais com cópia/limpeza. |
-| `WidgetsHubScreen` | `MoreSettingsBackupDiagnosticsScreens.kt` | `simulado` | Prévia viva dos 4 widgets Jetpack Glance (`Meu Dia`, `Minhas Tarefas`, `Financeiro`, `Resumo NEXUS`) e ações simuladas de sincronização/fixação. |
-| `AlarmManager` / `WorkManager` / Launcher Pin nativos | Android OS APIs | `não aplicável` | Infraestrutura nativa de SO fora do escopo do navegador estático. |
+| Navegação (`MainTopBar`, `BottomNavigationBar`, `QuickAddFab`, `subRouteStack`) | `MainActivity.kt` | `FIEL` | 3 ações no topo (`Mercado`, `Pesquisa global`, `Mais`), 5 abas na ordem nativa, FAB oculto em subrotas e pilha de subrotas funcional. |
+| `HomeScreen` (9 blocos personalizáveis) | `HomeScreen.kt` | `FIEL` | Ordem, visibilidade, flags por bloco, tema Dark/Grafite Suave, saudação, frase do dia e alerta dinâmico de conflitos de hoje. |
+| `FinanceScreen` (5 abas + projeção 30d + CSV) | `FinanceScreen.kt`, `FinanceEditors.kt`, `FinanceRules.kt` | `FIEL` | Cartões, faturas, parcelamentos, recorrências financeiras, orçamentos, metas, empréstimos e auditoria com mutações reais em memória. |
+| `EventsScreen` e `EventEditorSheet` | `EventsScreen.kt`, `NexusRepository.saveEvent` | `PARCIAL` | Filtros, custos vinculados e atalhos `+ Adicionar custo` / `+ Nova tarefa` estão fiéis; porém a geração automática de transação/parcelamento de ingresso ao salvar evento (`NexusRepository.saveEvent`) não é disparada automaticamente nesta versão web (custos são vinculados manualmente pelo fluxo de lançamentos). |
+| `PlanningGoalsScreen` e `GoalDetailSheet` | `PlanningGoalsScreen.kt`, `GoalProgressRules.kt` | `FIEL` | Cálculo `AUTO`/`MANUAL`, marcos, logs e vínculos bidirecionais preservados. |
+| `MarketScreen` e `MarketAssetDetailScreen` | `MarketScreen.kt`, `MarketAlertModels.kt` | `SIMULADO` | Corrigido divergência de enum de alertas (`ABOVE_OR_EQUAL`/`BELOW_OR_EQUAL` → `PRICE_ABOVE`/`PRICE_BELOW` alinhado a `MarketAlertModels.kt` e `pilot-data.js`). Rede/cotações são simuladas localmente. |
+| `RoutineAssistantScreen` | `RoutineAssistantScreen.kt` | `PARCIAL` | Briefing Diário e Revisão Noturna fiéis (corrigida data hardcoded `'24/11/2026'` para cálculo dinâmico a partir de `todayIso`); agendamento de notificações na 3ª aba é `SIMULADO`. |
+| `BackupScreen` (v7) e `DiagnosticsScreen` | `MoreSettingsBackupDiagnosticsScreens.kt` | `PARCIAL` | Backup JSON v7 agora inclui explicitamente `taskRecurrences` e `recurrenceExceptions` na exportação e restauração; contagem de tabelas de diagnóstico (`21` coleções modeladas em memória frente às `27` tabelas Room quando consideramos tabelas auxiliares/visões) adaptada ao modelo em memória sem SAF nativo. |
+| `WidgetsHubScreen` / `AlarmManager` / `WorkManager` / SAF nativo | `AppWidgetManager`, Android OS | `SIMULADO` / `NÃO APLICÁVEL` | Widgets Glance são simulados para inspeção; infraestrutura nativa de sistema operacional não se aplica a SPA web estática. |
 
 ---
 
-## 3. Convenções para Importação e Diff no Google Stitch
+## 4. Verificação Executada e Separação entre Node Headless e Browser Gráfico
+
+- **Verificação estática de sintaxe**: `node --check` em todos os arquivos `.js` de `web-mirror-pilot/`.
+- **Testes automatizados funcionais headless (`node` + `vm` + mock mínimo de DOM)**: validam inicialização nos 4 viewports e 2 temas, visão padrão `MONTH`, comportamento `WEEK` sem duplicação de `SelectedDayPanel`, todas as 6 fontes da Agenda e 6 frequências de recorrência, materialização virtual ao clicar/concluir, filtros contextuais e `showPaid`, 7 abas de Tarefas, Kanban de 6 colunas, `TaskRules` (6 grupos + `hasDueTime`), reabertura → `IN_PROGRESS`, sugestão de categoria ao registrar gasto, alertas `PRICE_ABOVE`/`PRICE_BELOW`, round-trip de Backup v7 com séries recorrentes e preservação de estado ao alternar tema/viewport.
+- **Limitação explícita**: A renderização visual pixel-a-pixel em motor browser real (Chromium/Firefox/Safari) não foi executada neste ambiente terminal sem GUI; portanto, inspeção visual em tela e layout CSS são derivados de revisão de código CSS/HTML e cobertura estrutural DOM no teste headless.
+
+---
+
+## 5. Convenções para Importação e Diff no Google Stitch
 
 1. **Separação de Casca**: Tudo fora de `#nexus-app-shell` (`#pilot-lab-bar` e `#pilot-trace-panel`) é ferramental de laboratório e deve ser ignorado na análise visual de UI do NEXUS.
-2. **Atributos Semânticos no DOM**: Alterações feitas dentro de `#nexus-app-shell` permanecem mapeáveis aos arquivos Kotlin originais via `data-nexus-screen`, `data-nexus-component`, `data-nexus-source`, `data-nexus-entity` e `data-nexus-status`.
+2. **Atributos Semânticos no DOM**: Alterações dentro de `#nexus-app-shell` mantêm rastreabilidade via `data-nexus-screen`, `data-nexus-component`, `data-nexus-source`, `data-nexus-entity` e `data-nexus-status`.
 3. **Integridade do Android**: Nenhum arquivo em `app/` foi alterado.

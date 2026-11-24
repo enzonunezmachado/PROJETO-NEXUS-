@@ -9,8 +9,15 @@
     LABELS,
     MARKET_ASSET_CATALOG,
     formatBrl,
+    formatDateBr,
     shiftMonthIso,
-    addDaysIso
+    addDaysIso,
+    parseIsoDate,
+    weekdayBit,
+    openOrMaterializeRecurringOccurrence,
+    materializeNextOccurrenceIfNeeded,
+    contextualCategoriesForAgendaKind,
+    suggestExpenseCategoryIdForTask
   } = window.NexusPilot.Data;
   const { esc, ICONS, renderWordmarkSvg } = window.NexusPilot.Primitives;
   const {
@@ -70,7 +77,7 @@
         projectFilterId: null
       },
       agendaFilter: {
-        viewMode: 'WEEK',
+        viewMode: 'MONTH',
         selectedDateIso: '2026-11-23',
         kindFilter: null,
         categoryFilterId: null,
@@ -220,7 +227,7 @@
       if (!al.isActive || al.status !== 'WAITING') return;
       const q = state.marketQuotes[al.assetCode];
       if (!q || q.price == null) return;
-      const hit = al.condition === 'ABOVE_OR_EQUAL'
+      const hit = al.condition === 'PRICE_ABOVE'
         ? q.price >= al.targetPrice
         : q.price <= al.targetPrice;
       if (hit) {
@@ -504,9 +511,10 @@
           <div class="nx-dialog" role="alertdialog" aria-modal="true" onclick="event.stopPropagation()">
             <h3 class="nx-title-lg">${esc(cd.title)}</h3>
             <p class="nx-body-md nx-text-secondary">${esc(cd.message)}</p>
-            <div class="nx-row-end">
+            <div class="nx-row-end" style="flex-wrap:wrap;gap:6px">
               <button type="button" class="nx-btn-text" data-action="cancel-confirm-dialog">Voltar</button>
-              <button type="button" class="nx-btn-text nx-btn-danger-text" data-action="accept-confirm-dialog">${esc(cd.confirmLabel || 'Confirmar')}</button>
+              ${cd.altLabel ? `<button type="button" class="nx-btn-outlined" data-action="alt-confirm-dialog">${esc(cd.altLabel)}</button>` : ''}
+              <button type="button" class="nx-btn-text ${cd.danger !== false ? 'nx-btn-danger-text' : ''}" data-action="accept-confirm-dialog">${esc(cd.confirmLabel || 'Confirmar')}</button>
             </div>
           </div>
         </div>
@@ -748,7 +756,47 @@
     render();
   }
 
+  function buildDraftRecRuleSig(d) {
+    if (!d || !d.recurrenceEnabled) return 'NONE';
+    return [
+      d.recurrenceFrequency || 'WEEKLY',
+      Number(d.customIntervalDays) || 7,
+      Number(d.weekdaysMask) || 0,
+      d.recurrenceStartDateIso || '',
+      d.recurrenceEndMode || 'NONE',
+      d.recurrenceEndMode === 'DATE' ? (d.recurrenceEndDateIso || '') : '',
+      d.recurrenceEndMode === 'COUNT' ? (Number(d.recurrenceMaxOccurrences) || 10) : ''
+    ].join('|');
+  }
+
+  function buildDraftTemplateSig(d) {
+    return [
+      d.title || '',
+      d.description || '',
+      d.priority || 'NORMAL',
+      d.projectId || '',
+      d.categoryId || '',
+      d.eventId || '',
+      d.goalId || '',
+      Boolean(d.hasDueTime),
+      d.dueTime || '14:00',
+      d.notes || ''
+    ].join('|');
+  }
+
   function buildTaskFromDraft(d) {
+    const existing = d.id ? app.state.tasks.find((t) => t.id === d.id) : null;
+    const nowStamp = `${app.state.todayIso}T${app.state.nowTime || '09:30'}`;
+    const reminderVal = d.reminderMinutesBefore === '-1'
+      ? -1
+      : d.reminderMinutesBefore !== '' && d.reminderMinutesBefore != null
+        ? Number(d.reminderMinutesBefore)
+        : null;
+    const endMode = d.recurrenceEndMode || 'NONE';
+    const recStart = d.recurrenceStartDateIso || d.dueDateIso || app.state.todayIso;
+    const customDays = Math.max(1, Number(d.customIntervalDays) || 7);
+    const weekdaysMask = Number(d.weekdaysMask) || (recStart ? weekdayBit(parseIsoDate(recStart).getDay()) : 0);
+
     return {
       id: d.id || `task_${Date.now()}`,
       title: d.title.trim(),
@@ -762,34 +810,161 @@
       dueDateIso: d.dueDateIso || null,
       hasDueTime: Boolean(d.hasDueTime && d.dueDateIso),
       dueTime: d.hasDueTime ? (d.dueTime || '14:00') : null,
-      reminderMinutesBefore: d.reminderMinutesBefore !== '' ? Number(d.reminderMinutesBefore) : null,
+      reminderMinutesBefore: reminderVal,
+      recurrenceId: d.recurrenceEnabled ? (d.recurrenceId || null) : null,
+      occurrenceDateIso: d.recurrenceEnabled ? (d.occurrenceDateIso || d.dueDateIso || recStart) : null,
       recurrence: d.recurrenceEnabled ? {
         frequency: d.recurrenceFrequency || 'WEEKLY',
-        startDateIso: d.dueDateIso || app.state.todayIso,
-        endMode: 'NONE',
-        customIntervalDays: 7,
-        weekdaysMask: 0
+        startDateIso: recStart,
+        endMode,
+        endDateIso: endMode === 'DATE' ? (d.recurrenceEndDateIso || null) : null,
+        maxOccurrences: endMode === 'COUNT' ? Math.max(1, Number(d.recurrenceMaxOccurrences) || 10) : null,
+        customIntervalDays: customDays,
+        weekdaysMask
       } : null,
       subtasks: (d.subtasks || []).map((s) => ({ ...s })),
+      updatedAtIso: nowStamp,
+      completedAtIso: d.status === 'COMPLETED' ? (existing?.completedAtIso || nowStamp) : null,
       notes: d.notes || ''
     };
   }
 
-  function saveTaskFromDraft() {
+  function saveTaskFromDraft(scopeChoice = null) {
     const d = app.ui.taskDraft;
     if (!d) return false;
     if (!d.title.trim()) {
       showSnackbar('Informe o título da tarefa.');
       return false;
     }
+
+    if (!d.isNew && d.recurrenceId && !scopeChoice) {
+      const ruleChanged = buildDraftRecRuleSig(d) !== d.initRecRuleSig;
+      const templateChanged = buildDraftTemplateSig(d) !== d.initTemplateSig;
+      if (ruleChanged) {
+        app.ui.confirmDialog = {
+          type: 'CONFIRM_RECURRENCE_RULE_CHANGE',
+          title: 'Alterar regra da série?',
+          message: d.recurrenceEnabled
+            ? 'A regra de repetição foi modificada e será aplicada à série recorrente.'
+            : 'A recorrência automática será encerrada para esta série.',
+          confirmLabel: 'Aplicar na série',
+          danger: false
+        };
+        render();
+        return false;
+      }
+      if (templateChanged) {
+        app.ui.confirmDialog = {
+          type: 'SAVE_TASK_SCOPE',
+          title: 'Aplicar alterações em...',
+          message: 'Esta tarefa faz parte de uma série recorrente. Deseja atualizar só esta ocorrência ou toda a série?',
+          altLabel: 'Só esta ocorrência',
+          confirmLabel: 'Toda a série',
+          danger: false
+        };
+        render();
+        return false;
+      }
+    }
+
     const entity = buildTaskFromDraft(d);
+    app.state.taskRecurrences = app.state.taskRecurrences || [];
+    app.state.recurrenceExceptions = app.state.recurrenceExceptions || [];
+
+    if (d.recurrenceEnabled) {
+      const recStart = entity.recurrence.startDateIso || entity.dueDateIso || app.state.todayIso;
+      if (!entity.recurrenceId) {
+        const newRecId = `rec_${Date.now()}`;
+        entity.recurrenceId = newRecId;
+        entity.occurrenceDateIso = entity.occurrenceDateIso || entity.dueDateIso || recStart;
+        app.state.taskRecurrences.push({
+          id: newRecId,
+          templateTaskId: entity.id,
+          title: entity.title,
+          description: entity.description,
+          projectId: entity.projectId,
+          categoryId: entity.categoryId,
+          eventId: entity.eventId,
+          goalId: entity.goalId,
+          priority: entity.priority,
+          hasDueTime: entity.hasDueTime,
+          dueTime: entity.dueTime,
+          notes: entity.notes,
+          frequency: entity.recurrence.frequency,
+          customIntervalDays: entity.recurrence.customIntervalDays,
+          weekdaysMask: entity.recurrence.weekdaysMask,
+          startDateIso: recStart,
+          endDateIso: entity.recurrence.endDateIso,
+          maxOccurrences: entity.recurrence.maxOccurrences,
+          isActive: true
+        });
+      } else {
+        const rec = app.state.taskRecurrences.find((r) => r.id === entity.recurrenceId);
+        if (rec && scopeChoice !== 'THIS_OCCURRENCE_ONLY') {
+          rec.title = entity.title;
+          rec.description = entity.description;
+          rec.projectId = entity.projectId;
+          rec.categoryId = entity.categoryId;
+          rec.eventId = entity.eventId;
+          rec.goalId = entity.goalId;
+          rec.priority = entity.priority;
+          rec.hasDueTime = entity.hasDueTime;
+          rec.dueTime = entity.dueTime;
+          rec.notes = entity.notes;
+          rec.frequency = entity.recurrence.frequency;
+          rec.customIntervalDays = entity.recurrence.customIntervalDays;
+          rec.weekdaysMask = entity.recurrence.weekdaysMask;
+          rec.startDateIso = recStart;
+          rec.endDateIso = entity.recurrence.endDateIso;
+          rec.maxOccurrences = entity.recurrence.maxOccurrences;
+          rec.isActive = true;
+          app.state.tasks.forEach((other) => {
+            if (other.id !== entity.id && other.recurrenceId === rec.id && other.status !== 'COMPLETED' && other.status !== 'CANCELLED') {
+              other.title = entity.title;
+              other.description = entity.description;
+              other.priority = entity.priority;
+              other.projectId = entity.projectId;
+              other.categoryId = entity.categoryId;
+              other.eventId = entity.eventId;
+              other.goalId = entity.goalId;
+              other.hasDueTime = entity.hasDueTime;
+              other.dueTime = entity.dueTime;
+              other.notes = entity.notes;
+              other.recurrence = { ...entity.recurrence };
+            }
+          });
+        } else if (scopeChoice === 'THIS_OCCURRENCE_ONLY' && entity.occurrenceDateIso) {
+          const existsEx = app.state.recurrenceExceptions.some((ex) => ex.recurrenceId === entity.recurrenceId && ex.occurrenceDateIso === entity.occurrenceDateIso);
+          if (!existsEx) {
+            app.state.recurrenceExceptions.push({
+              id: `rex_${Date.now()}`,
+              recurrenceId: entity.recurrenceId,
+              occurrenceDateIso: entity.occurrenceDateIso,
+              exceptionType: 'OVERRIDE'
+            });
+          }
+        }
+      }
+    } else if (d.recurrenceId) {
+      const rec = app.state.taskRecurrences.find((r) => r.id === d.recurrenceId);
+      if (rec) rec.isActive = false;
+      entity.recurrenceId = null;
+      entity.recurrence = null;
+    }
+
     if (d.isNew) {
       app.state.tasks.unshift(entity);
       appendAudit(app.state, 'CRIAÇÃO', 'Tarefa', `Criada tarefa "${entity.title}".`);
+      if (entity.status === 'COMPLETED' && entity.recurrenceId) {
+        materializeNextOccurrenceIfNeeded(app.state, entity);
+      }
       showSnackbar('Tarefa criada.');
     } else {
       const idx = app.state.tasks.findIndex((t) => t.id === entity.id);
       if (idx >= 0) app.state.tasks[idx] = entity;
+      if (entity.status === 'COMPLETED' && entity.recurrenceId) {
+        materializeNextOccurrenceIfNeeded(app.state, entity);
+      }
       appendAudit(app.state, 'ATUALIZAÇÃO', 'Tarefa', `Atualizada tarefa "${entity.title}".`);
       showSnackbar('Tarefa salva.');
     }
@@ -797,6 +972,27 @@
     app.ui.taskDirty = false;
     render();
     return entity;
+  }
+
+  function toggleTaskCompletion(task) {
+    if (!task) return;
+    const wasDone = task.status === 'COMPLETED';
+    const nowStamp = `${app.state.todayIso}T${app.state.nowTime || '09:30'}`;
+    task.status = wasDone ? 'IN_PROGRESS' : 'COMPLETED';
+    task.updatedAtIso = nowStamp;
+    task.completedAtIso = wasDone ? null : nowStamp;
+    let nextCreated = null;
+    if (!wasDone && task.recurrenceId) {
+      nextCreated = materializeNextOccurrenceIfNeeded(app.state, task);
+    }
+    appendAudit(app.state, 'ATUALIZAÇÃO', 'Tarefa', `Tarefa "${task.title}" marcada como ${LABELS.TaskStatus[task.status]}.`);
+    showSnackbar(
+      wasDone
+        ? 'Tarefa reaberta.'
+        : nextCreated
+          ? `Tarefa concluída · próxima ocorrência gerada (${formatDateBr(nextCreated.dueDateIso).slice(0, 5)}).`
+          : 'Tarefa concluída.'
+    );
   }
 
   function saveApptFromDraft() {
@@ -939,6 +1135,30 @@
       projects: Array.isArray(p.projects) ? p.projects : base.projects,
       events: Array.isArray(p.events) ? p.events : base.events,
       tasks: Array.isArray(p.tasks) ? p.tasks : base.tasks,
+      taskRecurrences: Array.isArray(p.taskRecurrences)
+        ? p.taskRecurrences
+        : (Array.isArray(p.tasks) ? p.tasks.filter((t) => t.recurrence).map((t) => ({
+            id: t.recurrenceId || `rec_${t.id}`,
+            templateTaskId: t.id,
+            title: t.title,
+            description: t.description || '',
+            projectId: t.projectId || null,
+            categoryId: t.categoryId || null,
+            eventId: t.eventId || null,
+            goalId: t.goalId || null,
+            priority: t.priority || 'NORMAL',
+            hasDueTime: Boolean(t.hasDueTime),
+            dueTime: t.dueTime || null,
+            notes: t.notes || '',
+            frequency: t.recurrence.frequency || 'WEEKLY',
+            customIntervalDays: t.recurrence.customIntervalDays || 7,
+            weekdaysMask: t.recurrence.weekdaysMask || 0,
+            startDateIso: t.recurrence.startDateIso || t.dueDateIso || base.todayIso,
+            endDateIso: t.recurrence.endDateIso || null,
+            maxOccurrences: t.recurrence.maxOccurrences || null,
+            isActive: true
+          })) : base.taskRecurrences),
+      recurrenceExceptions: Array.isArray(p.recurrenceExceptions) ? p.recurrenceExceptions : [],
       appointments: Array.isArray(p.appointments) ? p.appointments : base.appointments,
       creditCards: Array.isArray(p.creditCards) ? p.creditCards : base.creditCards,
       statements: Array.isArray(p.statements) ? p.statements : base.statements,
@@ -1134,10 +1354,25 @@
       case 'toggle-task': {
         const tId = target.getAttribute('data-task-id');
         const task = app.state.tasks.find((t) => t.id === tId);
-        if (task) {
-          task.status = task.status === 'COMPLETED' ? 'NOT_STARTED' : 'COMPLETED';
-          appendAudit(app.state, 'ATUALIZAÇÃO', 'Tarefa', `Tarefa "${task.title}" marcada como ${LABELS.TaskStatus[task.status]}.`);
-          showSnackbar(task.status === 'COMPLETED' ? 'Tarefa concluída.' : 'Tarefa reaberta.');
+        if (task) toggleTaskCompletion(task);
+        break;
+      }
+      case 'toggle-virtual-task': {
+        const recId = target.getAttribute('data-recurrence-id');
+        const occDateIso = target.getAttribute('data-occurrence-date-iso');
+        if (recId && occDateIso) {
+          const mat = openOrMaterializeRecurringOccurrence(app.state, recId, occDateIso);
+          if (mat) toggleTaskCompletion(mat);
+        }
+        break;
+      }
+      case 'task-sheet-toggle-complete': {
+        const d = app.ui.taskDraft;
+        if (d && !d.isNew && d.id) {
+          const task = app.state.tasks.find((t) => t.id === d.id);
+          app.ui.taskDraft = null;
+          app.ui.taskDirty = false;
+          if (task) toggleTaskCompletion(task);
         }
         break;
       }
@@ -1145,8 +1380,9 @@
         const tId = target.getAttribute('data-task-id');
         const task = app.state.tasks.find((t) => t.id === tId);
         if (task) {
-          task.dueDateIso = addDaysIso(app.state.todayIso, 1);
-          showSnackbar('Tarefa adiada para amanhã (24/11).');
+          const tomorrowIso = addDaysIso(app.state.todayIso, 1);
+          task.dueDateIso = tomorrowIso;
+          showSnackbar(`Tarefa adiada para amanhã (${formatDateBr(tomorrowIso).slice(0, 5)}).`);
         }
         break;
       }
@@ -1155,6 +1391,18 @@
         if (task) {
           app.ui.taskDraft = EntitySheets.createDraftFromTask(task, {}, app.state);
           app.ui.taskDirty = false;
+          render();
+        }
+        break;
+      }
+      case 'open-event-from-task': {
+        const evId = target.getAttribute('data-event-id');
+        const ev = app.state.events.find((x) => x.id === evId);
+        if (ev) {
+          app.ui.taskDraft = null;
+          app.ui.taskDirty = false;
+          app.ui.eventDraft = EventSheet.createDraftFromEvent(ev, app.state);
+          app.ui.eventDirty = false;
           render();
         }
         break;
@@ -1185,6 +1433,16 @@
         if (app.ui.taskDraft && field) {
           app.ui.taskDraft[field] = !app.ui.taskDraft[field];
           if (field !== 'recurrenceExpanded') app.ui.taskDirty = true;
+          render();
+        }
+        break;
+      }
+      case 'task-toggle-weekday': {
+        const dow = Number(target.getAttribute('data-dow'));
+        if (app.ui.taskDraft && !Number.isNaN(dow)) {
+          const bit = weekdayBit(dow);
+          app.ui.taskDraft.weekdaysMask = Number(app.ui.taskDraft.weekdaysMask || 0) ^ bit;
+          app.ui.taskDirty = true;
           render();
         }
         break;
@@ -1239,13 +1497,14 @@
         }
         app.ui.taskDraft = null;
         app.ui.taskDirty = false;
+        const suggestedCat = suggestExpenseCategoryIdForTask(app.state, savedTask.categoryId);
         app.ui.txDraft = TransactionSheet.createDraftFromTx(null, {
           type: 'EXPENSE',
           description: `Gasto: ${savedTask.title}`,
           taskId: savedTask.id,
           projectId: savedTask.projectId || '',
           eventId: savedTask.eventId || '',
-          categoryId: savedTask.categoryId || 'cat_trabalho'
+          categoryId: suggestedCat || ''
         }, app.state);
         app.ui.txDirty = false;
         render();
@@ -1259,12 +1518,24 @@
         attemptCloseSheet('taskDirty', 'taskDraft', 'DISCARD_TASK', 'rascunho de tarefa');
         break;
       case 'request-delete-task':
-        app.ui.confirmDialog = {
-          type: 'DELETE_TASK',
-          title: 'Excluir tarefa?',
-          message: 'A tarefa e suas subtarefas serão removidas.',
-          confirmLabel: 'Excluir'
-        };
+        if (app.ui.taskDraft?.recurrenceId) {
+          app.ui.confirmDialog = {
+            type: 'DELETE_TASK_RECURRING',
+            title: 'Excluir tarefa recorrente?',
+            message: 'Escolha excluir apenas esta ocorrência ou encerrar toda a série.',
+            altLabel: 'Só esta ocorrência',
+            confirmLabel: 'Toda a série',
+            danger: true
+          };
+        } else {
+          app.ui.confirmDialog = {
+            type: 'DELETE_TASK',
+            title: 'Excluir tarefa?',
+            message: 'A tarefa e suas subtarefas serão removidas (gastos vinculados ficam preservados).',
+            confirmLabel: 'Excluir',
+            danger: true
+          };
+        }
         render();
         break;
 
@@ -1342,6 +1613,12 @@
         const key = target.getAttribute('data-key');
         const val = target.getAttribute('data-value') || null;
         app.ui.agendaFilter[key] = val;
+        if (key === 'kindFilter' && app.ui.agendaFilter.categoryFilterId) {
+          const allowed = contextualCategoriesForAgendaKind(app.state, val);
+          if (!allowed.some((c) => c.id === app.ui.agendaFilter.categoryFilterId)) {
+            app.ui.agendaFilter.categoryFilterId = null;
+          }
+        }
         render();
         break;
       }
@@ -1384,7 +1661,17 @@
             render();
           }
         } else if (sType === 'TASK') {
-          const task = app.state.tasks.find((t) => t.id === sId);
+          const isVirtual = target.getAttribute('data-is-virtual') === 'true';
+          let task = null;
+          if (isVirtual) {
+            const recId = target.getAttribute('data-recurrence-id');
+            const occDateIso = target.getAttribute('data-occurrence-date-iso');
+            if (recId && occDateIso) {
+              task = openOrMaterializeRecurringOccurrence(app.state, recId, occDateIso);
+            }
+          } else {
+            task = app.state.tasks.find((t) => t.id === sId);
+          }
           if (task) {
             app.ui.taskDraft = EntitySheets.createDraftFromTask(task, {}, app.state);
             app.ui.taskDirty = false;
@@ -1499,7 +1786,7 @@
           id: null,
           isNew: true,
           assetCode: code,
-          condition: 'BELOW_OR_EQUAL',
+          condition: 'PRICE_BELOW',
           targetPriceText: q ? formatDecimalPt(q.price, q.price < 20 ? 2 : 2) : '5,70',
           isActive: true
         };
@@ -2389,7 +2676,7 @@
         if (tx) {
           tx.dueDateIso = addDaysIso(app.state.todayIso, 1);
           if (tx.status === 'OVERDUE') tx.status = 'PENDING';
-          showSnackbar('Conta adiada para 24/11/2026.');
+          showSnackbar(`Conta adiada para ${formatDateBr(tx.dueDateIso)}.`);
         }
         break;
       }
@@ -2668,8 +2955,8 @@
             id: `bh_${Date.now()}`,
             briefingType: 'Revisão Noturna',
             dateIso: app.state.todayIso,
-            summaryText: 'Fechamento noturno realizado · pendências encaminhadas para 24/11.',
-            reviewedAt: '23/11/2026 agora'
+            summaryText: `Fechamento noturno realizado · pendências encaminhadas para ${formatDateBr(addDaysIso(app.state.todayIso, 1)).slice(0, 5)}.`,
+            reviewedAt: `${formatDateBr(app.state.todayIso)} agora`
           });
         }
         showSnackbar('Revisão Noturna concluída.');
@@ -2705,11 +2992,42 @@
         break;
       }
 
-      // Diálogo de confirmação genérico
+      // Diálogo de confirmação genérico + escopos recorrentes
       case 'cancel-confirm-dialog':
         app.ui.confirmDialog = null;
         render();
         break;
+      case 'alt-confirm-dialog': {
+        const cd = app.ui.confirmDialog;
+        app.ui.confirmDialog = null;
+        if (!cd) break;
+        if (cd.type === 'SAVE_TASK_SCOPE') {
+          saveTaskFromDraft('THIS_OCCURRENCE_ONLY');
+        } else if (cd.type === 'DELETE_TASK_RECURRING' && app.ui.taskDraft?.id) {
+          const tId = app.ui.taskDraft.id;
+          const recId = app.ui.taskDraft.recurrenceId;
+          const occDate = app.ui.taskDraft.occurrenceDateIso || app.ui.taskDraft.dueDateIso;
+          if (recId && occDate) {
+            app.state.recurrenceExceptions = app.state.recurrenceExceptions || [];
+            if (!app.state.recurrenceExceptions.some((ex) => ex.recurrenceId === recId && ex.occurrenceDateIso === occDate)) {
+              app.state.recurrenceExceptions.push({
+                id: `rex_${Date.now()}`,
+                recurrenceId: recId,
+                occurrenceDateIso: occDate,
+                exceptionType: 'SKIP'
+              });
+            }
+          }
+          app.state.tasks = app.state.tasks.filter((t) => t.id !== tId);
+          app.state.transactions.forEach((tx) => {
+            if (tx.taskId === tId) tx.taskId = null;
+          });
+          app.ui.taskDraft = null;
+          app.ui.taskDirty = false;
+          showSnackbar('Ocorrência excluída da série.');
+        }
+        break;
+      }
       case 'accept-confirm-dialog': {
         const cd = app.ui.confirmDialog;
         app.ui.confirmDialog = null;
@@ -2734,6 +3052,8 @@
           app.ui.projectDraft = null;
           app.ui.projectDirty = false;
           render();
+        } else if (cd.type === 'SAVE_TASK_SCOPE' || cd.type === 'CONFIRM_RECURRENCE_RULE_CHANGE') {
+          saveTaskFromDraft('ENTIRE_SERIES');
         } else if (cd.type === 'DELETE_TX' && app.ui.txDraft?.id) {
           app.state.transactions = app.state.transactions.filter((t) => t.id !== app.ui.txDraft.id);
           app.ui.txDraft = null;
@@ -2751,9 +3071,32 @@
         } else if (cd.type === 'DELETE_TASK' && app.ui.taskDraft?.id) {
           const tId = app.ui.taskDraft.id;
           app.state.tasks = app.state.tasks.filter((t) => t.id !== tId);
+          app.state.transactions.forEach((tx) => {
+            if (tx.taskId === tId) tx.taskId = null;
+          });
           app.ui.taskDraft = null;
           app.ui.taskDirty = false;
           showSnackbar('Tarefa excluída.');
+        } else if (cd.type === 'DELETE_TASK_RECURRING' && app.ui.taskDraft?.id) {
+          const tId = app.ui.taskDraft.id;
+          const recId = app.ui.taskDraft.recurrenceId;
+          if (recId) {
+            const rec = (app.state.taskRecurrences || []).find((r) => r.id === recId);
+            if (rec) rec.isActive = false;
+            app.state.tasks.forEach((t) => {
+              if (t.recurrenceId === recId) {
+                t.recurrenceId = null;
+                t.recurrence = null;
+              }
+            });
+          }
+          app.state.tasks = app.state.tasks.filter((t) => t.id !== tId);
+          app.state.transactions.forEach((tx) => {
+            if (tx.taskId === tId) tx.taskId = null;
+          });
+          app.ui.taskDraft = null;
+          app.ui.taskDirty = false;
+          showSnackbar('Série recorrente encerrada e tarefa excluída.');
         } else if (cd.type === 'DELETE_APPT' && app.ui.apptDraft?.id) {
           const aId = app.ui.apptDraft.id;
           app.state.appointments = app.state.appointments.filter((a) => a.id !== aId);
@@ -2897,7 +3240,13 @@
     if (action === 'change-task-status-select') {
       const task = app.state.tasks.find((t) => t.id === el.getAttribute('data-task-id'));
       if (task) {
+        const nowStamp = `${app.state.todayIso}T${app.state.nowTime || '09:30'}`;
         task.status = el.value;
+        task.updatedAtIso = nowStamp;
+        task.completedAtIso = task.status === 'COMPLETED' ? nowStamp : null;
+        if (task.status === 'COMPLETED' && task.recurrenceId) {
+          materializeNextOccurrenceIfNeeded(app.state, task);
+        }
         appendAudit(app.state, 'KANBAN', 'Tarefa', `"${task.title}" movida para ${LABELS.TaskStatus[task.status]}.`);
         showSnackbar(`Movida para ${LABELS.TaskStatus[task.status]}.`);
       }

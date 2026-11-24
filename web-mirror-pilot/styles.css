@@ -1337,10 +1337,14 @@ button, input, select, textarea {
 
 .nexus-device-frame.is-two-pane .nx-two-pane-agenda {
   display: grid;
-  grid-template-columns: 0.46fr 0.54fr;
+  grid-template-columns: 0.45fr 0.55fr;
   gap: 14px;
   flex: 1;
   min-height: 0;
+}
+
+.nexus-device-frame.is-two-pane .nx-two-pane-agenda.is-week-mode {
+  grid-template-columns: 0.54fr 0.46fr;
 }
 
 .nexus-device-frame.is-two-pane .nx-two-pane-market {

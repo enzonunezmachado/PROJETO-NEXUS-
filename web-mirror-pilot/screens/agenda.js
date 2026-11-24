@@ -4,17 +4,17 @@
  */
 (function () {
   const {
-    LABELS,
     addDaysIso,
     getWeekDatesIso,
-    parseIsoDate,
     toIsoDate,
     shiftMonthIso,
+    formatBrl,
     formatMonthTitle,
     formatDayMonth,
     formatWeekdayShort,
     formatDateByPattern,
-    computeAgendaOccurrences
+    computeAgendaOccurrences,
+    contextualCategoriesForAgendaKind
   } = window.NexusPilot.Data;
   const {
     esc,
@@ -58,20 +58,31 @@
       label = formatMonthTitle(selectedDateIso.slice(0, 7));
     } else if (viewMode === 'WEEK') {
       const week = getWeekDatesIso(selectedDateIso);
-      label = `${formatDayMonth(week[0])} – ${formatDayMonth(week[6])}`;
+      label = `Semana ${formatDayMonth(week[0])} – ${formatDayMonth(week[6])}`;
     } else {
       label = formatDateByPattern(selectedDateIso, 'DD_MM_WEEKDAY');
     }
     const isToday = selectedDateIso === todayIso;
+    const subHint = isCollapsed
+      ? `Dia ${formatDayMonth(selectedDateIso)} · Toque para expandir`
+      : (!isToday ? 'Toque para voltar a hoje' : '');
+
     return `
       <div class="nx-month-bar" data-nexus-component="DateNavigationBar" data-nexus-source="AgendaScreen.kt:DateNavigationBar">
         <button type="button" class="nx-icon-btn" data-action="agenda-nav" data-dir="-1" aria-label="Período anterior">${ICONS.chevLeft}</button>
-        <div style="display:flex;align-items:center;gap:8px;min-width:0">
-          <span class="nx-title-md tnum" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</span>
-          ${!isToday ? `<button type="button" class="nx-btn-text nx-accent" data-action="agenda-go-today" style="padding:2px 6px;font-size:11px">Hoje</button>` : ''}
-          ${(viewMode === 'MONTH' || viewMode === 'WEEK') ? `
-            <button type="button" class="nx-icon-btn" style="width:28px;height:28px" data-action="agenda-toggle-calendar" aria-label="${isCollapsed ? 'Expandir' : 'Recolher'}">
-              ${isCollapsed ? ICONS.chevronDown : ICONS.chevronUp}
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;flex:1">
+          <div style="display:flex;align-items:center;gap:6px;min-width:0;max-width:100%">
+            <span class="nx-title-md tnum" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:${!isToday ? 'pointer' : 'default'}" ${!isToday ? 'data-action="agenda-go-today"' : ''}>${esc(label)}</span>
+            ${!isToday ? `<button type="button" class="nx-btn-text nx-accent" data-action="agenda-go-today" style="padding:2px 6px;font-size:11px">Hoje</button>` : ''}
+            ${(viewMode === 'MONTH' || viewMode === 'WEEK') ? `
+              <button type="button" class="nx-icon-btn" style="width:28px;height:28px" data-action="agenda-toggle-calendar" aria-label="${isCollapsed ? 'Expandir' : 'Recolher'}">
+                ${isCollapsed ? ICONS.chevronDown : ICONS.chevronUp}
+              </button>
+            ` : ''}
+          </div>
+          ${subHint ? `
+            <button type="button" style="appearance:none;border:0;background:transparent;padding:0;cursor:pointer" class="nx-label-sm nx-text-secondary tnum" data-action="${isCollapsed ? 'agenda-toggle-calendar' : 'agenda-go-today'}">
+              ${esc(subHint)}
             </button>
           ` : ''}
         </div>
@@ -83,7 +94,7 @@
   function renderMonthCalendarGrid(selectedDateIso, todayIso, occurrences) {
     const monthIso = selectedDateIso.slice(0, 7);
     const cells = getMonthCalendarCells(monthIso);
-    const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+    const weekdays = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D'];
     const occByDay = new Map();
     occurrences.forEach((o) => {
       if (!occByDay.has(o.occurrenceDateIso)) occByDay.set(o.occurrenceDateIso, []);
@@ -127,12 +138,34 @@
                 <span class="nx-title-sm tnum">${esc(formatDayMonth(iso))}</span>
               </div>
               <div class="nx-week-day-items">
-                ${dayOccs.length ? dayOccs.map((occ) => `
-                  <button type="button" class="nx-week-mini-item" style="border-left-color:${esc(occ.colorHex || 'var(--nx-accent-neon)')}" data-action="open-agenda-occurrence" data-source-type="${esc(occ.sourceType)}" data-source-id="${esc(occ.sourceId)}">
-                    <span class="nx-label-sm" style="font-weight:600;color:var(--nx-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;${occ.isDoneOrSettled ? 'text-decoration:line-through;opacity:0.65' : ''}">${esc(occ.title)}</span>
-                    <span class="nx-label-sm nx-text-secondary tnum" style="font-size:10px">${esc(occ.isAllDay ? 'Dia todo' : occ.sortTime)}</span>
-                  </button>
-                `).join('') : `<span class="nx-label-sm nx-text-secondary" style="opacity:0.7">Livre</span>`}
+                ${dayOccs.length ? dayOccs.map((occ) => {
+                  const dotColor = occ.isOverdue && !occ.isDoneOrSettled
+                    ? 'var(--nx-danger)'
+                    : occ.isDoneOrSettled
+                      ? 'var(--nx-positive)'
+                      : occ.kind === 'APPOINTMENT'
+                        ? (occ.colorHex || 'var(--nx-info)')
+                        : occ.kind === 'EVENT'
+                          ? 'var(--nx-accent-neon)'
+                          : 'var(--nx-text-secondary)';
+                  const dotRadius = occ.kind === 'TASK' ? '2px' : '50%';
+                  const strikeTitle = occ.isDoneOrSettled && occ.kind === 'TASK';
+                  const virtualAttrs = occ.isVirtualRecurrence
+                    ? `data-is-virtual="true" data-recurrence-id="${esc(occ.recurrenceId || '')}" data-occurrence-date-iso="${esc(occ.occurrenceDateIso)}"`
+                    : '';
+                  const timeLabel = occ.isAllDay ? 'Dia todo' : occ.sortTime;
+                  const amountText = occ.amountCents ? ` · ${occ.isIncome ? '+' : '-'}${formatBrl(occ.amountCents)}` : '';
+                  return `
+                    <button type="button" class="nx-week-mini-item" style="border-left-color:${esc(occ.colorHex || 'var(--nx-accent-neon)')}" data-action="open-agenda-occurrence" data-source-type="${esc(occ.sourceType)}" data-source-id="${esc(occ.sourceId)}" ${virtualAttrs}>
+                      <span style="display:flex;align-items:center;gap:4px;width:100%;min-width:0">
+                        <span style="width:7px;height:7px;flex-shrink:0;border-radius:${dotRadius};background:${dotColor}"></span>
+                        <span class="nx-label-sm" style="font-weight:600;color:var(--nx-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;${strikeTitle ? 'text-decoration:line-through;opacity:0.65' : ''}">${esc(occ.title)}</span>
+                        ${occ.recurrenceId ? `<span class="nx-accent" style="display:inline-flex;flex-shrink:0;transform:scale(0.75)">${ICONS.repeat}</span>` : ''}
+                      </span>
+                      <span class="nx-label-sm nx-text-secondary tnum" style="font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(timeLabel)}${esc(amountText)}</span>
+                    </button>
+                  `;
+                }).join('') : `<span class="nx-label-sm nx-text-secondary" style="opacity:0.7">Livre</span>`}
               </div>
             </div>
           `;
@@ -142,8 +175,11 @@
   }
 
   function renderAllDayBand(occ) {
+    const virtualAttrs = occ.isVirtualRecurrence
+      ? `data-is-virtual="true" data-recurrence-id="${esc(occ.recurrenceId || '')}" data-occurrence-date-iso="${esc(occ.occurrenceDateIso)}"`
+      : '';
     return `
-      <button type="button" class="nx-card is-elevated is-clickable" style="border-left:4px solid ${esc(occ.colorHex || 'var(--nx-accent-neon)')};padding:10px 12px" data-nexus-component="AllDayEventBandCard" data-nexus-source="AgendaScreen.kt:AllDayEventBandCard" data-action="open-agenda-occurrence" data-source-type="${esc(occ.sourceType)}" data-source-id="${esc(occ.sourceId)}">
+      <button type="button" class="nx-card is-elevated is-clickable" style="border-left:4px solid ${esc(occ.colorHex || 'var(--nx-accent-neon)')};padding:10px 12px" data-nexus-component="AllDayEventBandCard" data-nexus-source="AgendaScreen.kt:AllDayEventBandCard" data-action="open-agenda-occurrence" data-source-type="${esc(occ.sourceType)}" data-source-id="${esc(occ.sourceId)}" ${virtualAttrs}>
         <div class="nx-row-between" style="width:100%">
           <span class="nx-title-sm">${esc(occ.title)}</span>
           <span class="nx-badge is-info">Dia inteiro</span>
@@ -153,25 +189,27 @@
     `;
   }
 
-  function renderSelectedDayPanel(selectedDateIso, selectedDayItems, state) {
+  function renderSelectedDayPanel(selectedDateIso, selectedDayItems, state, { showHeader = true, emptyMessage = null } = {}) {
     const dayBands = selectedDayItems.filter((o) => o.kind === 'EVENT' && o.isAllDay);
     const regularItems = selectedDayItems.filter((o) => !(o.kind === 'EVENT' && o.isAllDay));
 
     return `
-      <div class="nx-card" style="padding:12px 14px">
-        <div class="nx-row-between">
-          <div>
-            <div class="nx-title-md tnum">${esc(formatDateByPattern(selectedDateIso, 'WEEKDAY_DD_MM_YYYY'))}</div>
-            <div class="nx-label-sm nx-text-secondary tnum">${selectedDayItems.length} ${selectedDayItems.length === 1 ? 'item' : 'itens'} neste dia</div>
+      ${showHeader ? `
+        <div class="nx-card" style="padding:12px 14px">
+          <div class="nx-row-between">
+            <div>
+              <div class="nx-title-md tnum">${esc(formatDateByPattern(selectedDateIso, 'WEEKDAY_DD_MM_YYYY'))}</div>
+              <div class="nx-label-sm nx-text-secondary tnum">${selectedDayItems.length} ${selectedDayItems.length === 1 ? 'item' : 'itens'} neste dia</div>
+            </div>
+            <button type="button" class="nx-btn-text" data-action="new-appointment" data-date-iso="${esc(selectedDateIso)}">+ Novo</button>
           </div>
-          <button type="button" class="nx-btn-text" data-action="new-appointment" data-date-iso="${esc(selectedDateIso)}">+ Novo</button>
         </div>
-      </div>
+      ` : ''}
 
       ${selectedDayItems.length === 0 ? `
         <div class="nx-card" style="align-items:center;text-align:center;padding:24px">
           <span class="nx-title-md">Nada marcado para ${esc(formatDayMonth(selectedDateIso))}</span>
-          <span class="nx-body-sm">Compromissos, tarefas com prazo, eventos, vencimentos e projetos deste dia aparecem aqui.</span>
+          <span class="nx-body-sm">${esc(emptyMessage || 'Compromissos, tarefas com prazo, eventos, vencimentos e projetos deste dia aparecem aqui.')}</span>
           <button type="button" class="nx-btn-outlined" data-action="new-appointment" data-date-iso="${esc(selectedDateIso)}">+ Novo compromisso</button>
         </div>
       ` : `
@@ -182,8 +220,8 @@
   }
 
   function renderAgendaScreen(state, ui) {
-    const af = ui.agendaFilter || { viewMode: 'WEEK', selectedDateIso: state.todayIso, kindFilter: null, categoryFilterId: null, showPaid: false, isCalendarExpanded: true };
-    const viewMode = af.viewMode || 'WEEK';
+    const af = ui.agendaFilter || { viewMode: 'MONTH', selectedDateIso: state.todayIso, kindFilter: null, categoryFilterId: null, showPaid: false, isCalendarExpanded: true };
+    const viewMode = af.viewMode || 'MONTH';
     const selectedDateIso = af.selectedDateIso || state.todayIso;
     const isExpanded = af.isCalendarExpanded !== false;
     const isTwoPane = ui.viewport === 'tablet-landscape' || ui.viewport === 'fluid';
@@ -239,8 +277,8 @@
     `;
 
     const conflictBanner = conflictsInView.length > 0 ? renderAlertBanner({
-      title: `${conflictsInView.length} compromisso(s) com conflito de horário`,
-      subtitle: 'Verifique os horários sobrepostos na lista abaixo.',
+      title: `Atenção: ${conflictsInView.length} compromisso(s) com conflito de horário neste período.`,
+      subtitle: 'Verifique os horários sobrepostos para evitar choque de agenda.',
       severity: 'warning'
     }) : '';
 
@@ -269,9 +307,9 @@
       return `
         <div style="display:flex;flex-direction:column;flex:1;min-height:0" data-nexus-component="AgendaScreen" data-nexus-source="AgendaScreen.kt:TwoPane" data-nexus-status="reproduzido">
           ${headerHtml}
-          <div class="nx-two-pane-agenda" style="padding:0 20px 16px">
+          <div class="nx-two-pane-agenda ${viewMode === 'WEEK' ? 'is-week-mode' : ''}" style="padding:0 20px 16px">
             <div class="nx-pane-scroll" style="padding-bottom:84px">
-              ${renderDateNavigationBar(viewMode, selectedDateIso, state.todayIso, !isExpanded)}
+              ${renderDateNavigationBar(viewMode, selectedDateIso, state.todayIso, (viewMode === 'MONTH' || viewMode === 'WEEK') && !isExpanded)}
               ${conflictBanner}
               ${viewMode === 'WEEK' && isExpanded ? renderHorizontalWeekBoard(weekDays, selectedDateIso, state.todayIso, displayedOccurrences) : ''}
               ${(viewMode === 'DAY' || (viewMode === 'MONTH' && isExpanded)) ? renderMonthCalendarGrid(selectedDateIso, state.todayIso, occurrences) : ''}
@@ -284,17 +322,31 @@
       `;
     }
 
+    // Single-pane (Mobile & Tablet Retrato):
+    // Em WEEK expandido no Android (AgendaScreen.kt:456-498), renderiza SOMENTE HorizontalWeekBoard (sem duplicar SelectedDayPanel embaixo).
+    // Em WEEK recolhido, renderiza apenas os itens do dia selecionado (ou o estado vazio orientando expandir).
+    let singlePaneContent = '';
+    if (viewMode === 'WEEK') {
+      singlePaneContent = isExpanded
+        ? renderHorizontalWeekBoard(weekDays, selectedDateIso, state.todayIso, displayedOccurrences)
+        : renderSelectedDayPanel(selectedDateIso, selectedDayItems, state, {
+            showHeader: false,
+            emptyMessage: 'Expanda a semana acima para ver todos os dias ou adicione um novo compromisso.'
+          });
+    } else {
+      singlePaneContent = `
+        ${viewMode === 'MONTH' && isExpanded ? renderMonthCalendarGrid(selectedDateIso, state.todayIso, occurrences) : ''}
+        ${renderSelectedDayPanel(selectedDateIso, selectedDayItems, state)}
+      `;
+    }
+
     return `
       <div style="display:flex;flex-direction:column;flex:1;min-height:0" data-nexus-component="AgendaScreen" data-nexus-source="AgendaScreen.kt" data-nexus-status="reproduzido">
         ${headerHtml}
         <div class="nx-screen-scroll">
-          ${renderDateNavigationBar(viewMode, selectedDateIso, state.todayIso, !isExpanded)}
-          ${viewMode === 'MONTH' && isExpanded ? renderMonthCalendarGrid(selectedDateIso, state.todayIso, occurrences) : ''}
+          ${renderDateNavigationBar(viewMode, selectedDateIso, state.todayIso, (viewMode === 'MONTH' || viewMode === 'WEEK') && !isExpanded)}
           ${conflictBanner}
-          ${viewMode === 'WEEK' ? `
-            ${isExpanded ? renderHorizontalWeekBoard(weekDays, selectedDateIso, state.todayIso, displayedOccurrences) : ''}
-            ${renderSelectedDayPanel(selectedDateIso, selectedDayItems, state)}
-          ` : renderSelectedDayPanel(selectedDateIso, selectedDayItems, state)}
+          ${singlePaneContent}
         </div>
       </div>
     `;
@@ -302,33 +354,50 @@
 
   function renderAgendaFilterSheet(state, ui) {
     const af = ui.agendaFilter || {};
+    const contextualCategories = contextualCategoriesForAgendaKind(state, af.kindFilter || null);
+    const showPaidToggle = !af.kindFilter || af.kindFilter === 'FINANCE';
+
     return `
       <div class="nx-sheet-backdrop" data-action="close-overlays">
         <div class="nx-sheet" role="dialog" aria-modal="true" data-nexus-component="AgendaFilterBottomSheet" data-nexus-source="AgendaScreen.kt:AgendaFilterSheet" data-nexus-status="reproduzido" onclick="event.stopPropagation()">
           <div class="nx-sheet-handle"></div>
           <div class="nx-sheet-body">
             <div class="nx-row-between">
-              <h3 class="nx-title-lg">Filtros da Agenda</h3>
-              <button type="button" class="nx-btn-text" data-action="clear-agenda-filters">Limpar</button>
+              <h3 class="nx-title-lg">Filtrar Agenda</h3>
+              <button type="button" class="nx-btn-text" data-action="clear-agenda-filters">Limpar filtros</button>
             </div>
-            <div class="nx-title-sm">Tipo de ocorrência</div>
+            <div class="nx-title-sm">Tipo de registro</div>
             <div class="nx-chip-row">
-              <button type="button" class="nx-chip ${!af.kindFilter ? 'is-active' : ''}" data-action="set-agenda-filter" data-key="kindFilter" data-value="">Todos</button>
+              <button type="button" class="nx-chip ${!af.kindFilter ? 'is-active' : ''}" data-action="set-agenda-filter" data-key="kindFilter" data-value="">Tudo</button>
               ${Object.entries(KIND_LABELS).map(([k, l]) => `
                 <button type="button" class="nx-chip ${af.kindFilter === k ? 'is-active' : ''}" data-action="set-agenda-filter" data-key="kindFilter" data-value="${k}">${esc(l)}</button>
               `).join('')}
             </div>
+
             <div class="nx-title-sm">Categoria</div>
-            <div class="nx-chip-row">
-              <button type="button" class="nx-chip ${!af.categoryFilterId ? 'is-active' : ''}" data-action="set-agenda-filter" data-key="categoryFilterId" data-value="">Todas</button>
-              ${state.categories.map((c) => `
-                <button type="button" class="nx-chip ${af.categoryFilterId === c.id ? 'is-active' : ''}" data-action="set-agenda-filter" data-key="categoryFilterId" data-value="${esc(c.id)}">${esc(c.name)}</button>
-              `).join('')}
-            </div>
-            <div class="nx-row-between" style="padding:4px 0">
-              <span class="nx-body-md">Mostrar contas já pagas/liquidadas</span>
-              <button type="button" class="nx-switch ${af.showPaid ? 'is-on' : ''}" data-action="toggle-agenda-show-paid"></button>
-            </div>
+            ${!af.kindFilter ? `
+              <p class="nx-body-sm">Selecione um tipo acima para filtrar pelas categorias daquele módulo.</p>
+            ` : af.kindFilter === 'PROJECT' ? `
+              <p class="nx-body-sm">Nenhuma categoria específica disponível para Projetos.</p>
+            ` : `
+              <div class="nx-chip-row">
+                <button type="button" class="nx-chip ${!af.categoryFilterId ? 'is-active' : ''}" data-action="set-agenda-filter" data-key="categoryFilterId" data-value="">Todas</button>
+                ${contextualCategories.map((c) => `
+                  <button type="button" class="nx-chip ${af.categoryFilterId === c.id ? 'is-active' : ''}" data-action="set-agenda-filter" data-key="categoryFilterId" data-value="${esc(c.id)}">${esc(c.name)}</button>
+                `).join('')}
+              </div>
+            `}
+
+            ${showPaidToggle ? `
+              <div class="nx-row-between" style="padding:4px 0">
+                <div style="min-width:0;padding-right:10px">
+                  <div class="nx-body-md">Mostrar já pagos</div>
+                  <div class="nx-label-sm nx-text-secondary">Exibe contas e faturas já liquidadas neste período.</div>
+                </div>
+                <button type="button" class="nx-switch ${af.showPaid ? 'is-on' : ''}" data-action="toggle-agenda-show-paid" role="switch" aria-checked="${Boolean(af.showPaid)}"></button>
+              </div>
+            ` : ''}
+
             <button type="button" class="nx-btn-primary" data-action="close-overlays">Aplicar</button>
           </div>
         </div>

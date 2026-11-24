@@ -9,7 +9,11 @@
     formatDateBr,
     formatMonthTitle,
     computeTaskCounts,
-    computeTaskExpenseCents
+    computeTaskExpenseCents,
+    isTaskOverdue,
+    formatContextualDueDate,
+    getActiveTaskRecurrence,
+    formatRecurrenceSummary
   } = window.NexusPilot.Data;
 
   function esc(str) {
@@ -121,22 +125,19 @@
 
   function renderTaskRowCard(task, state, { showPostpone = false } = {}) {
     const isCompleted = task.status === 'COMPLETED';
-    const isOverdue = !isCompleted && task.status !== 'CANCELLED' && task.dueDateIso && task.dueDateIso < state.todayIso;
+    const isCancelled = task.status === 'CANCELLED';
+    const isTerminal = isCompleted || isCancelled;
+    const overdue = isTaskOverdue(task, state);
     const proj = state.projects.find((p) => p.id === task.projectId);
-    const ev = state.events.find((e) => e.id === task.eventId);
+    const activeRec = getActiveTaskRecurrence(state, task);
     const counts = computeTaskCounts(task);
     const expenseCents = computeTaskExpenseCents(state, task.id);
 
     const metaParts = [LABELS.TaskStatus[task.status] || task.status];
     if (proj) metaParts.push(proj.name);
-    if (ev) metaParts.push(`Evento: ${ev.name}`);
-    if (task.dueDateIso) {
-      const dateStr = task.dueDateIso === state.todayIso ? 'Hoje' : task.dueDateIso === '2026-11-24' ? 'Amanhã' : formatDateBr(task.dueDateIso);
-      metaParts.push(task.hasDueTime && task.dueTime ? `${dateStr}, às ${task.dueTime}` : dateStr);
-    }
-    if (task.recurrence) {
-      metaParts.push(LABELS.TaskRecurrenceFrequency[task.recurrence.frequency] || 'Recorrente');
-    }
+    const dueStr = formatContextualDueDate(task, state.todayIso);
+    if (dueStr) metaParts.push(dueStr);
+    if (activeRec) metaParts.push(formatRecurrenceSummary(activeRec));
     if (counts.subtasksTotal > 0) metaParts.push(`${counts.subtasksDone}/${counts.subtasksTotal} subtarefas`);
     if (expenseCents > 0) metaParts.push(`Gasto: ${formatBrl(expenseCents)}`);
 
@@ -153,11 +154,12 @@
             ${isCompleted ? ICONS.checkCircle : ICONS.circle}
           </button>
           <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;cursor:pointer" data-action="open-task" data-task-id="${esc(task.id)}">
-            <div class="nx-title-md" style="${isCompleted ? 'text-decoration:line-through;color:var(--nx-text-secondary)' : ''}">${esc(task.title)}</div>
+            <div class="nx-title-md" style="${isTerminal ? 'text-decoration:line-through;color:var(--nx-text-secondary)' : ''}">${esc(task.title)}</div>
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              ${isOverdue
+              ${overdue
                 ? `<span class="nx-dot" style="background:var(--nx-danger)"></span><span class="nx-label-sm nx-danger" style="font-weight:600">Atrasada</span>`
                 : `<span class="nx-dot" style="background:${prioColor}"></span>`}
+              ${activeRec ? `<span class="nx-accent" style="display:inline-flex" aria-label="Recorrente">${ICONS.repeat}</span>` : ''}
               <span class="nx-meta-line tnum">${esc(metaParts.join(' · '))}</span>
             </div>
           </div>
@@ -285,25 +287,25 @@
           <div class="nx-progress-fill" style="width:${pr.progressPercent}%;background:${p.status === 'COMPLETED' ? 'var(--nx-positive)' : 'var(--nx-accent-neon)'}"></div>
         </div>
         <div class="nx-row-between nx-label-md nx-text-secondary tnum" style="width:100%">
-          <span>${pr.completedTasks}/${pr.totalTasks} tarefa(s) · ${pr.progressPercent}%</span>
+          <span>${pr.completedTasks}/${pr.totalTasks} tarefas concluídas · ${pr.progressPercent}%</span>
           <span>${p.deadlineDateIso ? `Prazo ${formatDateBr(p.deadlineDateIso)}` : 'Sem prazo'}</span>
         </div>
-        ${(pr.estimatedCostCents > 0 || goal) ? `
-          <div class="nx-label-sm nx-text-secondary tnum" style="text-align:left">
-            ${pr.estimatedCostCents > 0 ? `Custos: ${formatBrl(pr.estimatedCostCents)} (pago ${formatBrl(pr.paidCostCents)})` : ''}
-            ${pr.estimatedCostCents > 0 && goal ? ' · ' : ''}
-            ${goal ? `Objetivo: ${goal.title}` : ''}
-          </div>
-        ` : ''}
+        <div class="nx-label-sm nx-text-secondary tnum" style="text-align:left">
+          Prioridade: ${esc(LABELS.TaskPriority[p.priority] || p.priority)}${pr.estimatedCostCents > 0 ? ` · Custos: ${formatBrl(pr.estimatedCostCents)} (pago ${formatBrl(pr.paidCostCents)})` : ''}${goal ? ` · Objetivo: ${goal.title}` : ''}
+        </div>
       </button>
     `;
   }
 
   function renderAgendaOccurrenceRow(occ, state, { showDateInMeta = false } = {}) {
     let leadingHtml = '';
+    const virtualAttrs = occ.isVirtualRecurrence
+      ? `data-is-virtual="true" data-recurrence-id="${esc(occ.recurrenceId || '')}" data-occurrence-date-iso="${esc(occ.occurrenceDateIso)}"`
+      : '';
+
     if (occ.sourceType === 'TASK') {
       leadingHtml = `
-        <button type="button" class="nx-occ-badge-task ${occ.isDoneOrSettled ? 'is-done' : ''}" data-action="toggle-task" data-task-id="${esc(occ.sourceId)}" aria-label="${occ.isDoneOrSettled ? 'Reabrir tarefa' : 'Concluir tarefa'}">
+        <button type="button" class="nx-occ-badge-task ${occ.isDoneOrSettled ? 'is-done' : ''}" data-action="${occ.isVirtualRecurrence ? 'toggle-virtual-task' : 'toggle-task'}" data-task-id="${esc(occ.sourceId)}" ${virtualAttrs} aria-label="${occ.isDoneOrSettled ? 'Reabrir tarefa' : 'Concluir tarefa'}">
           ${occ.isDoneOrSettled ? ICONS.check : ''}
         </button>
       `;
@@ -316,38 +318,48 @@
     } else if (occ.sourceType === 'APPOINTMENT') {
       leadingHtml = `<span class="nx-occ-bar-appt" style="background:${esc(occ.colorHex || 'var(--nx-info)')}"></span>`;
     } else if (occ.sourceType === 'EVENT') {
-      leadingHtml = `<span class="nx-occ-badge-box" style="color:var(--nx-accent-neon);border-color:rgba(124,255,178,0.45)">EV</span>`;
+      leadingHtml = `<span class="nx-occ-badge-box" style="color:var(--nx-accent-neon);border-color:rgba(124,255,178,0.45);display:inline-flex;align-items:center;justify-content:center;padding:4px">${ICONS.events}</span>`;
     } else if (occ.sourceType === 'STATEMENT') {
-      leadingHtml = `<span class="nx-occ-badge-box" style="color:var(--nx-warning);border-color:rgba(229,160,0,0.45)">FAT</span>`;
+      leadingHtml = `<span class="nx-occ-badge-box" style="color:${occ.isOverdue ? 'var(--nx-danger)' : 'var(--nx-warning)'};border-color:${occ.isOverdue ? 'rgba(229,72,77,0.45)' : 'rgba(229,160,0,0.45)'}">R$</span>`;
     } else {
-      leadingHtml = `<span class="nx-occ-badge-box" style="color:var(--nx-info);border-color:rgba(76,139,245,0.45)">PRJ</span>`;
+      leadingHtml = `<span class="nx-occ-badge-box" style="color:var(--nx-info);border-color:rgba(76,139,245,0.45);display:inline-flex;align-items:center;justify-content:center;padding:4px">${ICONS.flag}</span>`;
     }
 
+    const isElevated = occ.kind === 'APPOINTMENT' || occ.kind === 'EVENT';
+    const strikeTitle = occ.isDoneOrSettled && occ.kind === 'TASK';
     const metaParts = [];
     if (showDateInMeta) metaParts.push(formatDateBr(occ.occurrenceDateIso));
     if (occ.subtitle) metaParts.push(occ.subtitle);
 
+    const amountTone = occ.isIncome
+      ? 'var(--nx-positive)'
+      : occ.isDoneOrSettled
+        ? 'var(--nx-text-secondary)'
+        : occ.isOverdue
+          ? 'var(--nx-danger)'
+          : 'var(--nx-text-primary)';
+
     return `
-      <div class="nx-card is-elevated" data-nexus-component="AgendaOccurrenceRow" data-nexus-source="AgendaScreen.kt:AgendaOccurrenceRow" data-nexus-entity="${esc(occ.sourceType.toLowerCase())}:${esc(occ.sourceId)}">
+      <div class="nx-card ${isElevated ? 'is-elevated' : ''}" data-nexus-component="AgendaOccurrenceRow" data-nexus-source="AgendaScreen.kt:AgendaOccurrenceRow" data-nexus-entity="${esc(occ.sourceType.toLowerCase())}:${esc(occ.sourceId)}">
         <div class="nx-item-row" style="align-items:center">
           ${leadingHtml}
-          <div style="flex:1;min-width:0;cursor:pointer;display:flex;flex-direction:column;gap:3px" data-action="open-agenda-occurrence" data-source-type="${esc(occ.sourceType)}" data-source-id="${esc(occ.sourceId)}">
+          <div style="flex:1;min-width:0;cursor:pointer;display:flex;flex-direction:column;gap:3px" data-action="open-agenda-occurrence" data-source-type="${esc(occ.sourceType)}" data-source-id="${esc(occ.sourceId)}" ${virtualAttrs}>
             <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              <span class="nx-title-md" style="${occ.isDoneOrSettled ? 'text-decoration:line-through;color:var(--nx-text-secondary)' : ''}">${esc(occ.title)}</span>
+              <span class="nx-title-md" style="${strikeTitle ? 'text-decoration:line-through;color:var(--nx-text-secondary)' : ''}">${esc(occ.title)}</span>
               ${occ.isOverdue && !occ.isDoneOrSettled ? `<span class="nx-badge is-danger">Atrasado</span>` : ''}
-              ${occ.isVirtualRecurrence ? `<span class="nx-badge is-neutral">${ICONS.repeat} Recorrente</span>` : ''}
+              ${occ.recurrenceId ? `<span class="nx-accent" style="display:inline-flex;align-items:center" title="Tarefa recorrente">${ICONS.repeat}</span>` : ''}
             </div>
             <span class="nx-label-md nx-text-secondary tnum">${esc(metaParts.join(' · '))}</span>
             ${occ.hasConflict ? `
               <div style="display:flex;align-items:center;gap:5px" class="nx-warning">
                 ${ICONS.warning}
-                <span class="nx-label-sm">Conflito: ${esc((occ.conflictTitles || []).join(', '))}</span>
+                <span class="nx-label-sm">Conflito de horário com: ${esc((occ.conflictTitles || []).join(', '))}</span>
               </div>
             ` : ''}
           </div>
           ${occ.amountCents ? `
-            <span class="nx-title-sm tnum" style="cursor:pointer;color:${occ.isOverdue ? 'var(--nx-danger)' : 'var(--nx-text-primary)'};white-space:nowrap" data-action="open-agenda-occurrence" data-source-type="${esc(occ.sourceType)}" data-source-id="${esc(occ.sourceId)}">
-              ${esc(formatBrl(occ.amountCents))}
+            <span class="nx-title-sm tnum" style="cursor:pointer;color:${amountTone};white-space:nowrap" data-action="open-agenda-occurrence" data-source-type="${esc(occ.sourceType)}" data-source-id="${esc(occ.sourceId)}" ${virtualAttrs}>
+              ${occ.isIncome ? '+' : '-'}${esc(formatBrl(occ.amountCents))}
             </span>
           ` : ''}
         </div>

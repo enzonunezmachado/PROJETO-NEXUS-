@@ -75,6 +75,7 @@
   function createInitialState() {
     return {
       todayIso: '2026-11-23',
+      nowTime: '09:30',
       selectedMonthIso: '2026-11',
       userName: 'Gabriel',
       settings: {
@@ -321,7 +322,11 @@
             { id: 'st_2', title: 'Gerar QR Code offline na carteira', isDone: false }
           ],
           recurrence: null,
+          recurrenceId: null,
+          occurrenceDateIso: null,
           reminderMinutesBefore: 30,
+          updatedAtIso: '2026-11-23T08:30',
+          completedAtIso: null,
           notes: 'Chegar 30 min antes do painel inicial.'
         },
         {
@@ -342,8 +347,12 @@
             { id: 'st_4', title: 'Validar parcelas Monitor Dell', isDone: false },
             { id: 'st_5', title: 'Agendar pagamento total', isDone: false }
           ],
-          recurrence: { frequency: 'MONTHLY', startDateIso: '2026-10-21', endMode: 'NONE', customIntervalDays: 30, weekdaysMask: 0 },
+          recurrenceId: 'rec_fatura_uv',
+          occurrenceDateIso: '2026-11-21',
+          recurrence: { frequency: 'MONTHLY', startDateIso: '2026-10-21', endMode: 'NONE', endDateIso: null, maxOccurrences: null, customIntervalDays: 30, weekdaysMask: 0 },
           reminderMinutesBefore: 60,
+          updatedAtIso: '2026-11-21T10:00',
+          completedAtIso: null,
           notes: ''
         },
         {
@@ -366,7 +375,11 @@
             { id: 'st_9', title: 'Publicar resumo', isDone: false }
           ],
           recurrence: null,
+          recurrenceId: null,
+          occurrenceDateIso: null,
           reminderMinutesBefore: 15,
+          updatedAtIso: '2026-11-23T09:00',
+          completedAtIso: null,
           notes: ''
         },
         {
@@ -384,7 +397,11 @@
           goalId: 'pg_1',
           subtasks: [],
           recurrence: null,
+          recurrenceId: null,
+          occurrenceDateIso: null,
           reminderMinutesBefore: 30,
+          updatedAtIso: '2026-11-22T15:00',
+          completedAtIso: null,
           notes: ''
         },
         {
@@ -402,7 +419,11 @@
           goalId: null,
           subtasks: [],
           recurrence: null,
+          recurrenceId: null,
+          occurrenceDateIso: null,
           reminderMinutesBefore: null,
+          updatedAtIso: '2026-11-20T11:20',
+          completedAtIso: null,
           notes: 'Aguardando confirmação das medidas da mesa.'
         },
         {
@@ -420,7 +441,11 @@
           goalId: 'pg_1',
           subtasks: [{ id: 'st_10', title: 'Validar schema backup v7', isDone: true }],
           recurrence: null,
+          recurrenceId: null,
+          occurrenceDateIso: null,
           reminderMinutesBefore: null,
+          updatedAtIso: '2026-11-18T18:00',
+          completedAtIso: '2026-11-18T18:00',
           notes: ''
         },
         {
@@ -438,7 +463,11 @@
           goalId: null,
           subtasks: [],
           recurrence: null,
+          recurrenceId: null,
+          occurrenceDateIso: null,
           reminderMinutesBefore: null,
+          updatedAtIso: '2026-11-22T20:10',
+          completedAtIso: '2026-11-22T20:10',
           notes: ''
         },
         {
@@ -456,10 +485,38 @@
           goalId: null,
           subtasks: [],
           recurrence: null,
+          recurrenceId: null,
+          occurrenceDateIso: null,
           reminderMinutesBefore: null,
+          updatedAtIso: '2026-11-19T14:00',
+          completedAtIso: null,
           notes: ''
         }
       ],
+      taskRecurrences: [
+        {
+          id: 'rec_fatura_uv',
+          templateTaskId: 'task_revisar_fatura',
+          title: 'Conferir lançamentos da fatura Ultravioleta',
+          description: 'Bater valores de ingresso, transporte e assinaturas na fatura 2026-11.',
+          projectId: 'proj_nexus',
+          categoryId: 'cat_trabalho',
+          eventId: null,
+          goalId: 'pg_2',
+          priority: 'URGENT',
+          hasDueTime: false,
+          dueTime: null,
+          notes: '',
+          frequency: 'MONTHLY',
+          customIntervalDays: 30,
+          weekdaysMask: 0,
+          startDateIso: '2026-10-21',
+          endDateIso: null,
+          maxOccurrences: null,
+          isActive: true
+        }
+      ],
+      recurrenceExceptions: [],
       appointments: [
         {
           id: 'appt_1',
@@ -1040,6 +1097,414 @@
     return `${ny}-${nm}`;
   }
 
+  // ==================== RECURRENCE ENGINE (RecurrenceEngine.kt) ====================
+  // DayOfWeek ISO: Seg=1..Dom=7 -> bit = 1 << (dow - 1)
+  function getIsoDow(isoDate) {
+    const jsDay = parseIsoDate(isoDate).getDay(); // 0=Dom..6=Sab
+    return jsDay === 0 ? 7 : jsDay;
+  }
+
+  function weekdayBit(isoOrDow) {
+    let dow = typeof isoOrDow === 'number' ? isoOrDow : getIsoDow(isoOrDow);
+    if (dow === 0) dow = 7;
+    return 1 << (dow - 1);
+  }
+
+  function weekdaysFromMask(mask) {
+    const out = [];
+    for (let dow = 1; dow <= 7; dow++) {
+      if ((mask & (1 << (dow - 1))) !== 0) out.push(dow);
+    }
+    return out;
+  }
+
+  function maskFromWeekdays(dows) {
+    return (dows || []).reduce((acc, dow) => acc | (1 << (dow - 1)), 0);
+  }
+
+  function addMonthsPreservingAnchor(isoDate, months, anchorDay) {
+    const [y, m] = isoDate.split('-').map(Number);
+    const target = new Date(y, m - 1 + months, 1);
+    const ty = target.getFullYear();
+    const tm = target.getMonth();
+    const lastDayOfTarget = new Date(ty, tm + 1, 0).getDate();
+    const clampedDay = Math.min(anchorDay, lastDayOfTarget);
+    return toIsoDate(new Date(ty, tm, clampedDay));
+  }
+
+  function generateScheduledDates(recurrence, windowStartIso, windowEndIso) {
+    if (!recurrence || !recurrence.isActive || windowEndIso < windowStartIso) return [];
+    const startIso = recurrence.startDateIso;
+    if (!startIso) return [];
+    const effectiveEnd = (recurrence.endDateIso && recurrence.endDateIso < windowEndIso)
+      ? recurrence.endDateIso
+      : windowEndIso;
+    if (effectiveEnd < startIso) return [];
+
+    const anchorDay = Number(startIso.slice(8, 10)) || 1;
+    const maxCount = recurrence.maxOccurrences ? Math.max(1, Number(recurrence.maxOccurrences)) : Infinity;
+    const freq = recurrence.frequency || 'WEEKLY';
+    const interval = Math.max(1, Number(recurrence.customIntervalDays) || 1);
+    const results = [];
+    let generatedCount = 0;
+
+    if (freq === 'SPECIFIC_WEEKDAYS') {
+      const effectiveMask = (recurrence.weekdaysMask && recurrence.weekdaysMask > 0)
+        ? recurrence.weekdaysMask
+        : weekdayBit(startIso);
+      let cursor = startIso;
+      let guard = 0;
+      while (cursor <= effectiveEnd && generatedCount < maxCount && guard < 1500) {
+        if ((effectiveMask & weekdayBit(cursor)) !== 0) {
+          generatedCount += 1;
+          if (cursor >= windowStartIso) results.push(cursor);
+        }
+        cursor = addDaysIso(cursor, 1);
+        guard += 1;
+      }
+      return results;
+    }
+
+    let stepIndex = 0;
+    while (generatedCount < maxCount && stepIndex < 500) {
+      let current;
+      if (freq === 'DAILY') current = addDaysIso(startIso, stepIndex);
+      else if (freq === 'WEEKLY') current = addDaysIso(startIso, stepIndex * 7);
+      else if (freq === 'BIWEEKLY') current = addDaysIso(startIso, stepIndex * 14);
+      else if (freq === 'CUSTOM_DAYS') current = addDaysIso(startIso, stepIndex * interval);
+      else if (freq === 'MONTHLY') current = addMonthsPreservingAnchor(startIso, stepIndex, anchorDay);
+      else current = addDaysIso(startIso, stepIndex * 7);
+
+      if (current > effectiveEnd) break;
+      generatedCount += 1;
+      if (current >= windowStartIso) results.push(current);
+      stepIndex += 1;
+    }
+    return results;
+  }
+
+  function nextOccurrenceDateAfter(recurrence, afterDateIso, skippedDatesSet = new Set(), materializedDatesSet = new Set()) {
+    if (!recurrence || !recurrence.isActive) return null;
+    const minDate = addDaysIso(afterDateIso, 1);
+    const maxWindow = addDaysIso(afterDateIso, 1100);
+    const candidates = generateScheduledDates(recurrence, recurrence.startDateIso, maxWindow);
+    for (let i = 0; i < candidates.length; i++) {
+      const d = candidates[i];
+      if (d >= minDate && !skippedDatesSet.has(d) && !materializedDatesSet.has(d)) {
+        return d;
+      }
+    }
+    return null;
+  }
+
+  const WEEKDAY_SHORT_BY_DOW = { 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb', 7: 'Dom' };
+
+  function formatRecurrenceSummary(rec) {
+    if (!rec) return '';
+    switch (rec.frequency) {
+      case 'DAILY': return 'Diariamente';
+      case 'WEEKLY': return 'Semanalmente';
+      case 'BIWEEKLY': return 'Quinzenalmente';
+      case 'MONTHLY': return 'Mensalmente';
+      case 'CUSTOM_DAYS': {
+        const d = Math.max(1, Number(rec.customIntervalDays) || 1);
+        return d === 1 ? 'Diariamente' : `A cada ${d} dias`;
+      }
+      case 'SPECIFIC_WEEKDAYS': {
+        const dows = weekdaysFromMask(rec.weekdaysMask || 0);
+        if (!dows.length) return 'Dias da semana';
+        return dows.map((dw) => WEEKDAY_SHORT_BY_DOW[dw]).join(', ');
+      }
+      default: return LABELS.TaskRecurrenceFrequency[rec.frequency] || 'Recorrente';
+    }
+  }
+
+  function getActiveTaskRecurrence(state, task) {
+    if (!task) return null;
+    const recs = state.taskRecurrences || [];
+    if (task.recurrenceId) {
+      const found = recs.find((r) => r.id === task.recurrenceId && r.isActive);
+      if (found) return found;
+    }
+    if (task.recurrence && task.recurrence.frequency) {
+      return {
+        id: task.recurrenceId || `rec_inline_${task.id}`,
+        templateTaskId: task.id,
+        title: task.title,
+        description: task.description || '',
+        projectId: task.projectId || null,
+        categoryId: task.categoryId || null,
+        eventId: task.eventId || null,
+        goalId: task.goalId || null,
+        priority: task.priority || 'NORMAL',
+        hasDueTime: Boolean(task.hasDueTime),
+        dueTime: task.dueTime || null,
+        notes: task.notes || '',
+        frequency: task.recurrence.frequency,
+        customIntervalDays: task.recurrence.customIntervalDays || 7,
+        weekdaysMask: task.recurrence.weekdaysMask || 0,
+        startDateIso: task.recurrence.startDateIso || task.dueDateIso || state.todayIso,
+        endDateIso: task.recurrence.endDateIso || null,
+        maxOccurrences: task.recurrence.maxOccurrences || null,
+        isActive: true
+      };
+    }
+    return null;
+  }
+
+  function openOrMaterializeRecurringOccurrence(state, recurrenceId, occurrenceDateIso) {
+    const existing = state.tasks.find((t) =>
+      t.recurrenceId === recurrenceId &&
+      (t.occurrenceDateIso || t.dueDateIso) === occurrenceDateIso &&
+      t.status !== 'CANCELLED'
+    );
+    if (existing) return existing;
+
+    const rec = (state.taskRecurrences || []).find((r) => r.id === recurrenceId);
+    if (!rec) return null;
+    const templateTask = state.tasks.find((t) => t.id === rec.templateTaskId) ||
+      state.tasks.find((t) => t.recurrenceId === recurrenceId) ||
+      null;
+
+    const newId = `task_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    const materialized = {
+      id: newId,
+      title: rec.title || templateTask?.title || 'Tarefa recorrente',
+      description: rec.description ?? templateTask?.description ?? '',
+      status: 'NOT_STARTED',
+      priority: rec.priority || templateTask?.priority || 'NORMAL',
+      dueDateIso: occurrenceDateIso,
+      hasDueTime: Boolean(rec.hasDueTime),
+      dueTime: rec.hasDueTime ? (rec.dueTime || '14:00') : null,
+      categoryId: rec.categoryId ?? templateTask?.categoryId ?? null,
+      projectId: rec.projectId ?? templateTask?.projectId ?? null,
+      eventId: rec.eventId ?? templateTask?.eventId ?? null,
+      goalId: rec.goalId ?? templateTask?.goalId ?? null,
+      subtasks: (templateTask?.subtasks || []).map((s, idx) => ({
+        id: `st_${Date.now()}_${idx}_${Math.floor(Math.random() * 99)}`,
+        title: s.title,
+        isDone: false
+      })),
+      recurrenceId: rec.id,
+      occurrenceDateIso,
+      recurrence: {
+        frequency: rec.frequency,
+        startDateIso: rec.startDateIso,
+        endMode: rec.endDateIso ? 'DATE' : rec.maxOccurrences ? 'COUNT' : 'NONE',
+        endDateIso: rec.endDateIso || null,
+        maxOccurrences: rec.maxOccurrences || null,
+        customIntervalDays: rec.customIntervalDays || 7,
+        weekdaysMask: rec.weekdaysMask || 0
+      },
+      reminderMinutesBefore: templateTask?.reminderMinutesBefore ?? state.routineSettings?.defaultTaskReminderMinutes ?? 30,
+      updatedAtIso: `${state.todayIso}T${state.nowTime || '09:30'}`,
+      completedAtIso: null,
+      notes: rec.notes ?? templateTask?.notes ?? ''
+    };
+    state.tasks.unshift(materialized);
+    return materialized;
+  }
+
+  function materializeNextOccurrenceIfNeeded(state, task) {
+    if (!task || !task.recurrenceId) return null;
+    const rec = (state.taskRecurrences || []).find((r) => r.id === task.recurrenceId && r.isActive);
+    if (!rec) return null;
+    const anchorDate = task.occurrenceDateIso || task.dueDateIso || state.todayIso;
+    const sameSeriesTasks = state.tasks.filter((t) => t.recurrenceId === rec.id);
+    const hasOpenFuture = sameSeriesTasks.some((t) =>
+      t.id !== task.id &&
+      t.status !== 'COMPLETED' &&
+      t.status !== 'CANCELLED' &&
+      (t.occurrenceDateIso || t.dueDateIso || '') >= anchorDate
+    );
+    if (hasOpenFuture) return null;
+
+    const skippedDates = new Set(
+      (state.recurrenceExceptions || [])
+        .filter((e) => e.recurrenceId === rec.id && e.exceptionType === 'SKIP')
+        .map((e) => e.occurrenceDateIso)
+    );
+    const materializedDates = new Set(
+      sameSeriesTasks
+        .map((t) => t.occurrenceDateIso || t.dueDateIso)
+        .filter(Boolean)
+    );
+    const nextIso = nextOccurrenceDateAfter(rec, anchorDate, skippedDates, materializedDates);
+    if (!nextIso) return null;
+    return openOrMaterializeRecurringOccurrence(state, rec.id, nextIso);
+  }
+
+  // ==================== TASK RULES (TaskRules.kt & NexusComponents.kt) ====================
+  function isTaskOverdue(task, stateOrTodayIso, nowTimeOpt) {
+    const todayIso = typeof stateOrTodayIso === 'string' ? stateOrTodayIso : stateOrTodayIso.todayIso;
+    const nowTime = nowTimeOpt || (typeof stateOrTodayIso === 'object' ? stateOrTodayIso.nowTime : null) || '09:30';
+    if (!task || task.status === 'COMPLETED' || task.status === 'CANCELLED' || !task.dueDateIso) return false;
+    if (task.dueDateIso < todayIso) return true;
+    if (task.dueDateIso === todayIso && task.hasDueTime && task.dueTime) {
+      return task.dueTime < nowTime;
+    }
+    return false;
+  }
+
+  function formatContextualDueDate(task, todayIso) {
+    if (!task || !task.dueDateIso) return '';
+    const dIso = task.dueDateIso;
+    const tomorrowIso = addDaysIso(todayIso, 1);
+    const yesterdayIso = addDaysIso(todayIso, -1);
+    let dateStr = '';
+    if (dIso === todayIso) dateStr = 'Hoje';
+    else if (dIso === tomorrowIso) dateStr = 'Amanhã';
+    else if (dIso === yesterdayIso) dateStr = 'Ontem';
+    else if (dIso.slice(0, 4) === todayIso.slice(0, 4)) dateStr = formatDayMonth(dIso);
+    else dateStr = formatDateBr(dIso);
+
+    if (task.hasDueTime && task.dueTime) {
+      return `${dateStr}, às ${task.dueTime}`;
+    }
+    return dateStr;
+  }
+
+  function priorityRank(priority) {
+    if (priority === 'URGENT') return 3;
+    if (priority === 'HIGH') return 2;
+    if (priority === 'NORMAL') return 1;
+    return 0;
+  }
+
+  function compareActiveTasks(a, b) {
+    const da = a.dueDateIso || '9999-12-31';
+    const db = b.dueDateIso || '9999-12-31';
+    if (da !== db) return da.localeCompare(db);
+    const ta = (a.hasDueTime && a.dueTime) ? a.dueTime : '23:59';
+    const tb = (b.hasDueTime && b.dueTime) ? b.dueTime : '23:59';
+    if (ta !== tb) return ta.localeCompare(tb);
+    const pa = priorityRank(a.priority);
+    const pb = priorityRank(b.priority);
+    if (pa !== pb) return pb - pa;
+    return (a.title || '').toLowerCase().localeCompare((b.title || '').toLowerCase(), 'pt-BR');
+  }
+
+  function compareTerminalTasks(a, b) {
+    const ca = a.completedAtIso || a.updatedAtIso || a.dueDateIso || '';
+    const cb = b.completedAtIso || b.updatedAtIso || b.dueDateIso || '';
+    if (ca !== cb) return cb.localeCompare(ca);
+    return (a.title || '').toLowerCase().localeCompare((b.title || '').toLowerCase(), 'pt-BR');
+  }
+
+  function sortTodayTasks(tasks) {
+    return [...tasks].sort((a, b) => {
+      const aDone = a.status === 'COMPLETED' ? 1 : 0;
+      const bDone = b.status === 'COMPLETED' ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+      return compareActiveTasks(a, b);
+    });
+  }
+
+  function filterTasksForTab(state, filter) {
+    const today = state.todayIso;
+    const plus30 = addDaysIso(today, 30);
+    const search = (filter.searchQuery || '').trim().toLowerCase();
+
+    const matchesCommon = (t) => {
+      if (filter.statusFilter && t.status !== filter.statusFilter) return false;
+      if (filter.priorityFilter && t.priority !== filter.priorityFilter) return false;
+      if (filter.projectFilterId && t.projectId !== filter.projectFilterId) return false;
+      if (search) {
+        const hay = `${t.title || ''} ${t.description || ''}`.toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    };
+
+    const matchesTab = (t) => {
+      switch (filter.tabMode) {
+        case 'TODAY':
+          return t.status !== 'CANCELLED' && t.dueDateIso === today;
+        case 'UPCOMING':
+          return t.status !== 'COMPLETED' && t.status !== 'CANCELLED' && Boolean(t.dueDateIso) && t.dueDateIso > today && t.dueDateIso <= plus30;
+        case 'OVERDUE':
+          return isTaskOverdue(t, state);
+        case 'COMPLETED':
+          return t.status === 'COMPLETED';
+        case 'KANBAN':
+        case 'ALL':
+        default:
+          return true;
+      }
+    };
+
+    const list = state.tasks.filter((t) => matchesTab(t) && matchesCommon(t));
+    if (filter.tabMode === 'TODAY') return sortTodayTasks(list);
+    if (filter.tabMode === 'COMPLETED') return [...list].sort(compareTerminalTasks);
+    return [...list].sort(compareActiveTasks);
+  }
+
+  function groupTasks(tasks, stateOrTodayIso) {
+    const stateObj = typeof stateOrTodayIso === 'string'
+      ? { todayIso: stateOrTodayIso, nowTime: '09:30' }
+      : stateOrTodayIso;
+    const todayIso = stateObj.todayIso;
+    const plus7 = addDaysIso(todayIso, 7);
+    const buckets = [
+      { key: 'OVERDUE', label: 'Atrasadas', items: [] },
+      { key: 'TODAY', label: 'Hoje', items: [] },
+      { key: 'THIS_WEEK', label: 'Esta semana', items: [] },
+      { key: 'LATER', label: 'Próximas', items: [] },
+      { key: 'UNDATED', label: 'Sem prazo', items: [] },
+      { key: 'TERMINAL', label: 'Concluídas e canceladas', items: [] }
+    ];
+    tasks.forEach((t) => {
+      if (t.status === 'COMPLETED' || t.status === 'CANCELLED') {
+        buckets[5].items.push(t);
+      } else if (!t.dueDateIso) {
+        buckets[4].items.push(t);
+      } else if (isTaskOverdue(t, stateObj)) {
+        buckets[0].items.push(t);
+      } else if (t.dueDateIso === todayIso) {
+        buckets[1].items.push(t);
+      } else if (t.dueDateIso <= plus7) {
+        buckets[2].items.push(t);
+      } else {
+        buckets[3].items.push(t);
+      }
+    });
+    for (let i = 0; i < 5; i++) buckets[i].items.sort(compareActiveTasks);
+    buckets[5].items.sort(compareTerminalTasks);
+    return buckets.filter((b) => b.items.length > 0);
+  }
+
+  function contextualCategoriesForAgendaKind(state, kindFilter) {
+    if (!kindFilter || kindFilter === 'PROJECT') return [];
+    const targetScope = kindFilter === 'TASK'
+      ? 'TASK'
+      : kindFilter === 'APPOINTMENT'
+        ? 'APPOINTMENT'
+        : kindFilter === 'EVENT'
+          ? 'EVENT'
+          : kindFilter === 'FINANCE'
+            ? 'FINANCE'
+            : null;
+    if (!targetScope) return [];
+    return (state.categories || [])
+      .filter((c) => c.scope === targetScope || c.scope === 'GENERAL')
+      .slice()
+      .sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'pt-BR'));
+  }
+
+  function suggestExpenseCategoryIdForTask(state, taskCategoryId) {
+    const cats = state.categories || [];
+    const finCats = cats.filter((c) => c.scope === 'FINANCE');
+    if (taskCategoryId) {
+      const taskCat = cats.find((c) => c.id === taskCategoryId);
+      if (taskCat) {
+        const matchFin = finCats.find((c) => (c.name || '').trim().toLowerCase() === (taskCat.name || '').trim().toLowerCase());
+        if (matchFin) return matchFin.id;
+        if (taskCat.scope === 'GENERAL') return taskCat.id;
+      }
+    }
+    return finCats[0]?.id || cats[0]?.id || '';
+  }
+
   function computeTaskCounts(task) {
     const subs = Array.isArray(task.subtasks) ? task.subtasks : [];
     return {
@@ -1276,15 +1741,15 @@
     const completedCount = dated.filter((t) => t.status === 'COMPLETED').length;
     const inProgressCount = dated.filter((t) => t.status === 'IN_PROGRESS').length;
     const pendingCount = dated.filter((t) => t.status !== 'COMPLETED' && t.status !== 'IN_PROGRESS').length;
-    const overdueCount = dated.filter((t) => t.status !== 'COMPLETED' && t.dueDateIso < state.todayIso).length;
+    const overdueList = state.tasks.filter((t) => isTaskOverdue(t, state));
     const undatedPendingCount = state.tasks.filter((t) => !t.dueDateIso && t.status !== 'COMPLETED' && t.status !== 'CANCELLED').length;
     return {
       completedCount,
       inProgressCount,
       pendingCount,
-      overdueCount,
+      overdueCount: overdueList.length,
       undatedPendingCount,
-      overdueTasks: state.tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED' && t.dueDateIso && t.dueDateIso < state.todayIso),
+      overdueTasks: overdueList,
       priorityTasksToday: state.tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED' && t.dueDateIso === state.todayIso)
     };
   }
@@ -1312,35 +1777,46 @@
   function computeDailyBriefing(state) {
     const today = state.todayIso;
     const tomorrow = addDaysIso(today, 1);
-    const fin = computeFinanceSelectors(state, '2026-11');
+    const fin = computeFinanceSelectors(state, state.selectedMonthIso || '2026-11');
     const conflictMap = computeAppointmentConflicts(state.appointments);
     const todayAppointments = state.appointments
-      .filter((a) => a.dateIso === today)
+      .filter((a) => a.dateIso <= today && (a.endDateIso || a.dateIso) >= today)
       .map((a) => ({
         ...a,
         categoryName: state.categories.find((c) => c.id === a.categoryId)?.name || 'Agenda',
         conflictTitles: conflictMap[a.id] || []
       }));
-    const overdueTasks = state.tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED' && t.dueDateIso && t.dueDateIso < today);
+    const overdueTasks = state.tasks.filter((t) => isTaskOverdue(t, state));
     const todayTasks = state.tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED' && t.dueDateIso === today);
     const completedTasksToday = state.tasks.filter((t) => t.status === 'COMPLETED');
     const todayEvents = state.events
-      .filter((e) => e.startDateIso === today)
+      .filter((e) => e.eventStatus !== 'CANCELLED' && e.startDateIso <= today && (e.endDateIso || e.startDateIso) >= today)
       .map((e) => computeEventDetails(state, e));
-    const overdueBills = state.transactions.filter((tx) => tx.type === 'EXPENSE' && tx.status === 'OVERDUE');
-    const billsDueToday = state.transactions.filter((tx) => tx.type === 'EXPENSE' && tx.status !== 'SETTLED' && tx.status !== 'CANCELLED' && tx.dueDateIso === today);
+    const overdueBills = state.transactions.filter((tx) =>
+      tx.type === 'EXPENSE' &&
+      tx.status !== 'SETTLED' &&
+      tx.status !== 'CANCELLED' &&
+      (tx.status === 'OVERDUE' || (tx.dueDateIso && tx.dueDateIso < today))
+    );
+    const billsDueToday = state.transactions.filter((tx) =>
+      tx.type === 'EXPENSE' &&
+      tx.status !== 'SETTLED' &&
+      tx.status !== 'CANCELLED' &&
+      tx.status !== 'OVERDUE' &&
+      tx.dueDateIso === today
+    );
     const allBills = [...overdueBills, ...billsDueToday];
     const totalBillsDueAmountCents = allBills.reduce((acc, tx) => acc + tx.amountCents, 0);
 
     const tomorrowAppointments = state.appointments
-      .filter((a) => a.dateIso === tomorrow)
+      .filter((a) => a.dateIso <= tomorrow && (a.endDateIso || a.dateIso) >= tomorrow)
       .map((a) => ({
         ...a,
         categoryName: state.categories.find((c) => c.id === a.categoryId)?.name || 'Agenda',
         conflictTitles: conflictMap[a.id] || []
       }));
-    const tomorrowTasks = state.tasks.filter((t) => t.status !== 'COMPLETED' && t.dueDateIso === tomorrow);
-    const tomorrowBills = state.transactions.filter((tx) => tx.type === 'EXPENSE' && tx.status !== 'SETTLED' && tx.dueDateIso === tomorrow);
+    const tomorrowTasks = state.tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED' && t.dueDateIso === tomorrow);
+    const tomorrowBills = state.transactions.filter((tx) => tx.type === 'EXPENSE' && tx.status !== 'SETTLED' && tx.status !== 'CANCELLED' && tx.dueDateIso === tomorrow);
 
     return {
       todayAppointments,
@@ -1351,7 +1827,10 @@
       overdueBills,
       billsDueToday,
       totalBillsDueAmountCents,
-      statementsDueTodayOrOverdue: fin.openStatements.filter((sw) => sw.statement.status === 'OVERDUE' || sw.statement.dueDateIso === today),
+      statementsDueTodayOrOverdue: fin.openStatements.filter((sw) => {
+        const effOverdue = sw.statement.status !== 'PAID' && sw.statement.dueDateIso < today;
+        return sw.statement.status === 'OVERDUE' || effOverdue || sw.statement.dueDateIso === today;
+      }),
       tomorrowAppointments,
       tomorrowTasks,
       tomorrowBills,
@@ -1375,9 +1854,15 @@
         const spanStart = appt.dateIso;
         const spanEnd = appt.endDateIso && appt.endDateIso >= spanStart ? appt.endDateIso : spanStart;
         const cat = state.categories.find((c) => c.id === appt.categoryId);
+        const linkedEv = appt.eventId ? state.events.find((e) => e.id === appt.eventId) : null;
         const conflicts = conflictMap[appt.id] || [];
         const timeLabel = appt.isAllDay || spanStart !== spanEnd ? 'Dia inteiro' : `${appt.startTime}–${appt.endTime}`;
-        const sub = [timeLabel, cat ? cat.name : null, appt.location || null].filter(Boolean).join(' · ');
+        const sub = [
+          timeLabel,
+          cat ? cat.name : null,
+          appt.location || null,
+          linkedEv ? `Evento: ${linkedEv.name}` : null
+        ].filter(Boolean).join(' · ');
         let d = spanStart < windowStartIso ? windowStartIso : spanStart;
         const endClamp = spanEnd > windowEndIso ? windowEndIso : spanEnd;
         while (d <= endClamp) {
@@ -1398,23 +1883,45 @@
             isDoneOrSettled: false,
             hasConflict: conflicts.length > 0,
             conflictTitles: conflicts,
-            sortTime: appt.isAllDay ? '00:00' : (appt.startTime || '09:00'),
-            searchableText: `${appt.title} ${appt.description || ''} ${appt.location || ''}`.toLowerCase()
+            recurrenceId: null,
+            isVirtualRecurrence: false,
+            isIncome: false,
+            sortTime: appt.isAllDay || spanStart !== spanEnd ? '00:00' : (appt.startTime || '09:00'),
+            searchableText: `${appt.title} ${appt.description || ''} ${appt.location || ''} ${linkedEv ? linkedEv.name : ''}`.toLowerCase()
           });
           d = addDaysIso(d, 1);
         }
       });
     }
 
-    // 2. Tarefas com prazo + recorrências mensais virtuais
+    // 2. Tarefas materializadas com prazo + Projeções virtuais (RecurrenceEngine)
     if (!kindFilter || kindFilter === 'TASK') {
+      const materializedKeys = new Set();
+
       state.tasks.forEach((task) => {
-        if (!task.dueDateIso || task.status === 'CANCELLED') return;
+        if (!task.dueDateIso) return;
         const cat = state.categories.find((c) => c.id === task.categoryId);
         const proj = state.projects.find((p) => p.id === task.projectId);
-        const isDone = task.status === 'COMPLETED';
-        const isOverdue = !isDone && task.dueDateIso < state.todayIso;
+        const linkedEv = task.eventId ? state.events.find((e) => e.id === task.eventId) : null;
+        const activeRec = getActiveTaskRecurrence(state, task);
+        const effectiveRecId = task.recurrenceId || activeRec?.id || null;
+        const occKeyDate = task.occurrenceDateIso || task.dueDateIso;
+        if (effectiveRecId) {
+          materializedKeys.add(`${effectiveRecId}:${occKeyDate}`);
+          materializedKeys.add(`${effectiveRecId}:${task.dueDateIso}`);
+        }
+        const isDoneOrSettled = task.status === 'COMPLETED' || task.status === 'CANCELLED';
+        const overdue = isTaskOverdue(task, state);
+
         if (task.dueDateIso >= windowStartIso && task.dueDateIso <= windowEndIso) {
+          const whenLabel = task.hasDueTime && task.dueTime ? task.dueTime : 'Sem horário';
+          const sub = [
+            whenLabel,
+            LABELS.TaskStatus[task.status] || task.status,
+            proj ? proj.name : null,
+            linkedEv ? `Evento: ${linkedEv.name}` : null
+          ].filter(Boolean).join(' · ');
+
           occurrences.push({
             stableKey: `TASK:${task.id}:${task.dueDateIso}`,
             sourceType: 'TASK',
@@ -1425,46 +1932,75 @@
             spanEndDateIso: task.dueDateIso,
             isAllDay: !task.hasDueTime,
             title: task.title,
-            subtitle: [task.hasDueTime && task.dueTime ? task.dueTime : 'Dia inteiro', LABELS.TaskStatus[task.status], proj ? proj.name : null].filter(Boolean).join(' · '),
+            subtitle: sub,
             categoryId: task.categoryId,
             colorHex: cat ? cat.colorHex : '#7CFFB2',
-            isOverdue,
-            isDoneOrSettled: isDone,
+            isOverdue: overdue,
+            isDoneOrSettled,
             hasConflict: false,
             conflictTitles: [],
+            recurrenceId: effectiveRecId,
+            isVirtualRecurrence: false,
+            isIncome: false,
             sortTime: task.hasDueTime && task.dueTime ? task.dueTime : '23:59',
-            searchableText: `${task.title} ${task.description || ''} ${proj ? proj.name : ''}`.toLowerCase(),
-            isVirtualRecurrence: false
+            searchableText: `${task.title} ${task.description || ''} ${proj ? proj.name : ''} ${linkedEv ? linkedEv.name : ''}`.toLowerCase()
           });
         }
-        // Projeção virtual simples para tarefas recorrentes mensais dentro da janela futura
-        if (task.recurrence && task.recurrence.frequency === 'MONTHLY') {
-          const dayPart = task.dueDateIso.slice(8, 10);
-          const nextIso = `${shiftMonthIso(task.dueDateIso.slice(0, 7), 1)}-${dayPart}`;
-          if (nextIso >= windowStartIso && nextIso <= windowEndIso && nextIso !== task.dueDateIso) {
-            occurrences.push({
-              stableKey: `VTASK:${task.id}:${nextIso}`,
-              sourceType: 'TASK',
-              sourceId: task.id,
-              kind: 'TASK',
-              occurrenceDateIso: nextIso,
-              spanStartDateIso: nextIso,
-              spanEndDateIso: nextIso,
-              isAllDay: !task.hasDueTime,
-              title: `${task.title} (recorrência)`,
-              subtitle: `Recorrente · Mensal`,
-              categoryId: task.categoryId,
-              colorHex: cat ? cat.colorHex : '#7CFFB2',
-              isOverdue: false,
-              isDoneOrSettled: false,
-              hasConflict: false,
-              conflictTitles: [],
-              sortTime: '23:59',
-              searchableText: `${task.title} recorrente`.toLowerCase(),
-              isVirtualRecurrence: true
-            });
-          }
-        }
+      });
+
+      const activeRecurrences = (state.taskRecurrences || []).filter((r) => r.isActive);
+      const exceptions = state.recurrenceExceptions || [];
+      activeRecurrences.forEach((rec) => {
+        const skippedSet = new Set(
+          exceptions
+            .filter((e) => e.recurrenceId === rec.id && e.exceptionType === 'SKIP')
+            .map((e) => e.occurrenceDateIso)
+        );
+        const scheduled = generateScheduledDates(rec, windowStartIso, windowEndIso);
+        const templateTask = state.tasks.find((t) => t.id === rec.templateTaskId) ||
+          state.tasks.find((t) => t.recurrenceId === rec.id) ||
+          null;
+        const cat = state.categories.find((c) => c.id === (rec.categoryId ?? templateTask?.categoryId));
+        const proj = state.projects.find((p) => p.id === (rec.projectId ?? templateTask?.projectId));
+        const linkedEv = (rec.eventId ?? templateTask?.eventId)
+          ? state.events.find((e) => e.id === (rec.eventId ?? templateTask?.eventId))
+          : null;
+        const whenLabel = rec.hasDueTime && rec.dueTime ? rec.dueTime : 'Sem horário';
+        const freqLabel = LABELS.TaskRecurrenceFrequency[rec.frequency] || 'Recorrente';
+        const sub = [
+          whenLabel,
+          `Recorrente (${freqLabel})`,
+          proj ? proj.name : null,
+          linkedEv ? `Evento: ${linkedEv.name}` : null
+        ].filter(Boolean).join(' · ');
+
+        scheduled.forEach((dateIso) => {
+          if (skippedSet.has(dateIso)) return;
+          if (materializedKeys.has(`${rec.id}:${dateIso}`)) return;
+          occurrences.push({
+            stableKey: `REC_TASK:${rec.id}:${dateIso}`,
+            sourceType: 'TASK',
+            sourceId: rec.templateTaskId || templateTask?.id || rec.id,
+            kind: 'TASK',
+            occurrenceDateIso: dateIso,
+            spanStartDateIso: dateIso,
+            spanEndDateIso: dateIso,
+            isAllDay: !rec.hasDueTime,
+            title: rec.title || templateTask?.title || 'Tarefa recorrente',
+            subtitle: sub,
+            categoryId: rec.categoryId ?? templateTask?.categoryId ?? null,
+            colorHex: cat ? cat.colorHex : '#7CFFB2',
+            isOverdue: false,
+            isDoneOrSettled: false,
+            hasConflict: false,
+            conflictTitles: [],
+            recurrenceId: rec.id,
+            isVirtualRecurrence: true,
+            isIncome: false,
+            sortTime: rec.hasDueTime && rec.dueTime ? rec.dueTime : '23:59',
+            searchableText: `${rec.title || ''} ${rec.description || ''} ${proj ? proj.name : ''} recorrente`.toLowerCase()
+          });
+        });
       });
     }
 
@@ -1474,7 +2010,17 @@
         if (ev.eventStatus === 'CANCELLED') return;
         const spanStart = ev.startDateIso;
         const spanEnd = ev.endDateIso && ev.endDateIso >= spanStart ? ev.endDateIso : spanStart;
+        const isMultiDay = spanStart !== spanEnd;
         const cat = state.categories.find((c) => c.id === ev.categoryId);
+        const evDetails = computeEventDetails(state, ev);
+        const whenPart = isMultiDay
+          ? `${formatDayMonth(spanStart)} – ${formatDayMonth(spanEnd)} · Dia inteiro`
+          : (ev.isAllDay ? 'Dia inteiro' : `${ev.startTime}–${ev.endTime}`);
+        const placePart = ev.locationName || ev.city || '';
+        const ticketPart = `Ingresso: ${LABELS.TicketStatus[ev.ticketStatus] || ev.ticketStatus}`;
+        const costPart = evDetails.estimatedTotalCostCents > 0 ? formatBrl(evDetails.estimatedTotalCostCents) : null;
+        const sub = [whenPart, placePart, ticketPart, costPart].filter(Boolean).join(' · ');
+
         let d = spanStart < windowStartIso ? windowStartIso : spanStart;
         const endClamp = spanEnd > windowEndIso ? windowEndIso : spanEnd;
         while (d <= endClamp) {
@@ -1486,16 +2032,19 @@
             occurrenceDateIso: d,
             spanStartDateIso: spanStart,
             spanEndDateIso: spanEnd,
-            isAllDay: ev.isAllDay || spanStart !== spanEnd,
+            isAllDay: ev.isAllDay || isMultiDay,
             title: ev.name,
-            subtitle: [ev.isAllDay ? 'Dia inteiro' : `${ev.startTime}–${ev.endTime}`, ev.locationName, LABELS.TicketStatus[ev.ticketStatus]].filter(Boolean).join(' · '),
+            subtitle: sub,
             categoryId: ev.categoryId,
             colorHex: cat ? cat.colorHex : '#7CFFB2',
             isOverdue: false,
             isDoneOrSettled: ev.eventStatus === 'ATTENDED',
             hasConflict: false,
             conflictTitles: [],
-            sortTime: ev.isAllDay ? '00:00' : (ev.startTime || '09:00'),
+            recurrenceId: null,
+            isVirtualRecurrence: false,
+            isIncome: false,
+            sortTime: (ev.isAllDay || isMultiDay) ? '00:00' : (ev.startTime || '09:00'),
             searchableText: `${ev.name} ${ev.locationName || ''} ${ev.city || ''}`.toLowerCase()
           });
           d = addDaysIso(d, 1);
@@ -1503,13 +2052,17 @@
       });
     }
 
-    // 4. Contas financeiras diretas (sem fatura) + Faturas de cartão
+    // 4. Lançamentos financeiros diretos (sem fatura) + Faturas de cartão
     if (!kindFilter || kindFilter === 'FINANCE') {
       state.transactions.forEach((tx) => {
-        if (tx.type !== 'EXPENSE' || tx.statementId || tx.status === 'CANCELLED' || !tx.dueDateIso) return;
-        if (!showPaid && tx.status === 'SETTLED') return;
+        if (tx.statementId || tx.status === 'CANCELLED' || !tx.dueDateIso) return;
+        const effStatus = (tx.status !== 'SETTLED' && tx.status !== 'CANCELLED' && tx.dueDateIso < state.todayIso)
+          ? 'OVERDUE'
+          : tx.status;
+        if (!showPaid && effStatus === 'SETTLED') return;
         if (tx.dueDateIso < windowStartIso || tx.dueDateIso > windowEndIso) return;
         const cat = state.categories.find((c) => c.id === tx.categoryId);
+        const isIncome = tx.type === 'INCOME';
         occurrences.push({
           stableKey: `TX:${tx.id}:${tx.dueDateIso}`,
           sourceType: 'TRANSACTION',
@@ -1520,26 +2073,36 @@
           spanEndDateIso: tx.dueDateIso,
           isAllDay: true,
           title: tx.description,
-          subtitle: `${LABELS.FinancialStatus[tx.status]} · ${LABELS.PaymentMethod[tx.paymentMethod]}`,
+          subtitle: [
+            LABELS.TransactionType[tx.type] || tx.type,
+            LABELS.FinancialStatus[effStatus] || effStatus,
+            formatDateBr(tx.dueDateIso),
+            cat ? cat.name : null
+          ].filter(Boolean).join(' · '),
           categoryId: tx.categoryId,
-          colorHex: tx.status === 'OVERDUE' ? '#E5484D' : '#E5A000',
+          colorHex: effStatus === 'OVERDUE' ? '#E5484D' : isIncome ? '#34C759' : '#E5A000',
           amountCents: tx.amountCents,
-          isOverdue: tx.status === 'OVERDUE' || (tx.status !== 'SETTLED' && tx.dueDateIso < state.todayIso),
-          isDoneOrSettled: tx.status === 'SETTLED',
+          isIncome,
+          isOverdue: effStatus === 'OVERDUE',
+          isDoneOrSettled: effStatus === 'SETTLED',
           hasConflict: false,
           conflictTitles: [],
+          recurrenceId: null,
+          isVirtualRecurrence: false,
           sortTime: '08:00',
-          searchableText: `${tx.description} ${tx.notes || ''}`.toLowerCase()
+          searchableText: `${tx.description} ${tx.notes || ''} ${cat ? cat.name : ''}`.toLowerCase()
         });
       });
 
       state.statements.forEach((st) => {
-        if (!showPaid && st.status === 'PAID') return;
+        const effStatus = (st.status !== 'PAID' && st.dueDateIso < state.todayIso) ? 'OVERDUE' : st.status;
+        if (!showPaid && effStatus === 'PAID') return;
         if (st.dueDateIso < windowStartIso || st.dueDateIso > windowEndIso) return;
-        const card = state.creditCards.find((c) => c.id === st.creditCardId);
         const totalCents = state.transactions
           .filter((tx) => tx.statementId === st.id && tx.status !== 'CANCELLED')
           .reduce((acc, tx) => acc + tx.amountCents, 0);
+        if (totalCents <= 0) return;
+        const card = state.creditCards.find((c) => c.id === st.creditCardId);
         occurrences.push({
           stableKey: `STMT:${st.id}:${st.dueDateIso}`,
           sourceType: 'STATEMENT',
@@ -1550,14 +2113,17 @@
           spanEndDateIso: st.dueDateIso,
           isAllDay: true,
           title: `Fatura ${card ? card.name : 'Cartão'} (${st.yearMonth})`,
-          subtitle: `${LABELS.StatementStatus[st.status]} · Vencimento ${formatDateBr(st.dueDateIso)}`,
+          subtitle: `Vencimento ${formatDateBr(st.dueDateIso)} · ${LABELS.StatementStatus[effStatus] || effStatus}`,
           categoryId: null,
-          colorHex: st.status === 'OVERDUE' ? '#E5484D' : '#E5A000',
+          colorHex: effStatus === 'OVERDUE' ? '#E5484D' : '#E5A000',
           amountCents: totalCents,
-          isOverdue: st.status === 'OVERDUE',
-          isDoneOrSettled: st.status === 'PAID',
+          isIncome: false,
+          isOverdue: effStatus === 'OVERDUE',
+          isDoneOrSettled: effStatus === 'PAID',
           hasConflict: false,
           conflictTitles: [],
+          recurrenceId: null,
+          isVirtualRecurrence: false,
           sortTime: '08:30',
           searchableText: `fatura ${card ? card.name : ''} ${st.yearMonth}`.toLowerCase()
         });
@@ -1567,9 +2133,8 @@
     // 5. Prazos de Projetos
     if (!kindFilter || kindFilter === 'PROJECT') {
       state.projects.forEach((proj) => {
-        if (!proj.deadlineDateIso || proj.status === 'ARCHIVED') return;
+        if (!proj.deadlineDateIso || proj.status === 'ARCHIVED' || proj.status === 'COMPLETED') return;
         if (proj.deadlineDateIso < windowStartIso || proj.deadlineDateIso > windowEndIso) return;
-        const pr = computeProjectProgress(state, proj);
         occurrences.push({
           stableKey: `PROJ:${proj.id}:${proj.deadlineDateIso}`,
           sourceType: 'PROJECT',
@@ -1579,14 +2144,17 @@
           spanStartDateIso: proj.deadlineDateIso,
           spanEndDateIso: proj.deadlineDateIso,
           isAllDay: true,
-          title: `Prazo: ${proj.name}`,
-          subtitle: `${LABELS.ProjectStatus[proj.status]} · ${pr.progressPercent}% (${pr.completedTasks}/${pr.totalTasks} tarefas)`,
+          title: proj.name,
+          subtitle: `Prazo de projeto · ${LABELS.ProjectStatus[proj.status] || proj.status} · ${formatDateBr(proj.deadlineDateIso)}`,
           categoryId: null,
           colorHex: '#5CC8FF',
-          isOverdue: proj.status !== 'COMPLETED' && proj.deadlineDateIso < state.todayIso,
-          isDoneOrSettled: proj.status === 'COMPLETED',
+          isOverdue: proj.deadlineDateIso < state.todayIso,
+          isDoneOrSettled: false,
           hasConflict: false,
           conflictTitles: [],
+          recurrenceId: null,
+          isVirtualRecurrence: false,
+          isIncome: false,
           sortTime: '23:50',
           searchableText: `${proj.name} ${proj.description || ''}`.toLowerCase()
         });
@@ -1601,7 +2169,14 @@
       })
       .sort((a, b) => {
         if (a.occurrenceDateIso !== b.occurrenceDateIso) return a.occurrenceDateIso.localeCompare(b.occurrenceDateIso);
-        return (a.sortTime || '').localeCompare(b.sortTime || '');
+        const aEvBand = a.kind === 'EVENT' && a.isAllDay ? 1 : 0;
+        const bEvBand = b.kind === 'EVENT' && b.isAllDay ? 1 : 0;
+        if (aEvBand !== bEvBand) return bEvBand - aEvBand;
+        const aAll = a.isAllDay ? 1 : 0;
+        const bAll = b.isAllDay ? 1 : 0;
+        if (aAll !== bAll) return bAll - aAll;
+        if (a.sortTime !== b.sortTime) return (a.sortTime || '').localeCompare(b.sortTime || '');
+        return (a.title || '').localeCompare(b.title || '', 'pt-BR');
       });
   }
 
@@ -1614,7 +2189,7 @@
     if (quoteSymbol === 'USD') {
       return `US$ ${num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
-    const maxDec = category === 'CURRENCY' ? 4 : num < 100 ? 2 : 2;
+    const maxDec = category === 'CURRENCY' ? 4 : 2;
     const minDec = category === 'CURRENCY' ? 4 : 2;
     return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: minDec, maximumFractionDigits: maxDec });
   }
@@ -1633,7 +2208,8 @@
     const subsCount = state.tasks.reduce((a, t) => a + (t.subtasks ? t.subtasks.length : 0), 0);
     const msCount = state.personalGoals.reduce((a, g) => a + (g.milestones ? g.milestones.length : 0), 0);
     const logsCount = state.personalGoals.reduce((a, g) => a + (g.progressLogs ? g.progressLogs.length : 0), 0);
-    const recTaskCount = state.tasks.filter((t) => Boolean(t.recurrence)).length;
+    const recTaskCount = (state.taskRecurrences || []).length;
+    const recExcCount = (state.recurrenceExceptions || []).length;
     return [
       { table: 'settings', count: 1 },
       { table: 'personalization_settings', count: 1 },
@@ -1644,7 +2220,7 @@
       { table: 'tasks', count: state.tasks.length },
       { table: 'subtasks', count: subsCount },
       { table: 'task_recurrences', count: recTaskCount },
-      { table: 'recurrence_exceptions', count: 0 },
+      { table: 'recurrence_exceptions', count: recExcCount },
       { table: 'appointments', count: state.appointments.length },
       { table: 'events', count: state.events.length },
       { table: 'transactions', count: state.transactions.length },
@@ -1683,6 +2259,22 @@
     getWeekDatesIso,
     parseIsoDate,
     toIsoDate,
+    weekdayBit,
+    weekdaysFromMask,
+    maskFromWeekdays,
+    generateScheduledDates,
+    nextOccurrenceDateAfter,
+    formatRecurrenceSummary,
+    getActiveTaskRecurrence,
+    openOrMaterializeRecurringOccurrence,
+    materializeNextOccurrenceIfNeeded,
+    isTaskOverdue,
+    formatContextualDueDate,
+    filterTasksForTab,
+    groupTasks,
+    sortTodayTasks,
+    contextualCategoriesForAgendaKind,
+    suggestExpenseCategoryIdForTask,
     computeTaskCounts,
     computeTaskExpenseCents,
     computeProjectProgress,

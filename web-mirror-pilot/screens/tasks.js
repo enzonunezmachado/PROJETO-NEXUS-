@@ -5,8 +5,11 @@
 (function () {
   const {
     LABELS,
-    addDaysIso,
-    computeProjectProgress
+    computeProjectProgress,
+    isTaskOverdue,
+    formatContextualDueDate,
+    filterTasksForTab,
+    groupTasks
   } = window.NexusPilot.Data;
   const {
     esc,
@@ -32,74 +35,9 @@
     { status: 'IN_PROGRESS', label: 'Em andamento' },
     { status: 'WAITING', label: 'Aguardando' },
     { status: 'BLOCKED', label: 'Bloqueada' },
-    { status: 'COMPLETED', label: 'Concluída' }
+    { status: 'COMPLETED', label: 'Concluída' },
+    { status: 'CANCELLED', label: 'Cancelada' }
   ];
-
-  function isTaskOverdue(task, todayIso) {
-    return task.status !== 'COMPLETED' && task.status !== 'CANCELLED' && Boolean(task.dueDateIso) && task.dueDateIso < todayIso;
-  }
-
-  function applyCommonFilters(tasks, filter) {
-    return tasks.filter((t) => {
-      if (filter.statusFilter && t.status !== filter.statusFilter) return false;
-      if (filter.priorityFilter && t.priority !== filter.priorityFilter) return false;
-      if (filter.projectFilterId && t.projectId !== filter.projectFilterId) return false;
-      return true;
-    });
-  }
-
-  function filterTasksForTab(state, filter) {
-    const today = state.todayIso;
-    const plus30 = addDaysIso(today, 30);
-    const base = applyCommonFilters(state.tasks.filter((t) => t.status !== 'CANCELLED'), filter);
-
-    switch (filter.tabMode) {
-      case 'TODAY':
-        return base.filter((t) => t.dueDateIso === today);
-      case 'UPCOMING':
-        return base
-          .filter((t) => t.status !== 'COMPLETED' && t.dueDateIso && t.dueDateIso > today && t.dueDateIso <= plus30)
-          .sort((a, b) => a.dueDateIso.localeCompare(b.dueDateIso));
-      case 'OVERDUE':
-        return base
-          .filter((t) => isTaskOverdue(t, today))
-          .sort((a, b) => a.dueDateIso.localeCompare(b.dueDateIso));
-      case 'COMPLETED':
-        return base.filter((t) => t.status === 'COMPLETED');
-      case 'KANBAN':
-      case 'ALL':
-      default:
-        return base;
-    }
-  }
-
-  function groupTasks(tasks, todayIso) {
-    const plus7 = addDaysIso(todayIso, 7);
-    const buckets = [
-      { key: 'OVERDUE', label: 'Atrasadas', items: [] },
-      { key: 'TODAY', label: 'Hoje', items: [] },
-      { key: 'NEXT_7', label: 'Próximos 7 dias', items: [] },
-      { key: 'LATER', label: 'Mais adiante', items: [] },
-      { key: 'UNDATED', label: 'Sem prazo', items: [] },
-      { key: 'DONE', label: 'Concluídas', items: [] }
-    ];
-    tasks.forEach((t) => {
-      if (t.status === 'COMPLETED') {
-        buckets[5].items.push(t);
-      } else if (!t.dueDateIso) {
-        buckets[4].items.push(t);
-      } else if (t.dueDateIso < todayIso) {
-        buckets[0].items.push(t);
-      } else if (t.dueDateIso === todayIso) {
-        buckets[1].items.push(t);
-      } else if (t.dueDateIso <= plus7) {
-        buckets[2].items.push(t);
-      } else {
-        buckets[3].items.push(t);
-      }
-    });
-    return buckets.filter((b) => b.items.length > 0);
-  }
 
   function renderKanbanBoard(tasks, state) {
     return `
@@ -115,13 +53,18 @@
                 </div>
                 ${laneTasks.length ? laneTasks.map((t) => {
                   const proj = state.projects.find((p) => p.id === t.projectId);
-                  const overdue = isTaskOverdue(t, state.todayIso);
+                  const overdue = isTaskOverdue(t, state);
+                  const dueText = formatContextualDueDate(t, state.todayIso);
+                  const isTerminal = t.status === 'COMPLETED' || t.status === 'CANCELLED';
                   return `
                     <div class="nx-kanban-card" data-nexus-entity="task:${esc(t.id)}">
                       <div style="cursor:pointer" data-action="open-task" data-task-id="${esc(t.id)}">
-                        <div class="nx-title-sm" style="${t.status === 'COMPLETED' ? 'text-decoration:line-through;color:var(--nx-text-secondary)' : ''}">${esc(t.title)}</div>
-                        <div class="nx-label-sm nx-text-secondary tnum" style="margin-top:3px">
-                          ${LABELS.TaskPriority[t.priority]}${proj ? ` · ${proj.name}` : ''}${overdue ? ' · Atrasada' : ''}
+                        <div class="nx-title-sm" style="${isTerminal ? 'text-decoration:line-through;color:var(--nx-text-secondary)' : ''}">${esc(t.title)}</div>
+                        <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px">
+                          ${overdue ? `<span class="nx-dot" style="background:var(--nx-danger)"></span>` : ''}
+                          <span class="nx-label-sm ${overdue ? 'nx-danger' : 'nx-text-secondary'} tnum">
+                            ${[LABELS.TaskPriority[t.priority], proj ? proj.name : null, dueText || null, overdue ? 'Atrasada' : null].filter(Boolean).join(' · ')}
+                          </span>
                         </div>
                       </div>
                       <select class="nx-select" style="padding:5px 8px;font-size:11px" aria-label="Mover status da tarefa" data-action="change-task-status-select" data-task-id="${esc(t.id)}">
@@ -152,17 +95,27 @@
           <div class="nx-card" style="align-items:center;text-align:center;padding:24px">
             <span class="nx-title-md">Nenhum projeto cadastrado</span>
             <span class="nx-body-sm">Agrupe tarefas e gastos relacionados sob um projeto.</span>
-            <button type="button" class="nx-btn-outlined" data-action="new-project">+ Novo projeto</button>
+            <button type="button" class="nx-btn-outlined" data-action="new-project">Novo projeto</button>
           </div>
         `}
       </div>
     `;
   }
 
+  function emptyStateTitleForTab(tabMode) {
+    switch (tabMode) {
+      case 'TODAY': return 'Nenhuma tarefa agendada para hoje';
+      case 'UPCOMING': return 'Nenhuma tarefa nos próximos 30 dias';
+      case 'OVERDUE': return 'Nenhuma tarefa atrasada';
+      case 'COMPLETED': return 'Nenhuma tarefa concluída';
+      default: return 'Nenhuma tarefa encontrada';
+    }
+  }
+
   function renderTasksScreen(state, ui) {
     const filter = ui.tasksFilter || { tabMode: 'TODAY', statusFilter: null, priorityFilter: null, projectFilterId: null };
     const activeFilterCount = [filter.statusFilter, filter.priorityFilter, filter.projectFilterId].filter(Boolean).length;
-    const overdueCount = state.tasks.filter((t) => isTaskOverdue(t, state.todayIso)).length;
+    const overdueCount = state.tasks.filter((t) => isTaskOverdue(t, state)).length;
     const undatedActiveCount = state.tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED' && !t.dueDateIso).length;
     const filteredTasks = filterTasksForTab(state, filter);
 
@@ -172,10 +125,7 @@
     } else if (filter.tabMode === 'KANBAN') {
       bodyHtml = renderKanbanBoard(filteredTasks, state);
     } else {
-      const grouped = (filter.tabMode === 'UPCOMING' || filter.tabMode === 'ALL') ? groupTasks(filteredTasks, state.todayIso) : [];
-      const orderedToday = filter.tabMode === 'TODAY'
-        ? [...filteredTasks].sort((a, b) => Number(a.status === 'COMPLETED') - Number(b.status === 'COMPLETED'))
-        : filteredTasks;
+      const grouped = (filter.tabMode === 'UPCOMING' || filter.tabMode === 'ALL') ? groupTasks(filteredTasks, state) : [];
 
       bodyHtml = `
         <div class="nx-screen-scroll">
@@ -201,7 +151,7 @@
 
           ${filteredTasks.length === 0 ? `
             <div class="nx-card" style="align-items:center;text-align:center;padding:24px">
-              <span class="nx-title-md">Nenhuma tarefa encontrada</span>
+              <span class="nx-title-md">${esc(emptyStateTitleForTab(filter.tabMode))}</span>
               <span class="nx-body-sm">
                 ${filter.tabMode === 'TODAY' && undatedActiveCount > 0
                   ? `Você tem ${undatedActiveCount} tarefa(s) sem prazo em Todas.`
@@ -217,12 +167,12 @@
             <div style="display:flex;flex-direction:column;gap:8px">
               ${renderSectionHeader({ title: `${sec.label} (${sec.items.length})` })}
               <div class="nx-grid-2">
-                ${sec.items.map((t) => renderTaskRowCard(t, state, { showPostpone: t.status !== 'COMPLETED' && isTaskOverdue(t, state.todayIso) })).join('')}
+                ${sec.items.map((t) => renderTaskRowCard(t, state, { showPostpone: t.status !== 'COMPLETED' && isTaskOverdue(t, state) })).join('')}
               </div>
             </div>
           `).join('') : `
             <div class="nx-grid-2">
-              ${orderedToday.map((t) => renderTaskRowCard(t, state, { showPostpone: t.status !== 'COMPLETED' })).join('')}
+              ${filteredTasks.map((t) => renderTaskRowCard(t, state, { showPostpone: t.status !== 'COMPLETED' && t.status !== 'CANCELLED' && (filter.tabMode === 'TODAY' || filter.tabMode === 'OVERDUE') })).join('')}
             </div>
           `)}
 
@@ -243,7 +193,7 @@
         <div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px">
           <h2 class="nx-headline-md">Tarefas e Projetos</h2>
           ${filter.tabMode === 'PROJECTS' ? `
-            <button type="button" class="nx-btn-outlined" data-action="new-project">+ Novo projeto</button>
+            <button type="button" class="nx-btn-outlined" data-action="new-project">Novo projeto</button>
           ` : `
             <button type="button" class="nx-btn-outlined ${activeFilterCount > 0 ? 'is-selected' : ''}" data-action="open-tasks-filter-sheet">
               ${ICONS.filter} <span>${activeFilterCount > 0 ? `Filtros (${activeFilterCount})` : 'Filtros'}</span>

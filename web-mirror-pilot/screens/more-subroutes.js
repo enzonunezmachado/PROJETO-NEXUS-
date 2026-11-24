@@ -353,6 +353,8 @@
       projects: state.projects,
       events: state.events,
       tasks: state.tasks,
+      taskRecurrences: state.taskRecurrences || [],
+      recurrenceExceptions: state.recurrenceExceptions || [],
       appointments: state.appointments,
       creditCards: state.creditCards,
       statements: state.statements,

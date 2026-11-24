@@ -124,7 +124,7 @@
               </button>
               ${(block.showOverdueOrAlerts && conflictCount > 0) ? renderAlertBanner({
                 title: 'Conflito de horário detectado hoje',
-                subtitle: `${conflictCount} compromissos com sobreposição entre 10:00 e 11:15.`,
+                subtitle: `${conflictCount} compromisso(s) com sobreposição de horário hoje.`,
                 severity: 'warning',
                 actionAttr: 'data-action="open-agenda-tab"'
               }) : ''}

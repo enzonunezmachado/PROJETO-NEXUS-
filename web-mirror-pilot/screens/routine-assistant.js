@@ -7,6 +7,7 @@
     LABELS,
     formatBrl,
     formatDateBr,
+    addDaysIso,
     computeDailyBriefing
   } = window.NexusPilot.Data;
   const {
@@ -33,6 +34,7 @@
     const totalBillsCount = briefing.overdueBills.length + briefing.billsDueToday.length;
     const totalPendingTasksCount = briefing.overdueTasks.length + briefing.todayTasks.length;
     const hasConflicts = briefing.todayAppointments.some((a) => a.conflictTitles && a.conflictTitles.length > 0);
+    const conflictCount = briefing.todayAppointments.filter((a) => a.conflictTitles && a.conflictTitles.length > 0).length;
     const allBills = [...briefing.overdueBills, ...briefing.billsDueToday];
 
     return `
@@ -62,7 +64,7 @@
 
         ${hasConflicts ? renderAlertBanner({
           title: 'Conflito de horário na agenda de hoje',
-          subtitle: 'Dois compromissos se sobrepõem entre 10:00 e 11:15.',
+          subtitle: `${conflictCount} compromisso(s) com sobreposição de horário hoje.`,
           severity: 'warning',
           actionAttr: 'data-action="open-agenda-tab"'
         }) : ''}
@@ -198,7 +200,7 @@
         ` : ''}
 
         <div class="nx-card" data-nexus-component="TomorrowPreviewCard" data-nexus-source="RoutineAssistantScreen.kt:NightReviewTab" data-nexus-status="reproduzido">
-          <div class="nx-title-md">Prévia de amanhã · 24/11/2026</div>
+          <div class="nx-title-md">Prévia de amanhã · ${esc(formatDateBr(addDaysIso(state.todayIso, 1)))}</div>
           <span class="nx-body-sm tnum">
             ${briefing.tomorrowAppointments.length} compromisso(s) · ${briefing.tomorrowTasks.length} tarefa(s) programada(s) · ${briefing.tomorrowBills.length} conta(s)
           </span>
