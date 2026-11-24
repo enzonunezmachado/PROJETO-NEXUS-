@@ -11,9 +11,9 @@ Esta suíte documental em `/docs/` constitui a **planta completa de produto, arq
 
 ---
 
-## 2. Regra de Resolução de Conflitos (Hierarquia da Verdade)
+## 2. Orientação obrigatória e regra de resolução de conflitos
 
-Em caso de dúvida entre documentos ou registros históricos, siga rigorosamente esta ordem de precedência:
+Antes de qualquer leitura técnica ou execução, leia [`00_ORIENTACAO_E_AUTORIDADE.md`](./00_ORIENTACAO_E_AUTORIDADE.md). Para fatos de implementação, em caso de dúvida entre documentos ou registros históricos, siga rigorosamente esta ordem de precedência:
 
 1. **Código-fonte real em `app/src/` e configuração Gradle/Manifest (`build.gradle.kts`, `AndroidManifest.xml`)** — fonte máxima do que existe hoje em execução/estrutura.
 2. **Documentação técnica vigente em `/docs/*.md` (documentos `01` a `13` e histórico metodológico)** — retrato consolidado e auditado do sistema atual.
@@ -28,7 +28,8 @@ Em caso de dúvida entre documentos ou registros históricos, siga rigorosamente
 
 | Ordem | Arquivo | Finalidade Principal | Quando Consultar |
 | --- | --- | --- | --- |
-| **0** | [`README.md`](./README.md) | Índice documental, mapa de leitura, hierarquia da verdade e matriz vigente vs. histórico | Sempre como ponto de partida |
+| **0** | [`00_ORIENTACAO_E_AUTORIDADE.md`](./00_ORIENTACAO_E_AUTORIDADE.md) | Regras obrigatórias para interpretar autoridade, estados, propostas e conflitos | Sempre antes de qualquer outro documento |
+| **0.1** | [`README.md`](./README.md) | Índice documental, mapa de leitura e hierarquia da verdade | Depois da orientação obrigatória |
 | **1** | [`01_DOCUMENTO_MESTRE.md`](./01_DOCUMENTO_MESTRE.md) | Visão do produto, problema resolvido, pilares, limites e resumo executivo | Entender o todo em 5 minutos |
 | **2** | [`02_ESPECIFICACAO_PRODUTO.md`](./02_ESPECIFICACAO_PRODUTO.md) | Requisitos (`REQ-*`), regras de negócio e especificação completa dos 13 módulos | Definir comportamento funcional e regras de domínio |
 | **3** | [`03_ARQUITETURA_ENGENHARIA.md`](./03_ARQUITETURA_ENGENHARIA.md) | Arquitetura em camadas, DI (`AppContainer`), navegação por estado, diagramas C4, rede e workers | Planejar mudanças estruturais ou novos componentes |
@@ -56,7 +57,7 @@ Em caso de dúvida entre documentos ou registros históricos, siga rigorosamente
 
 ## 4. Governança e Evolução Documental
 
-A documentação vigente é viva e pode ser revisada quando houver mudança de realidade, necessidade, evidência ou entendimento. Consulte [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) para classificar ideias, distinguir decisões contextuais de restrições estruturais e definir quando uma proposta pode ser reavaliada. Mudanças relevantes no método documental devem ser registradas em [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md).
+A documentação vigente é viva e pode ser revisada quando houver mudança de realidade, necessidade, evidência ou entendimento. Propostas, brainstorms e pesquisas não alteram decisões vigentes por aparecerem em documentos mais recentes; a substituição exige aprovação explícita e atualização das referências. Consulte [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) para classificar ideias, distinguir decisões contextuais de restrições estruturais e definir quando uma proposta pode ser reavaliada. Mudanças relevantes no método documental devem ser registradas em [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md).
 
 ## 5. Sincronização com Artefatos do Google AI Studio
 
