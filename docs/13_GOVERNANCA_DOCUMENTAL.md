@@ -4,6 +4,8 @@
 
 ## 1. Objetivo
 
+A leitura operacional deve começar por [`00_ORIENTACAO_E_AUTORIDADE.md`](./00_ORIENTACAO_E_AUTORIDADE.md). Esse arquivo define a hierarquia de autoridade e a interpretação obrigatória para agentes; este documento define o processo de governança.
+
 Definir como ideias e decisões são capturadas, investigadas, avaliadas, aprovadas, planejadas, implementadas, revistas e encerradas. A documentação deve explicar não apenas o estado atual, mas também o contexto das decisões, suas justificativas e as condições em que podem ser reconsideradas.
 
 **A documentação é viva. Nenhum documento é imutável por princípio.** Documento Mestre, especificações, arquitetura, ADRs e roadmap podem ser revisados quando a realidade, as necessidades ou as evidências mudarem. A revisão deve preservar histórico e rastreabilidade, não congelar decisões antigas.
@@ -43,6 +45,10 @@ Uma ideia rejeitada, descartada ou pausada pode voltar à pesquisa/análise quan
 Para ideias relevantes, registrar título/identificador, problema, origem e contexto, estado, evidências, alternativas, riscos, dependências, relações com requisitos/ADRs/módulos, justificativa atual, condição de reavaliação e próximo passo. Ideias incipientes podem ter registro breve. Não criar requisitos, ADRs ou itens de roadmap prematuramente.
 
 ## 5. Decisões e ADRs
+
+**Regra de não revogação implícita:** uma proposta, pesquisa, brainstorm, prompt ou relatório posterior não substitui nem suspende uma decisão com status Aceita e Ativa. A decisão continua orientando o trabalho até que o responsável aprove formalmente sua revisão e os documentos afetados sejam atualizados. A data mais recente, isoladamente, não concede autoridade.
+
+Quando uma proposta conflitar com uma decisão vigente, deve declarar qual decisão pretende revisar, por que o contexto mudou, quais alternativas e impactos existem e o que permanece vigente enquanto a revisão não for aprovada.
 
 ADRs registram decisões arquiteturais e consequências; não são proibições eternas.
 
@@ -89,6 +95,8 @@ No início de nova sessão: consultar README e esta governança; verificar estad
 No Google AI Studio, manter artefatos operacionais existentes coerentes com /docs conforme o mapeamento estabelecido. Não criar duplicatas nem declarar sincronização sem verificação.
 
 ## 10. Relação com documentos
+
+A orientação obrigatória de leitura e autoridade está em `00_ORIENTACAO_E_AUTORIDADE.md`; agentes e colaboradores devem consultá-la antes de qualquer outro material.
 
 README: índice e hierarquia. 01: visão e princípios. 02: requisitos aprovados. 03: arquitetura. 07: estado real. 09: fluxo operacional. 10: roadmap. 11: ADRs. 12: rastreabilidade. HISTORICO_DOCUMENTACAO.md: mudanças no método documental.
 
