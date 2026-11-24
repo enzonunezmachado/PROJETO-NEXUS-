@@ -147,3 +147,14 @@ O responsável identificou risco de agentes encontrarem decisões técnicas vige
 
 ### Resultado esperado
 Agentes distinguem arquitetura vigente de propostas de evolução. Uma proposta não produz comportamento contraditório antes de ser aprovada e refletida nos documentos normativos.
+
+
+### Complemento — 2026-11-23 — Linguagem normativa revisável no Documento Mestre e Guia
+
+A varredura identificou títulos e comandos absolutos que poderiam ser interpretados como imutáveis, mesmo quando a governança permite revisão formal.
+
+**Ajustes adicionais:**
+- `01_DOCUMENTO_MESTRE.md`: “Pilares e Princípios Permanentes” passou a “Princípios técnicos vigentes (revisáveis)”.
+- `09_GUIA_DESENVOLVIMENTO.md`: “Regras Permanentes” passou a “Regras Vigentes”; incrementalidade foi mantida como padrão, sem proibir reescritas justificadas e aprovadas; restrições de backend/login foram explicitamente vinculadas ao ADR-003 ativo.
+
+**Limites:** não houve mudança de decisão arquitetural, código ou escopo. Os documentos foram ajustados para deixar claro que as regras atuais são obrigatórias enquanto vigentes, mas revisáveis pelo processo formal.
