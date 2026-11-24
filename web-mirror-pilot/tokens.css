@@ -1,0 +1,91 @@
+/*
+ * NEXUS Web Mirror Pilot — Design Tokens
+ * Fonte Android: app/src/main/java/com/nexus/app/ui/theme/NexusTheme.kt
+ * Mantem exatamente as paletas Dark (#050505) e Light Grafite Suave (#D4D7DC),
+ * alem dos 8 papeis de borda ColoredBorderRole e escala tipografica.
+ */
+
+:root,
+[data-nexus-theme="dark"] {
+  --nx-is-dark: 1;
+  --nx-bg: #050505;
+  --nx-surface: #0C0C0C;
+  --nx-surface-elevated: #121212;
+  --nx-border: #242424;
+  --nx-text-primary: #F2F2F2;
+  --nx-text-secondary: #9A9A9A;
+  --nx-highlight: #FFFFFF;
+
+  --nx-positive: #34C759;
+  --nx-danger: #E5484D;
+  --nx-warning: #E5A000;
+  --nx-info: #4C8BF5;
+  --nx-accent-neon: #7CFFB2;
+  --nx-on-accent-neon: #051A10;
+
+  --nx-chart-secondary: #D4D8DF;
+  --nx-chart-track: #1C1F24;
+  --nx-chart-1: #7CFFB2;
+  --nx-chart-2: #5CC8FF;
+  --nx-chart-3: #C792FF;
+  --nx-chart-4: #FFD166;
+  --nx-chart-5: #FF7A90;
+  --nx-chart-6: #FF9F6B;
+  --nx-chart-7: #4DE1C1;
+  --nx-chart-8: #A3B1C6;
+
+  /* ColoredBorderRole (NexusTheme.kt lines 59-98) */
+  --nx-border-alert-large: 1.5px solid rgba(229, 72, 77, 0.68);
+  --nx-border-alert-warning: 1.5px solid rgba(229, 160, 0, 0.68);
+  --nx-border-alert-info: 1.5px solid rgba(76, 139, 245, 0.68);
+  --nx-border-day-selected: 1.75px solid rgba(124, 255, 178, 0.80);
+  --nx-border-medium-accent: 1.25px solid rgba(76, 139, 245, 0.68);
+  --nx-border-small-subtle: 1px solid rgba(154, 154, 154, 0.46);
+
+  --nx-scrim: rgba(0, 0, 0, 0.72);
+  --nx-font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --nx-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --nx-radius-card: 14px;
+  --nx-radius-banner: 12px;
+  --nx-radius-control: 10px;
+  --nx-radius-chip: 8px;
+}
+
+[data-nexus-theme="light"] {
+  --nx-is-dark: 0;
+  --nx-bg: #D4D7DC;
+  --nx-surface: #E3E5E8;
+  --nx-surface-elevated: #C9CED4;
+  --nx-border: #B0B6BF;
+  --nx-text-primary: #121417;
+  --nx-text-secondary: #424852;
+  --nx-highlight: #121417;
+
+  --nx-positive: #136B31;
+  --nx-danger: #AD1E1E;
+  --nx-warning: #874E00;
+  --nx-info: #1353A6;
+  --nx-accent-neon: #136B31;
+  --nx-on-accent-neon: #FFFFFF;
+
+  --nx-chart-secondary: #4E5763;
+  --nx-chart-track: #BCC1C9;
+  --nx-chart-1: #136B31;
+  --nx-chart-2: #1353A6;
+  --nx-chart-3: #5D3AA8;
+  --nx-chart-4: #874E00;
+  --nx-chart-5: #AD1E1E;
+  --nx-chart-6: #9C4716;
+  --nx-chart-7: #0E695A;
+  --nx-chart-8: #4E5763;
+
+  --nx-border-alert-large: 1.5px solid rgba(173, 30, 30, 0.86);
+  --nx-border-alert-warning: 1.5px solid rgba(135, 78, 0, 0.86);
+  --nx-border-alert-info: 1.5px solid rgba(19, 83, 166, 0.86);
+  --nx-border-day-selected: 1.75px solid rgba(19, 107, 49, 0.94);
+  --nx-border-medium-accent: 1.25px solid rgba(19, 83, 166, 0.84);
+  --nx-border-small-subtle: 1px solid rgba(66, 72, 82, 0.62);
+
+  --nx-scrim: rgba(18, 20, 23, 0.45);
+}

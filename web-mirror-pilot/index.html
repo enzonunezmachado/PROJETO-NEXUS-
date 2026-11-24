@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEXUS — Piloto de Espelhamento Web (Etapa 1)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <script defer src="data/pilot-data.js"></script>
+  <script defer src="components/primitives.js"></script>
+  <script defer src="components/charts.js"></script>
+  <script defer src="screens/home.js"></script>
+  <script defer src="screens/routine-assistant.js"></script>
+  <script defer src="screens/finance.js"></script>
+  <script defer src="screens/events.js"></script>
+  <script defer src="sheets/transaction-sheet.js"></script>
+  <script defer src="sheets/event-sheet.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="pilot-workspace">
+    <!-- Barra externa do laboratório: separada de #nexus-app-shell para exportação limpa ao Google Stitch -->
+    <div id="pilot-lab-bar" class="pilot-lab-bar">
+      <div class="pilot-lab-meta">
+        <div class="pilot-lab-title">NEXUS · Piloto de Espelhamento Web (Etapa 1 — Android → Web → Stitch)</div>
+        <div class="pilot-lab-subtitle">Escopo: Home + Navegação Principal · Assistente de Rotina · Finanças → Transação → Fatura → Evento</div>
+      </div>
+      <div class="pilot-lab-controls">
+        <div class="pilot-seg" role="group" aria-label="Tema do aplicativo">
+          <button type="button" class="pilot-seg-btn is-active" data-lab-theme="dark">Escuro</button>
+          <button type="button" class="pilot-seg-btn" data-lab-theme="light">Claro (Grafite)</button>
+        </div>
+        <div class="pilot-seg" role="group" aria-label="Viewport">
+          <button type="button" class="pilot-seg-btn is-active" data-lab-viewport="mobile">Smartphone (390px)</button>
+          <button type="button" class="pilot-seg-btn" data-lab-viewport="tablet">Tablet (900px)</button>
+          <button type="button" class="pilot-seg-btn" data-lab-viewport="fluid">Fluido</button>
+        </div>
+        <button type="button" class="pilot-btn" data-action="toggle-trace">Rastreabilidade</button>
+        <button type="button" class="pilot-btn" data-action="reset-pilot-data">Resetar dados</button>
+      </div>
+    </div>
+
+    <div class="pilot-stage">
+      <!-- Árvore pura da UI do NEXUS (#nexus-app-shell): alvo principal de importação/comparação no Google Stitch -->
+      <div id="nexus-app-shell" class="nexus-device-frame" data-nexus-theme="dark" data-nexus-root="true"></div>
+
+      <!-- Painel lateral opcional de rastreabilidade -->
+      <aside id="pilot-trace-panel" class="pilot-trace-panel" hidden aria-label="Inspetor de rastreabilidade"></aside>
+    </div>
+  </div>
+</body>
+</html>

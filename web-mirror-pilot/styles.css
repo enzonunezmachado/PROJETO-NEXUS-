@@ -1,0 +1,1045 @@
+/*
+ * NEXUS Web Mirror Pilot — Component & Layout Stylesheet
+ * Espelha NexusComponents.kt, MainActivity.kt (Scaffold) e telas do piloto.
+ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: #0A0B0D;
+  color: #F2F2F2;
+  font-family: var(--nx-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================================
+ * Laboratório externo do piloto (fora da árvore do app para facilitar diff)
+ * ========================================================================= */
+.pilot-workspace {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 14px 28px;
+  gap: 12px;
+  background: #090A0C;
+}
+
+.pilot-lab-bar {
+  width: 100%;
+  max-width: 1180px;
+  background: #111317;
+  border: 1px solid #242830;
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pilot-lab-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pilot-lab-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #F2F2F2;
+}
+
+.pilot-lab-subtitle {
+  font-size: 12px;
+  color: #9A9A9A;
+}
+
+.pilot-lab-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pilot-seg {
+  display: inline-flex;
+  background: #0A0B0E;
+  border: 1px solid #262A32;
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.pilot-seg-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #9A9A9A;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pilot-seg-btn.is-active {
+  background: #F2F2F2;
+  color: #050505;
+  font-weight: 600;
+}
+
+.pilot-btn {
+  appearance: none;
+  border: 1px solid #2A2E38;
+  background: #171A20;
+  color: #E6E8EC;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pilot-btn:hover {
+  border-color: #4B5263;
+}
+
+.pilot-stage {
+  width: 100%;
+  max-width: 1180px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+/* =========================================================================
+ * Shell do Aplicativo NEXUS (#nexus-app-shell)
+ * ========================================================================= */
+.nexus-device-frame {
+  width: 390px;
+  max-width: 100%;
+  height: 820px;
+  max-height: calc(100vh - 108px);
+  min-height: 600px;
+  background: var(--nx-bg);
+  color: var(--nx-text-primary);
+  border: 1px solid var(--nx-border);
+  border-radius: 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nexus-device-frame.viewport-tablet {
+  width: 900px;
+}
+
+.nexus-device-frame.viewport-fluid {
+  width: 100%;
+  max-width: 1140px;
+}
+
+/* TopBar (MainActivity.kt lines 477-522) */
+.nx-topbar {
+  background: var(--nx-surface);
+  color: var(--nx-text-primary);
+  border-bottom: 1px solid var(--nx-border);
+  flex-shrink: 0;
+}
+
+.nx-topbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  min-height: 52px;
+}
+
+.nx-wordmark-wrap {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.nx-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.nx-icon-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--nx-text-primary);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.nx-icon-btn:hover {
+  background: var(--nx-surface-elevated);
+}
+
+.nx-icon-btn:focus-visible,
+.nx-btn-text:focus-visible,
+.nx-btn-outlined:focus-visible,
+.nx-btn-primary:focus-visible,
+.nx-nav-item:focus-visible,
+.nx-tab:focus-visible {
+  outline: 2px solid var(--nx-info);
+  outline-offset: 2px;
+}
+
+/* SubRoute TopBar (RoutineAssistantScreen.kt lines 115-136) */
+.nx-subroute-bar {
+  background: var(--nx-bg);
+  border-bottom: 1px solid var(--nx-border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  min-height: 56px;
+  flex-shrink: 0;
+}
+
+.nx-subroute-title {
+  margin: 0;
+  font-size: 19px;
+  line-height: 25px;
+  font-weight: 600;
+  color: var(--nx-text-primary);
+}
+
+/* Scrollable body */
+.nx-screen-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--nx-bg);
+  padding: 12px 16px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nx-screen-scroll.no-bottom-nav {
+  padding-bottom: 36px;
+}
+
+.nx-screen-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.nx-headline-md {
+  margin: 0;
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--nx-text-primary);
+}
+
+.nx-title-lg {
+  margin: 0;
+  font-size: 19px;
+  line-height: 25px;
+  font-weight: 600;
+  color: var(--nx-text-primary);
+}
+
+.nx-title-md {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--nx-text-primary);
+}
+
+.nx-title-sm {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--nx-text-primary);
+}
+
+.nx-body-md {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--nx-text-primary);
+}
+
+.nx-body-sm {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--nx-text-secondary);
+}
+
+.nx-label-lg {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.nx-label-md {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.nx-label-sm {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+}
+
+.nx-text-primary { color: var(--nx-text-primary); }
+.nx-text-secondary { color: var(--nx-text-secondary); }
+.nx-positive { color: var(--nx-positive); }
+.nx-danger { color: var(--nx-danger); }
+.nx-warning { color: var(--nx-warning); }
+.nx-info { color: var(--nx-info); }
+.nx-accent { color: var(--nx-accent-neon); }
+.nx-highlight { color: var(--nx-highlight); }
+
+/* NexusCard (NexusComponents.kt lines 76-105) */
+.nx-card {
+  width: 100%;
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nx-card.is-elevated {
+  background: var(--nx-surface-elevated);
+}
+
+.nx-card.is-clickable {
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 140ms ease, transform 140ms ease;
+}
+
+.nx-card.is-clickable:hover {
+  border-color: var(--nx-text-secondary);
+}
+
+.nx-card.is-focused-highlight {
+  border: var(--nx-border-day-selected);
+}
+
+/* SectionHeader (NexusComponents.kt lines 107-149) */
+.nx-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.nx-section-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.nx-section-trailing {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--nx-text-secondary);
+}
+
+/* AlertBannerCard (NexusComponents.kt lines 361-418) */
+.nx-alert-banner {
+  width: 100%;
+  background: var(--nx-surface-elevated);
+  border-radius: var(--nx-radius-banner);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nx-alert-banner.severity-danger { border: var(--nx-border-alert-large); }
+.nx-alert-banner.severity-warning { border: var(--nx-border-alert-warning); }
+.nx-alert-banner.severity-info { border: var(--nx-border-alert-info); }
+
+/* Buttons */
+.nx-btn-text {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--nx-info);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nx-btn-text:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.nx-btn-outlined {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--nx-border);
+  color: var(--nx-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: var(--nx-radius-control);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.nx-btn-outlined.is-selected {
+  border-color: var(--nx-highlight);
+  color: var(--nx-highlight);
+}
+
+.nx-btn-primary {
+  appearance: none;
+  border: 0;
+  background: var(--nx-highlight);
+  color: var(--nx-bg);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 16px;
+  border-radius: var(--nx-radius-control);
+  cursor: pointer;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.nx-btn-danger-text {
+  color: var(--nx-danger);
+}
+
+.nx-btn-positive-text {
+  color: var(--nx-positive);
+}
+
+.nx-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--nx-border);
+  border: 0;
+  margin: 2px 0;
+}
+
+/* Adaptive Grid (isWide = maxWidth >= 720dp) */
+.nx-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.nexus-device-frame.is-wide .nx-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.nexus-device-frame.is-wide .nx-grid-finance-top {
+  display: grid;
+  grid-template-columns: 0.46fr 0.54fr;
+  gap: 12px;
+}
+
+.nx-grid-finance-top {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nx-row-2col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.nx-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.nx-row-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ScrollableTabRow (FinanceScreen.kt / RoutineAssistantScreen.kt) */
+.nx-tabs-bar {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  background: var(--nx-bg);
+  border-bottom: 1px solid var(--nx-border);
+  padding: 0 12px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.nx-tab {
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--nx-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 11px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nx-tab.is-active {
+  color: var(--nx-highlight);
+  border-bottom-color: var(--nx-highlight);
+  font-weight: 600;
+}
+
+/* SegmentedTogglePill (FinanceScreen.kt lines 1093-1125) */
+.nx-seg-control {
+  display: inline-flex;
+  background: var(--nx-surface-elevated);
+  border: 1px solid var(--nx-border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.nx-seg-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--nx-text-secondary);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nx-seg-item.is-active {
+  background: var(--nx-highlight);
+  color: var(--nx-bg);
+  font-weight: 600;
+}
+
+/* Filter chips */
+.nx-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.nx-chip {
+  appearance: none;
+  border: 1px solid var(--nx-border);
+  background: transparent;
+  color: var(--nx-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nx-chip.is-active {
+  background: var(--nx-surface-elevated);
+  border-color: var(--nx-highlight);
+  color: var(--nx-highlight);
+}
+
+/* MonthYearSelectorBar (NexusComponents.kt lines 289-353) */
+.nx-month-bar {
+  background: var(--nx-surface-elevated);
+  border: 1px solid var(--nx-border);
+  border-radius: 12px;
+  padding: 2px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* TaskRowCard & TransactionRowCard */
+.nx-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+}
+
+.nx-check-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.nx-meta-line {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--nx-text-secondary);
+}
+
+.nx-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Charts */
+.nx-task-ring-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.nx-ring-box {
+  position: relative;
+  width: 116px;
+  height: 116px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nx-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.nx-donut-box {
+  position: relative;
+  width: 164px;
+  height: 164px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nx-legend-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--nx-text-primary);
+  text-align: left;
+}
+
+.nx-legend-btn:hover,
+.nx-legend-btn.is-selected {
+  background: var(--nx-surface-elevated);
+}
+
+.nx-bar-summary {
+  background: var(--nx-surface-elevated);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.nx-bar-months {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.nx-bar-month-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 4px 2px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--nx-text-secondary);
+  cursor: pointer;
+}
+
+.nx-bar-month-btn.is-selected {
+  color: var(--nx-accent-neon);
+  font-weight: 600;
+}
+
+.nx-progress-track {
+  width: 100%;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--nx-chart-track);
+  overflow: hidden;
+}
+
+.nx-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+/* Bottom Navigation Bar + FAB (MainActivity.kt lines 525-565) */
+.nx-fab {
+  position: absolute;
+  right: 16px;
+  bottom: 84px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  border: 0;
+  background: var(--nx-highlight);
+  color: var(--nx-bg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+}
+
+.nx-bottom-nav {
+  background: var(--nx-surface);
+  border-top: 1px solid var(--nx-border);
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  padding: 6px 4px 8px;
+  flex-shrink: 0;
+  z-index: 15;
+}
+
+.nx-nav-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--nx-text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+
+.nx-nav-pill {
+  width: 52px;
+  height: 28px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 140ms ease;
+}
+
+.nx-nav-item.is-selected .nx-nav-pill {
+  background: var(--nx-surface-elevated);
+  color: var(--nx-highlight);
+}
+
+.nx-nav-item.is-selected {
+  color: var(--nx-highlight);
+  font-weight: 600;
+}
+
+.nx-nav-label {
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+/* ModalBottomSheet & Dialogs */
+.nx-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--nx-scrim);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  z-index: 40;
+}
+
+.nx-sheet {
+  background: var(--nx-surface);
+  border-top: 1px solid var(--nx-border);
+  border-radius: 20px 20px 0 0;
+  max-height: 88%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.nx-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--nx-border);
+  margin: 10px auto 4px;
+  flex-shrink: 0;
+}
+
+.nx-sheet-body {
+  padding: 8px 20px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.nx-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--nx-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.nx-dialog {
+  width: 100%;
+  max-width: 380px;
+  background: var(--nx-surface-elevated);
+  border: 1px solid var(--nx-border);
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Form fields inside editors */
+.nx-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.nx-field-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--nx-text-secondary);
+}
+
+.nx-input,
+.nx-select,
+.nx-textarea {
+  width: 100%;
+  background: var(--nx-bg);
+  border: 1px solid var(--nx-border);
+  border-radius: 10px;
+  color: var(--nx-text-primary);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.nx-input:focus,
+.nx-select:focus,
+.nx-textarea:focus {
+  outline: 0;
+  border-color: var(--nx-highlight);
+}
+
+/* Switch */
+.nx-switch {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  border: 1px solid var(--nx-border);
+  background: var(--nx-surface-elevated);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.nx-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--nx-text-secondary);
+  transition: transform 150ms ease, background-color 150ms ease;
+}
+
+.nx-switch.is-on {
+  background: var(--nx-highlight);
+  border-color: var(--nx-highlight);
+}
+
+.nx-switch.is-on::after {
+  transform: translateX(18px);
+  background: var(--nx-bg);
+}
+
+/* Snackbar */
+.nx-snackbar {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 82px;
+  background: var(--nx-highlight);
+  color: var(--nx-bg);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Relationship Bridge Highlight (Financas -> Transacao -> Fatura -> Evento) */
+.nx-relation-box {
+  background: var(--nx-surface-elevated);
+  border: var(--nx-border-medium-accent);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nx-relation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Traceability Side Drawer (Laboratório externo) */
+.pilot-trace-panel {
+  width: 340px;
+  max-width: 100%;
+  background: #111317;
+  border: 1px solid #242830;
+  border-radius: 16px;
+  padding: 14px;
+  color: #E6E8EC;
+  max-height: calc(100vh - 108px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pilot-trace-panel[hidden] {
+  display: none;
+}
+
+.pilot-trace-item {
+  border: 1px solid #242830;
+  background: #0B0D10;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pilot-trace-tag {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pilot-trace-tag.reproduzido { color: #34C759; }
+.pilot-trace-tag.parcial { color: #E5A000; }
+.pilot-trace-tag.simulado { color: #4C8BF5; }
+
+@media (max-width: 980px) {
+  .pilot-stage {
+    flex-direction: column;
+    align-items: center;
+  }
+  .pilot-trace-panel {
+    width: 100%;
+    max-width: 900px;
+  }
+}
