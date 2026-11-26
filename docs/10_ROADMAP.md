@@ -24,20 +24,19 @@
   - *Frente B (Entrada Estruturada Interna `contractVersion = 1`):* pacote `data/ingestion/` (`StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt`) integrado ao `NexusRepository` (`processStructuredInputJson` / `processStructuredInputEnvelope`) sobre Room `v6` + `audit_history` (`STRUCTURED_INPUT_OP`), com JSON estrito, FKs e regras financeiras, rollback seguro e `StructuredInputUnitTests` (`7` `@Test`), **naquele momento sem transporte externo; o transporte e a sincronização pertencem à Rodada 3** (contrato documentado em [`14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`](./14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md)).
   - *Frente C (Pipeline de Assinatura & Verificação `apksigner`):* `app/build.gradle.kts` falha rapidamente em configurações parciais (`1..3/4`) e bloqueia `assembleRelease`/`bundleRelease`/`packageRelease` sem assinatura `release`; `.github/workflows/android-build.yml` adiciona `build-tools;35.0.0`, valida keystores via `keytool -list -v` (`-storepass:env`), verifica APKs via `apksigner verify --verbose --print-certs` comparando o SHA-256 real com o keystore e publica `NEXUS-Signing-Verification-Report` + `$GITHUB_STEP_SUMMARY`.
 
-### 1.1.3 Rodada 3 — Ponte ChatGPT → NEXUS-INBOX → Android (**EM ANDAMENTO**)
+### 1.1.3 Rodada 3 — Ponte ChatGPT → NEXUS-INBOX → Android (**CONCLUÍDA — 2026-11-26**)
 
-A primeira implementação da ponte foi produzida no AI Studio e passou por correções em branches isoladas. O escopo inclui repositório GitHub privado, consulta read-only, token protegido por Android Keystore, sincronização manual/periódica, prévia e confirmação explícita antes da importação.
+A ponte foi implementada no código Android, corrigida e integrada à `main`. O fluxo real foi validado pelo usuário no aplicativo: conexão ao repositório privado `NEXUS-INBOX` e importação de registros por meio da Inbox.
 
-**Situação de integração:** as correções finais ainda não foram incorporadas à `main`. A branch `fix/inbox-build-47-kotlin-compile` passou na GitHub Actions #50 (run `45748189511`), mas está divergente da `main` (4 commits à frente / 16 atrás na comparação atualizada de 26/11/2026 na comparação de 26/11/2026). Não fazer merge integral dessa branch. Reaplicar as correções necessárias no estado atual da `main` com o AI Studio, executar CI na `main` e validar a sincronização real no aparelho.
+**Evidências de conclusão:**
+- Commit na `main`: `4041611a4ef4e111c3633790d0c09babdecb2ae8` — `refactor: enhance inbox parsing and UI terminology`.
+- GitHub Actions #70 (run `45792119560`) concluída com sucesso na `main`, incluindo testes unitários e geração do APK Debug. Release permaneceu ignorado por ausência dos secrets de assinatura.
+- O usuário confirmou que o aplicativo funcionou e que conseguiu importar registros pela ponte ChatGPT → `NEXUS-INBOX` → NEXUS Android.
+- O repositório privado `NEXUS-INBOX` foi localizado e contém arquivos JSON de teste e povoamento.
 
-**Critérios para encerrar a Rodada 3:**
-1. Correções de compilação e teste da Inbox reproduzidas no código atual da `main`.
-2. GitHub Actions verde na `main`, com testes unitários e APK Debug.
-3. Repositório privado `NEXUS-INBOX` configurado no aplicativo, token read-only protegido pelo Android Keystore e teste de conexão real concluído.
-4. Arquivo suportado pela versão atual do contrato aparece na prévia, pode ser confirmado e é importado sem duplicação; descarte não altera dados.
-5. Documentação técnica, espelho `GOOGLE_IA/docs/` e artefatos internos do AI Studio coerentes.
+**Limites da evidência:** a confirmação comprova a importação real. Não registrar como individualmente testados descarte sem gravação, reconsulta sem duplicidade, execução periódica em segundo plano, notificações/deep-links, reinício/rotação ou todos os cenários de segurança do token sem confirmação específica. Esses cenários permanecem no gate contínuo de confiabilidade.
 
-A extensão da Inbox para regras recorrentes novas será concluída junto da Rodada 4, depois da definição do modelo de recorrência (`GAP-001`/`GAP-002`).
+**Critérios de encerramento atendidos:** correções na `main`, CI verde e importação real no aparelho. A extensão da Inbox para regras recorrentes continua planejada para a Rodada 4, após definição dos modelos (`GAP-001`/`GAP-002`).
 
 ### 1.2 Módulo Mercado Financeiro (`Lotes 01 a 09` — Módulo Concluído e Encerrado)
 - **Lotes 01–02:** infraestrutura offline-first em `SharedPreferences`, roteamento e fallback de provedores públicos sem token para `USD-BRL`, `EUR-BRL`, `BTC-BRL`, `ETH-BRL`, `SOL-BRL`.
@@ -53,14 +52,14 @@ A extensão da Inbox para regras recorrentes novas será concluída junto da Rod
 
 ## 2. Sequência revisada de desenvolvimento
 
-> **Reorganização de 26/11/2026.** As Rodadas 1 e 2 permanecem concluídas; a Rodada 3 continua sendo a etapa atual. A antiga Rodada 4 (aplicar a proposta Claude) deixa de ser a próxima execução: primeiro será concluída a base funcional e as lacunas de domínio. A evolução da experiência passa a ser a Rodada 5, baseada na documentação conceitual atualizada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/`, não na adoção automática da proposta original do Claude.
+> **Reorganização de 26/11/2026.** As Rodadas 1, 2 e 3 permanecem concluídas; a Rodada 4 passa a ser a etapa atual. A antiga Rodada 4 (aplicar a proposta Claude) deixa de ser a próxima execução: primeiro será concluída a base funcional e as lacunas de domínio. A evolução da experiência passa a ser a Rodada 5, baseada na documentação conceitual atualizada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/`, não na adoção automática da proposta original do Claude.
 
 | Etapa | Estado | Objetivo e entregas |
 |---|---|---|
 | **Rodada 1 — Atualização e proteção dos dados** | **CONCLUÍDA** | Atualização in-place, assinatura configurável, backup incremental, merge transacional e testes unitários. Validações em aparelho e keystore persistente continuam no gate de release. |
 | **Rodada 2 — Importação e entrada estruturada** | **CONCLUÍDA** | Prévia dry-run, restauração/mesclagem separadas, contrato estruturado v1, validação, idempotência e rollback. |
-| **Rodada 3 — Ponte ChatGPT → GitHub → Android** | **EM ANDAMENTO — etapa atual** | Estabilizar as correções da Inbox sobre a `main`, executar CI e validar o ciclo real de sincronização, prévia, confirmação, descarte e importação no aparelho. Não integrar branches antigas integralmente. |
-| **Rodada 4 — Completar o sistema funcional e fechar lacunas de domínio** | **PRÓXIMA — prioridade** | Concluir funcionalidades importantes iniciadas ou especificadas, começando por recorrência de Compromissos e Eventos (`REQ-009`, `GAP-001`), checklist independente por ocorrência de tarefa recorrente (`GAP-003`) e extensão versionada da Inbox (`GAP-002`). Depois fechar pendências de Eventos/backup, consistência da Agenda, estado de edição/navegação e demais requisitos prioritários do inventário. |
+| **Rodada 3 — Ponte ChatGPT → GitHub → Android** | **CONCLUÍDA (2026-11-26)** | Correções integradas à `main`, GitHub Actions #70 verde e importação real confirmada pelo usuário no aplicativo. Cenários adicionais de confiabilidade permanecem no gate contínuo. |
+| **Rodada 4 — Completar o sistema funcional e fechar lacunas de domínio** | **EM ANDAMENTO — próxima etapa** | Concluir funcionalidades importantes iniciadas ou especificadas, começando por recorrência de Compromissos e Eventos (`REQ-009`, `GAP-001`), checklist independente por ocorrência de tarefa recorrente (`GAP-003`) e extensão versionada da Inbox (`GAP-002`). Depois fechar pendências de Eventos/backup, consistência da Agenda, estado de edição/navegação e demais requisitos prioritários do inventário. |
 | **Rodada 5 — Arquitetura da informação e evolução da experiência** | **POSTERIOR — EM ANÁLISE** | Auditar o aplicativo funcional completo; mapear entidades e relações; decidir arquitetura de informação; definir linguagem visual; especificar componentes, fichas e interações; prototipar e validar; só então implementar em lotes pequenos. A proposta Claude permanece referência, não especificação aprovada. |
 
 ### 2.1 Escopo da Rodada 4 — completar o núcleo funcional
