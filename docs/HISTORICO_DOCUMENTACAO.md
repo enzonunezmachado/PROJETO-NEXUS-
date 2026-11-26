@@ -329,3 +329,22 @@ Durante o povoamento inicial pela ponte ChatGPT → NEXUS-INBOX, ficou evidente 
 **Arquivos alterados:** `docs/10_ROADMAP.md`, `docs/15_REGISTRO_LACUNAS_E_FALHAS.md`, `docs/HISTORICO_DOCUMENTACAO.md`.
 
 **Limites:** nenhuma alteração de código Android, merge de branch ou aprovação de redesign foi realizada nesta atualização.
+
+
+---
+
+## 2026-11-26 — Captura de requisito transversal: checklist por ocorrência recorrente
+
+**Tipo:** registro de necessidade funcional e atualização do planejamento.
+
+### Motivação
+O usuário explicitou que tarefas recorrentes podem reutilizar um checklist, mas cada ocorrência semanal precisa começar com os itens pendentes, sem herdar as marcações da semana anterior. O histórico da ocorrência passada deve permanecer intacto.
+
+### Mudanças introduzidas
+1. Registrado `GAP-003` em `docs/15_REGISTRO_LACUNAS_E_FALHAS.md`, como requisito transversal CAPTURADO / EM ANÁLISE.
+2. Incluída a auditoria de checklist por ocorrência na Rodada 4 de `docs/10_ROADMAP.md`, antes de ampliar o contrato Inbox.
+
+### Limites e itens não alterados
+- Nenhum código Android, schema Room ou contrato Inbox foi alterado.
+- O comportamento atual ainda precisa ser inspecionado; não foi classificado como defeito confirmado nem como funcionalidade ausente.
+- A definição técnica deve partir da auditoria do motor de recorrência de tarefas e do modelo de subtarefas.
