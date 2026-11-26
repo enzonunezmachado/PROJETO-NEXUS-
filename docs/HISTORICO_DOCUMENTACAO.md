@@ -423,3 +423,42 @@ Commit de referência: `4041611a4ef4e111c3633790d0c09babdecb2ae8`.
 GAP-003 permanece EM ANÁLISE. A implementação atual cobre parcialmente a independência ao gerar a próxima ocorrência após conclusão, mas o caminho de materialização antecipada pode divergir. É necessária investigação adicional e teste direcionado antes de classificar a causa como defeito confirmado ou escolher uma arquitetura de checklist-base.
 
 Nenhum código, schema Room ou comportamento do aplicativo foi alterado nesta auditoria.
+
+
+---
+
+## 2026-11-26 — Replanejamento da Rodada 4 e integração bidirecional futura
+
+**Tipo:** atualização de requisitos, roadmap e direção estratégica após esclarecimento do usuário.
+
+### Direção confirmada
+1. Priorizar a completude funcional do aplicativo antes de finalizar a integração ChatGPT ↔ NEXUS.
+2. Manter a ponte v1 atual funcional para entrada, sem ampliar agora o contrato para recorrência.
+3. Completar recorrência de Compromissos/Eventos, checklists independentes por ocorrência, checklists opcionais em Compromissos/Eventos e identidade contextual.
+4. Depois de estabilizar o domínio, gerar um guia operacional Markdown para o ChatGPT. O Google AI Studio deverá preencher os detalhes e exemplos a partir dos DTOs, validadores, enums e testes reais; o usuário sincroniza o workspace manualmente com GitHub.
+5. Após Rodadas 4 e 5, executar a Rodada 6 para finalizar integração bidirecional: catálogo de capacidades, snapshot minimizado do estado, recibos/feed de alterações, sincronização manual e automação opcional.
+
+### Requisitos e lacunas registrados
+- `REQ-029` / `GAP-004`: checklist opcional próprio em Compromissos e Eventos.
+- `REQ-030` / `GAP-005`: identidade contextual/ícone em Compromissos e Eventos, sem confundir tipo com ação.
+- `REQ-031` e `REQ-032` / `GAP-006`: catálogo de capacidades separado do snapshot e sincronização bidirecional com retorno de alterações.
+
+### Segurança e arquitetura preliminar
+- Não converter automaticamente o PAT read-only atual em read/write no APK.
+- Comparar GitHub App com credenciais curtas, relay mínimo e token fine-grained separado com escopo mínimo/expiração.
+- Android Keystore protege segredo em repouso, mas não elimina exposição durante uso pelo processo.
+- Não enviar backup completo como contexto padrão; usar snapshot minimizado e controlável.
+- Sincronização agendada em Android é best-effort, sem garantia de horário exato; manter ação manual e controle do usuário.
+- Preservar local-first: a integração não pode ser dependência do núcleo do aplicativo.
+
+### Arquivos
+- `docs/02_ESPECIFICACAO_PRODUTO.md`
+- `docs/10_ROADMAP.md`
+- `docs/15_REGISTRO_LACUNAS_E_FALHAS.md`
+- `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` (estrutura inicial, não operacional)
+- `docs/HISTORICO_DOCUMENTACAO.md`
+- `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/PLANO_MESTRE_DE_EVOLUCAO.md`
+- `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/README.md`
+
+### Limites
+Nenhum código Android, schema Room, token ou contrato Inbox foi alterado. A estrutura inicial do guia não deve ser usada para gerar JSON de produção até ser completada e validada pelo Google AI Studio após a estabilização do domínio.
