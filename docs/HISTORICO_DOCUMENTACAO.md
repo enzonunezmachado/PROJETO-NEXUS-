@@ -278,3 +278,37 @@ Rodar `.github/workflows/android-build.yml` no GitHub Actions (ou `:app:testDebu
 
 
 
+
+
+## 2026-11-26 — Inventário consolidado de lacunas, recorrência e correções da Rodada 3
+
+**Tipo:** consolidação de pendências, correção documental e rastreabilidade de falhas de implementação/CI.
+
+### Motivação e evidência
+Durante o povoamento inicial pela ponte ChatGPT → NEXUS-INBOX, ficou evidente que uma rotina semanal de compromisso (corrida às quintas, 20h) não podia ser registrada como série recorrente. A revisão documental confirmou que `REQ-009` já classificava recorrência de Compromissos e Eventos como não implementada, e que a `ADR-008` adiava a expansão. A ponte `v1` também não permite criar regras recorrentes novas. A inspeção do contrato encontrou ainda nomes de campos de checklist divergentes no exemplo JSON.
+
+### Mudanças introduzidas
+1. Criado `docs/15_REGISTRO_LACUNAS_E_FALHAS.md` como inventário consolidado inicial, com `GAP-001` (recorrência de compromissos/eventos), `GAP-002` (limitação de recorrência na Inbox) e `DOC-001` (exemplo JSON incompatível), além de pendências técnicas já rastreadas e histórico de falhas da Rodada 3.
+2. Corrigidos no exemplo de `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md` os campos `isDone`/`orderIndex` para `isCompleted`/`sortOrder`, e documentada explicitamente a limitação atual de recorrência do contrato `v1`.
+3. Reforçada em `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` e `12_RASTREABILIDADE.md` a ligação entre `REQ-009`, `GAP-001` e `GAP-002`.
+4. Atualizados o índice e a orientação documental para apontar o novo registro.
+5. Registrado o histórico de CI: #47 com erros de compilação, #48 com um teste falho posteriormente corrigido e #50 com build/testes/Debug APK concluídos com sucesso; Release permaneceu ignorado por falta de secrets.
+
+### Limites e itens não alterados
+- Nenhum código Android, schema Room ou contrato executável foi alterado nesta atualização.
+- Nenhuma decisão técnica sobre o modelo final de recorrência ou versão futura do contrato foi tomada.
+- A recorrência de Compromissos e Eventos continua **não implementada**.
+- A validação em dispositivo, migrações Room reais e atualização in-place continuam pendentes conforme `07_ESTADO_ATUAL.md`.
+- O documento do Claude foi consultado: trata série e opções “só esta/toda a série” como princípios de experiência e lista recorrência de compromissos/eventos entre evoluções futuras, mas não fornece especificação técnica suficiente para implementar `REQ-009`.
+- Espelho `NEXUS-DOCUMENTACAO/GOOGLE_IA/docs/` atualizado nesta sincronização; artefatos internos do AI Studio não foram acessados nesta operação.
+
+### Arquivos afetados
+- `docs/15_REGISTRO_LACUNAS_E_FALHAS.md` (novo)
+- `docs/README.md`
+- `docs/00_ORIENTACAO_E_AUTORIDADE.md`
+- `docs/07_ESTADO_ATUAL.md`
+- `docs/10_ROADMAP.md`
+- `docs/12_RASTREABILIDADE.md`
+- `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`
+- `docs/HISTORICO_DOCUMENTACAO.md`
+
