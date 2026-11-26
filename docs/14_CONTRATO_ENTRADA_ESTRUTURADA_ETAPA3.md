@@ -76,8 +76,8 @@ Quando o usuário pedir *"Registra tudo isso no NEXUS"*, o ChatGPT deve gerar um
         "dueAt": 1795428000000,
         "hasDueTime": true,
         "subtasks": [
-          { "id": "sub-summit-1", "title": "Confirmar credencial", "isDone": false, "orderIndex": 0 },
-          { "id": "sub-summit-2", "title": "Separar documentos", "isDone": false, "orderIndex": 1 }
+          { "id": "sub-summit-1", "title": "Confirmar credencial", "isCompleted": false, "sortOrder": 0 },
+          { "id": "sub-summit-2", "title": "Separar documentos", "isCompleted": false, "sortOrder": 1 }
         ]
       }
     },
@@ -90,7 +90,7 @@ Quando o usuário pedir *"Registra tudo isso no NEXUS"*, o ChatGPT deve gerar um
       "data": {
         "taskId": "task-prep-summit",
         "items": [
-          { "id": "sub-summit-3", "title": "Baixar ingresso offline", "isDone": false, "orderIndex": 2 }
+          { "id": "sub-summit-3", "title": "Baixar ingresso offline", "isCompleted": false, "sortOrder": 2 }
         ]
       }
     },
@@ -164,3 +164,16 @@ A ponte **ChatGPT → NEXUS-INBOX → NEXUS Android** opera sobre este contrato 
    - `InboxRepository.checkInboxNow` baixa arquivos `.json` novos ou com SHA alterado (`path::sha`), executa `NexusRepository.previewInboxEnvelope` sem gravar no Room e exibe a prévia detalhada.
    - Somente após o usuário tocar em **"Confirmar importação"**, `InboxRepository.confirmAndImportPending` invoca `NexusRepository.applyInboxEnvelope`, marca arquivos terminais não defeituosos como processados e persiste em `audit_history` (`INBOX_IMPORT_LOG`) o resumo real das alterações — omitindo categorias com contagem zero.
 4. **Verificação periódica opcional em segundo plano:** `InboxSyncWorker` (`WorkManager`, intervalo mínimo de `15 min`, `NetworkType.CONNECTED`, bateria não baixa) apenas consulta e notifica (`NexusNotificationScheduler.showInboxPendingNotification`) com deep-link para `SubRoute.InboxBridge`, **jamais importando dados automaticamente sem confirmação**.
+
+
+## 6. Limitações atuais de recorrência
+
+O contrato `v1` não permite criar regras/séries recorrentes para `APPOINTMENT` ou `EVENT`. Também não disponibiliza uma operação `RECURRENCE` para criar uma regra nova de recorrência de tarefa; a presença de `recurrenceId` como referência opcional em dados de tarefa não cria a regra referenciada.
+
+Até a implementação e validação de `REQ-009` e a definição de uma extensão/versionamento compatível do contrato:
+- `APPOINTMENT` e `EVENT` recebidos pela Inbox representam registros únicos.
+- Não gerar múltiplas operações avulsas para simular uma série recorrente.
+- Não tratar texto em notas/checklists como compromisso real nem como agendamento de lembretes.
+- O ChatGPT deve explicar a limitação e preservar a intenção recorrente como pendência explícita, sem inventar ocorrências.
+
+A especificação e o acompanhamento dessa lacuna estão em [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md) (`GAP-001` e `GAP-002`).
