@@ -173,3 +173,56 @@ Não foi localizado PR aberto para essas branches. Decisão operacional: **não 
 | Próxima etapa | Rodada 4: investigação conjunta de `GAP-001` (recorrência de Compromissos/Eventos) e `GAP-003` (checklist independente por ocorrência). `GAP-002` depende da definição dos modelos e permanece aberto. |
 
 A conclusão da Rodada 3 não encerra a manutenção da ponte. Segurança do token, idempotência, sincronização periódica, notificações e recuperação de falhas continuam no gate contínuo de confiabilidade.
+
+
+## 8. Novas lacunas e requisitos capturados para completude do domínio (2026-11-26)
+
+### GAP-004 — Checklist opcional em Compromissos e Eventos
+
+| Campo | Registro |
+|---|---|
+| Estado | **CAPTURADA — PLANEJADA para Rodada 4** |
+| Requisito | `REQ-029` |
+| Escopo | Compromissos, Eventos, Agenda, editores, recorrência, backup, entrada estruturada e histórico |
+| Necessidade | Compromissos e Eventos também podem exigir preparação/etapas próprias. O checklist deve ser opcional e pertencer ao registro correspondente, sem se confundir com tarefas vinculadas. |
+| Questões | Modelo reutilizável para séries; estado independente por ocorrência; mudanças no checklist-base; ocorrências passadas/futuras/exceções; ordem; conclusão parcial; backup/merge; importação; acessibilidade; evitar gravação antes de salvar o editor. |
+| Critério inicial | Um compromisso/evento pode ter checklist próprio; marcar itens em uma ocorrência não altera outra ocorrência nem tarefas relacionadas. |
+
+### GAP-005 — Identidade contextual de Compromissos e Eventos
+
+| Campo | Registro |
+|---|---|
+| Estado | **CAPTURADA — PLANEJADA para Rodada 4/5** |
+| Requisito | `REQ-030` |
+| Escopo | Modelo de dados, categorias, Agenda, listas, fichas, widgets, backup e entrada estruturada |
+| Necessidade | Representar visualmente contextos reais (ex.: academia, corrida, consulta, viagem, show, reunião) com ícone apropriado, sem depender exclusivamente do título. |
+| Questões | Catálogo controlado de ícones/contextos, fallback, personalização, acessibilidade, contraste, representação em listas densas, tema claro/escuro e compatibilidade com registros existentes. |
+| Critério inicial | O ícone identifica o tipo/contexto do registro; não substitui status, vínculo nem controle de concluir/editar. Não permitir que o ChatGPT invente identificadores de ícones fora do catálogo suportado. |
+
+### GAP-006 — Catálogo de capacidades e estado exportável para integração bidirecional
+
+| Campo | Registro |
+|---|---|
+| Estado | **CAPTURADA — PLANEJADA para Rodada 6, após Rodadas 4 e 5** |
+| Requisitos | `REQ-031`, `REQ-032` |
+| Escopo | NEXUS-INBOX, integração Android/GitHub, privacidade, segurança de credenciais e fluxo ChatGPT |
+| Necessidade | O ChatGPT precisa conhecer tanto o que o aplicativo suporta quanto o estado atual dos dados relevantes, e o NEXUS precisa devolver recibos/alterações. |
+| Direção | Separar catálogo de capacidades (schema/ações/limitações) do snapshot do estado real e do feed de alterações. Avaliar sincronização manual bidirecional e automação periódica opcional. |
+| Segurança | Não presumir que o PAT read-only atual deve virar read/write dentro do APK. Comparar GitHub App/credenciais curtas, relay mínimo e token fine-grained isolado com escopo mínimo e expiração. Keystore protege em repouso, mas não neutraliza exposição durante uso pelo processo Android. |
+| Privacidade | Não publicar automaticamente backup completo ou dados pessoais/financeiros em excesso. Snapshot deve ser minimizado, escopado, privado e com controles de exclusão/retenção. |
+| Critério inicial | Após as Rodadas 4 e 5, o usuário pode solicitar sincronização de entrada e saída, ver prévia/resultado e manter o aplicativo funcional offline sem depender da integração. |
+
+### Guia operacional do ChatGPT — artefato planejado
+
+Arquivo previsto: `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`.
+
+O arquivo foi criado como estrutura inicial e **não deve ser tratado ainda como contrato operacional**. Depois de estabilizar o domínio, o Google AI Studio deverá completá-lo a partir dos DTOs, validadores, enums, relações e testes reais do código. Deve conter exemplos JSON executáveis e validados, incluindo:
+- tarefa simples e tarefa com checklist;
+- rotina semanal de academia com atividades em dias diferentes, horários, recorrência e checklists;
+- compromisso único e recorrente;
+- evento único e recorrente com checklist e compromissos vinculados;
+- projeto, objetivo e relações entre registros;
+- transações e despesas vinculadas, respeitando as regras financeiras;
+- criação, atualização, exceção de ocorrência, prévia, confirmação, conflitos e idempotência.
+
+O guia deverá separar claramente o que é suportado agora, o que só será suportado após Rodada 4 e o que dependerá da integração final da Rodada 6. Cada exemplo deve ser validado pelos mesmos parsers/DTOs do aplicativo. Não inferir nomes de campos, IDs de enum, ícones ou formatos.
