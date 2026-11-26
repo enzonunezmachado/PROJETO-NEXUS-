@@ -52,7 +52,7 @@ A ponte foi implementada no código Android, corrigida e integrada à `main`. O 
 
 ## 2. Sequência revisada de desenvolvimento
 
-> **Reorganização de 26/11/2026.** As Rodadas 1, 2 e 3 permanecem concluídas; a Rodada 4 passa a ser a etapa atual. A antiga Rodada 4 (aplicar a proposta Claude) deixa de ser a próxima execução: primeiro será concluída a base funcional e as lacunas de domínio. A evolução da experiência passa a ser a Rodada 5, baseada na documentação conceitual atualizada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/`, não na adoção automática da proposta original do Claude.
+> **Atualização de 26/11/2026.** As Rodadas 1, 2 e 3 permanecem concluídas; a Rodada 4 é a etapa atual; a integração bidirecional definitiva passa a ser a Rodada 6, após a evolução da experiência. A antiga Rodada 4 (aplicar a proposta Claude) deixa de ser a próxima execução: primeiro será concluída a base funcional e as lacunas de domínio. A evolução da experiência passa a ser a Rodada 5, baseada na documentação conceitual atualizada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/`, não na adoção automática da proposta original do Claude.
 
 | Etapa | Estado | Objetivo e entregas |
 |---|---|---|
@@ -61,6 +61,7 @@ A ponte foi implementada no código Android, corrigida e integrada à `main`. O 
 | **Rodada 3 — Ponte ChatGPT → GitHub → Android** | **CONCLUÍDA (2026-11-26)** | Correções integradas à `main`, GitHub Actions #70 verde e importação real confirmada pelo usuário no aplicativo. Cenários adicionais de confiabilidade permanecem no gate contínuo. |
 | **Rodada 4 — Completar o sistema funcional e fechar lacunas de domínio** | **EM ANDAMENTO — etapa atual** | Completar o domínio: recorrência de Compromissos/Eventos, checklist independente por ocorrência, checklists opcionais em Compromissos/Eventos, identidade contextual, demais lacunas de Eventos, consistência transversal e auditoria de completude. A expansão da ponte fica para a Rodada 6. |
 | **Rodada 5 — Arquitetura da informação e evolução da experiência** | **POSTERIOR — EM ANÁLISE** | Auditar o aplicativo funcional completo; mapear entidades e relações; decidir arquitetura de informação; definir linguagem visual; especificar componentes, fichas e interações; prototipar e validar; só então implementar em lotes pequenos. A proposta Claude permanece referência, não especificação aprovada. |
+| **Rodada 6 — Integração bidirecional ChatGPT ↔ NEXUS** | **FUTURA — após Rodadas 4 e 5** | Guia operacional validado, catálogo de capacidades, snapshot minimizado do estado, recibos/feed de alterações, sincronização manual e automação opcional segura. |
 
 ### 2.1 Escopo da Rodada 4 — completar o núcleo funcional
 
@@ -91,7 +92,30 @@ A Rodada 5 não é “implementar o Claude” nem fazer redesign de uma vez. Seg
 
 A atualização conceitual posterior ao documento original do Claude refinou pontos importantes: fichas especializadas, consulta separada de edição, componentes proporcionais, relações sem duplicar registros e navegação ainda em análise. A arquitetura de cinco destinos do Claude não está aprovada. Preservar a navegação atual até decisão formal.
 
-### 2.3 Gate contínuo de confiabilidade e release
+### 2.3 Rodada 6 — finalização da integração bidirecional ChatGPT ↔ NEXUS
+
+A ponte da Rodada 3 permanece funcional para entrada de registros pelo contrato v1. Ela não será expandida agora. A finalização da integração será feita **somente depois da Rodada 4 (domínio completo) e da Rodada 5 (experiência estabilizada)**, para evitar construir contratos e sincronizações em cima de modelos que ainda vão mudar.
+
+Entregas planejadas:
+1. **Guia operacional oficial:** concluir `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` com base no código real e exemplos validados. O ChatGPT deve consultar esse guia antes de criar JSON; o Google AI Studio é responsável por gerar/atualizar a documentação técnica a partir da implementação.
+2. **Catálogo de capacidades:** exportar um documento/JSON versionado que informe entidades, campos, relações, operações suportadas, limitações, enumerações e versão do contrato. É a descrição do que o NEXUS sabe fazer, não os dados pessoais do usuário.
+3. **Snapshot de estado:** exportar uma representação compacta e selecionável do estado atual do NEXUS (agenda, tarefas, compromissos, eventos, pendências e relações necessárias), com data/hora, versão e escopo. Não usar o backup completo como contexto padrão; evitar publicar dados financeiros ou pessoais além do necessário.
+4. **Retorno de alterações:** registrar recibos/resultado das importações e operações, e mudanças relevantes feitas no NEXUS desde a última sincronização. Avaliar feed incremental de mudanças em vez de reescrever o estado inteiro a cada execução.
+5. **Sincronização manual de mão dupla:** uma ação clara de sincronizar pode executar, em ordem segura, leitura de comandos pendentes, prévia/validação e confirmação de importação, seguida de envio do snapshot/recibos atualizados. A interface deve informar o que entrou, o que saiu, conflitos e falhas.
+6. **Automação opcional:** avaliar envio periódico (por exemplo, madrugada) e consulta de entrada em segundo plano. WorkManager é best-effort e pode atrasar por Doze, bateria e rede; não prometer execução exata às 00h ou 05h. O usuário mantém controle para pausar/desativar.
+7. **Segurança e privacidade:** não ampliar automaticamente o PAT de leitura atual para leitura/escrita dentro do APK. Comparar GitHub App com credenciais curtas, serviço intermediário mínimo e token fine-grained separado, restrito ao único repositório e com expiração. Android Keystore protege armazenamento em repouso, mas não elimina o risco de um segredo de escrita disponível ao processo do aplicativo. Nunca versionar token, enviar token em JSON, backup ou logs.
+8. **Arquitetura local-first:** a integração é opcional; NEXUS deve continuar plenamente utilizável sem GitHub/ChatGPT. Definir conflito, idempotência, exclusão, tombstones, concorrência e fonte de verdade antes de sincronizar alterações em ambos os sentidos.
+
+**Separação obrigatória de artefatos:**
+- `capabilities.json` (ou equivalente): o que a versão do aplicativo suporta; muda quando a implementação/contrato muda.
+- `state_snapshot.json` (ou equivalente): o que existe agora no aplicativo; muda quando os dados mudam.
+- `inbox/*.json`: comandos/entradas preparados pelo ChatGPT para o NEXUS.
+- `receipts/` ou `changes/`: resultados e alterações produzidas pelo NEXUS para consumo posterior do ChatGPT.
+
+Esses nomes são propostas de organização, não caminhos ou contratos já implementados. A estrutura final será decidida na especificação da Rodada 6.
+
+
+### 2.4 Gate contínuo de confiabilidade e release
 
 Não é uma rodada isolada: acompanha todas as etapas. Inclui keystore persistente, atualização in-place, migrações Room, backup/restauração/merge, testes de regressão, segurança do token, notificações, desempenho e validação em aparelho. Build verde não substitui validação prática.
 
@@ -136,26 +160,3 @@ Uma ideia anteriormente rejeitada, descartada ou não planejada pode voltar à p
 
 
 > **Rastreabilidade de pendências:** consultar também [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md), que consolida lacunas funcionais, defeitos, inconsistências documentais e falhas observadas em CI. A posição de prioridade na tabela é sugestão para reavaliação; não autoriza, isoladamente, alteração de schema ou implementação.
-
-
-### 2.2 Rodada 6 — finalização da integração bidirecional ChatGPT ↔ NEXUS
-
-A ponte da Rodada 3 permanece funcional para entrada de registros pelo contrato v1. Ela não será expandida agora. A finalização da integração será feita **somente depois da Rodada 4 (domínio completo) e da Rodada 5 (experiência estabilizada)**, para evitar construir contratos e sincronizações em cima de modelos que ainda vão mudar.
-
-Entregas planejadas:
-1. **Guia operacional oficial:** concluir `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` com base no código real e exemplos validados. O ChatGPT deve consultar esse guia antes de criar JSON; o Google AI Studio é responsável por gerar/atualizar a documentação técnica a partir da implementação.
-2. **Catálogo de capacidades:** exportar um documento/JSON versionado que informe entidades, campos, relações, operações suportadas, limitações, enumerações e versão do contrato. É a descrição do que o NEXUS sabe fazer, não os dados pessoais do usuário.
-3. **Snapshot de estado:** exportar uma representação compacta e selecionável do estado atual do NEXUS (agenda, tarefas, compromissos, eventos, pendências e relações necessárias), com data/hora, versão e escopo. Não usar o backup completo como contexto padrão; evitar publicar dados financeiros ou pessoais além do necessário.
-4. **Retorno de alterações:** registrar recibos/resultado das importações e operações, e mudanças relevantes feitas no NEXUS desde a última sincronização. Avaliar feed incremental de mudanças em vez de reescrever o estado inteiro a cada execução.
-5. **Sincronização manual de mão dupla:** uma ação clara de sincronizar pode executar, em ordem segura, leitura de comandos pendentes, prévia/validação e confirmação de importação, seguida de envio do snapshot/recibos atualizados. A interface deve informar o que entrou, o que saiu, conflitos e falhas.
-6. **Automação opcional:** avaliar envio periódico (por exemplo, madrugada) e consulta de entrada em segundo plano. WorkManager é best-effort e pode atrasar por Doze, bateria e rede; não prometer execução exata às 00h ou 05h. O usuário mantém controle para pausar/desativar.
-7. **Segurança e privacidade:** não ampliar automaticamente o PAT de leitura atual para leitura/escrita dentro do APK. Comparar GitHub App com credenciais curtas, serviço intermediário mínimo e token fine-grained separado, restrito ao único repositório e com expiração. Android Keystore protege armazenamento em repouso, mas não elimina o risco de um segredo de escrita disponível ao processo do aplicativo. Nunca versionar token, enviar token em JSON, backup ou logs.
-8. **Arquitetura local-first:** a integração é opcional; NEXUS deve continuar plenamente utilizável sem GitHub/ChatGPT. Definir conflito, idempotência, exclusão, tombstones, concorrência e fonte de verdade antes de sincronizar alterações em ambos os sentidos.
-
-**Separação obrigatória de artefatos:**
-- `capabilities.json` (ou equivalente): o que a versão do aplicativo suporta; muda quando a implementação/contrato muda.
-- `state_snapshot.json` (ou equivalente): o que existe agora no aplicativo; muda quando os dados mudam.
-- `inbox/*.json`: comandos/entradas preparados pelo ChatGPT para o NEXUS.
-- `receipts/` ou `changes/`: resultados e alterações produzidas pelo NEXUS para consumo posterior do ChatGPT.
-
-Esses nomes são propostas de organização, não caminhos ou contratos já implementados. A estrutura final será decidida na especificação da Rodada 6.
