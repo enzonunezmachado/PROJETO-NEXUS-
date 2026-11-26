@@ -44,7 +44,7 @@
 | --- | --- | --- | --- |
 | **1** | **Eventos Evoluídos + Backup `.ZIP`** *(antiga Etapa 5 / Lote 4)* | `events.locationMode` (`IN_PERSON`, `ONLINE`, `TBD`), ocultar/opcionalizar `ticketFeesCents` por padrão, banner local JPEG (`PickVisualMedia` → `filesDir/event_banners/<id>.jpg`), listagem/criação direta de compromissos vinculados (`appointments.eventId`) na ficha do evento e pacote `.zip` (`data.json` + `banners/`) | Requer `DATABASE_VERSION = 7` (`MIGRATION_6_7`) + `ZipBackupArchiver` (mantendo `.json` funcional) |
 | **2** | **Splash Screen Nativa + Refino do `QuickAddChooser`** | `androidx.core:core-splashscreen` (`Theme.NEXUS.Splash`) reaproveitando o símbolo N-1 já implementado e padronização do `QuickAddChooser` (descrições enxutas + colapso `"Mais detalhes"` nos editores) | Sem mudança de Room (adiciona `core-splashscreen` no Gradle) |
-| **3** | **Recorrência de Compromissos e Eventos** *(complemento da Etapa 4)* | Expandir modelo/motor de recorrência para `appointments` e `events` com projeção virtual na `AgendaEngine` (sem gravar cópias) e lembretes em 30d | Possível generalização ou novas tabelas/colunas aditivas (`ownerType` / FKs) |
+| **3 — prioridade alta a reavaliar na próxima priorização** | **Recorrência de Compromissos e Eventos** (`REQ-009`, `GAP-001`) | Completar o domínio de séries para `appointments` e `events`, com exceções, projeção virtual na `AgendaEngine`, lembretes e integração com backup/entrada estruturada. Primeiro fechar especificação e modelo; depois implementar e validar ponta a ponta. | Decidir generalização ou tabelas/colunas aditivas após auditoria do modelo atual; compatibilidade de backup e contrato Inbox devem fazer parte do desenho. |
 | **4** | **Melhorias Opcionais Pós-Mercado** *(somente se solicitadas)* | Bloco configurável `DashboardBlockType.MARKET` na `HomeScreen`, alertas por variação percentual, ou migração opcional de watchlist/alertas de mercado para Room | Somente se explicitamente aprovado em lote futuro |
 
 ---
@@ -87,3 +87,6 @@
 
 ### 4.4 Regra de reavaliação
 Uma ideia anteriormente rejeitada, descartada ou não planejada pode voltar à pesquisa/análise quando surgir necessidade nova, tecnologia/custo/licença/capacidade dos dispositivos mudar, novas evidências reduzirem riscos ou a alternativa resolver problema mais importante. Recuperar a justificativa original, registrar o que mudou e atualizar ADRs/documentos afetados quando houver nova decisão. Não apagar nem reescrever silenciosamente o histórico.
+
+
+> **Rastreabilidade de pendências:** consultar também [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md), que consolida lacunas funcionais, defeitos, inconsistências documentais e falhas observadas em CI. A posição de prioridade na tabela é sugestão para reavaliação; não autoriza, isoladamente, alteração de schema ou implementação.
