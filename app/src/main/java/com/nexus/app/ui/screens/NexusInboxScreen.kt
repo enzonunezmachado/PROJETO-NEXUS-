@@ -172,7 +172,7 @@ fun NexusInboxScreen(
                         Text(
                             text = config.lastError,
                             style = MaterialTheme.typography.bodySmall,
-                            color = palette.negative
+                            color = palette.danger
                         )
                     }
 
@@ -369,11 +369,11 @@ fun NexusInboxScreen(
                                     Icon(
                                         Icons.Outlined.DeleteOutline,
                                         contentDescription = null,
-                                        tint = palette.negative,
+                                        tint = palette.danger,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Remover", color = palette.negative)
+                                    Text("Remover", color = palette.danger)
                                 }
                             }
                         }
@@ -415,7 +415,7 @@ fun NexusInboxScreen(
                                 is InboxConnectionTestResult.Failure -> Text(
                                     text = lastConnectionTest.message,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = palette.negative
+                                    color = palette.danger
                                 )
                             }
                         }
@@ -468,7 +468,7 @@ fun NexusInboxScreen(
                 item {
                     NexusEmptyState(
                         title = "Nenhuma importação confirmada",
-                        message = "Quando você confirmar atualizações vindas da NEXUS-INBOX, o resumo real ficará registrado aqui.",
+                        subtitle = "Quando você confirmar atualizações vindas da NEXUS-INBOX, o resumo real ficará registrado aqui.",
                         icon = Icons.Outlined.History
                     )
                 }
@@ -556,14 +556,14 @@ private fun PendingPreviewCard(
                     Icon(
                         imageVector = Icons.Outlined.WarningAmber,
                         contentDescription = null,
-                        tint = palette.negative,
+                        tint = palette.danger,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = err,
                         style = MaterialTheme.typography.bodySmall,
-                        color = palette.negative
+                        color = palette.danger
                     )
                 }
             }
@@ -620,7 +620,7 @@ private fun PreviewItemRow(item: StructuredPreviewItem) {
         StructuredPreviewOutcome.WILL_UPDATE -> palette.highlight
         StructuredPreviewOutcome.DUPLICATE_IGNORED -> palette.textSecondary
         StructuredPreviewOutcome.CONFLICT_PRESERVED_LOCAL -> palette.warning
-        StructuredPreviewOutcome.REJECTED -> palette.negative
+        StructuredPreviewOutcome.REJECTED -> palette.danger
     }
     val typeLabel = when (item.entityType) {
         StructuredEntityType.TASK -> if (item.checklistItemsCount > 0) "Tarefa + Checklist (${item.checklistItemsCount})" else "Tarefa"
@@ -704,7 +704,7 @@ private fun UpdateLogBody(entry: InboxUpdateLogEntry) {
             Text(
                 text = "• Erro: $err",
                 style = MaterialTheme.typography.bodySmall,
-                color = palette.negative
+                color = palette.danger
             )
         }
     }
