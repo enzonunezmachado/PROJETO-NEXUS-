@@ -149,3 +149,17 @@ Não foi localizado PR aberto para essas branches. Decisão operacional: **não 
 - Rastreabilidade: `12_RASTREABILIDADE.md`
 - Entrada estruturada: `14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`
 - Histórico: `HISTORICO_DOCUMENTACAO.md`
+
+
+## 7. Validação prática da Ponte ChatGPT → NEXUS (2026-11-26)
+
+| Campo | Registro |
+|---|---|
+| Estado | **VALIDADA NO FLUXO PRINCIPAL — Rodada 3 concluída** |
+| Evidência de CI | GitHub Actions #70, run `45792119560`, na branch `main`: testes unitários e APK Debug concluídos com sucesso. Release ignorado por ausência dos secrets de assinatura. |
+| Evidência de integração | O usuário confirmou que o aplicativo funcionou no aparelho e que conseguiu importar registros pela ponte ChatGPT → repositório privado `NEXUS-INBOX` → NEXUS Android. |
+| Commit de referência | `4041611a4ef4e111c3633790d0c09babdecb2ae8` |
+| Limite da confirmação | A confirmação comprova a importação real, mas não detalha individualmente descarte sem gravação, reconsulta sem duplicidade, execução periódica em segundo plano, notificação/deep-link, reinício/rotação ou todos os cenários de segurança do token. Não marcar esses cenários como testados sem evidência específica. |
+| Próxima etapa | Rodada 4: investigação conjunta de `GAP-001` (recorrência de Compromissos/Eventos) e `GAP-003` (checklist independente por ocorrência). `GAP-002` depende da definição dos modelos e permanece aberto. |
+
+A conclusão da Rodada 3 não encerra a manutenção da ponte. Segurança do token, idempotência, sincronização periódica, notificações e recuperação de falhas continuam no gate contínuo de confiabilidade.
