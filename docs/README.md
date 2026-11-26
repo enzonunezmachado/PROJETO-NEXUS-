@@ -63,3 +63,7 @@ A documentação vigente é viva e pode ser revisada quando houver mudança de r
 ## 5. Sincronização com Artefatos do Google AI Studio
 
 Quando o projeto for continuado dentro do Google AI Studio, os artefatos da sessão (`NEXUS_CONTINUIDADE.md`, `NEXUS_PRODUCT_SPEC.md`, `NEXUS_DESIGN_SYSTEM.md`, `NEXUS_INTEGRATION_MAP.md`, `NEXUS_IMPLEMENTATION_ROADMAP.md`, `NEXUS_CURRENT_STATE.md`) devem permanecer alinhados aos documentos `/docs/` do repositório ativo — sendo os arquivos em `/docs/` a fonte portátil que acompanha exportações e pacotes `.zip` do código-fonte.
+
+
+### Registro consolidado de pendências
+- [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md) — inventário rastreável de lacunas funcionais, defeitos, inconsistências documentais, falhas de CI e validações pendentes.
