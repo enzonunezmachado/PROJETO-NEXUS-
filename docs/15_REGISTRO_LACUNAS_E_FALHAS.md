@@ -122,7 +122,7 @@ As branches abaixo foram criadas para isolar as tentativas de correção da pont
 
 | Branch | Situação na comparação com `main` em 26/11/2026 | Evidência |
 |---|---|---|
-| `fix/inbox-build-47-kotlin-compile` | Divergente: 4 commits à frente e 16 atrás (comparação atualizada em 26/11/2026 contra a `main` `18f16438f34c9178274cfb3e82a68a3c80b52409`) | Inclui a correção do teste de CHECKLIST; commit conhecido `30ee1453713fc648d0688fb12615161933e6778b`; GitHub Actions #50 / run `45748189511` passou. |
+| `fix/inbox-build-47-kotlin-compile` | Divergente: 4 commits à frente e 18 atrás (comparação atualizada em 26/11/2026 contra a `main` `18f16438f34c9178274cfb3e82a68a3c80b52409`) | Inclui a correção do teste de CHECKLIST; commit conhecido `30ee1453713fc648d0688fb12615161933e6778b`; GitHub Actions #50 / run `45748189511` passou. |
 | `fix/inbox-kotlin-compile` | Divergente: 3 commits à frente e 16 atrás (comparação atualizada em 26/11/2026 contra a `main` `18f16438f34c9178274cfb3e82a68a3c80b52409`) | Tentativa intermediária; manter como histórico, sem integração integral. |
 
 Não foi localizado PR aberto para essas branches. Decisão operacional: **não fazer merge integral**. Manter as branches e seus commits como evidência; reaplicar as correções necessárias no código atual da `main` com o Google AI Studio, revisar o diff e exigir nova CI verde na `main`. Isso evita trazer histórico divergente de uma branch de teste para a linha principal.
