@@ -1,7 +1,7 @@
 # NEXUS — Documentação Oficial de Produto e Engenharia
 
 > **Entrada principal da documentação do repositório ativo `PROJETO-NEXUS-`.**  
-> **Última revisão documental:** 2026-11-26 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 7`, Backup `CURRENT_FORMAT_VERSION = 8`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX`, Rodada 4 concluída no código para `GAP-001`/`REQ-009` e `GAP-003` — aguardando Gradle/CI e dispositivo, `19` suítes / `145` `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
+> **Última revisão documental:** 2026-11-26 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 7`, Backup `CURRENT_FORMAT_VERSION = 8`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX`, Rodada 4 com `GAP-001`/`REQ-009` e `GAP-003` implementados no código — aguardando Gradle/CI e dispositivo, `19` arquivos de teste / `145` anotações `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
 
 ---
 
@@ -16,7 +16,7 @@ Esta suíte documental em `/docs/` constitui a **planta completa de produto, arq
 Antes de qualquer leitura técnica ou execução, leia [`00_ORIENTACAO_E_AUTORIDADE.md`](./00_ORIENTACAO_E_AUTORIDADE.md). Para fatos de implementação, em caso de dúvida entre documentos ou registros históricos, siga rigorosamente esta ordem de precedência:
 
 1. **Código-fonte real em `app/src/` e configuração Gradle/Manifest (`build.gradle.kts`, `AndroidManifest.xml`)** — fonte máxima do que existe hoje em execução/estrutura.
-2. **Documentação técnica vigente em `/docs/*.md` (documentos `01` a `14` e histórico metodológico)** — retrato consolidado e auditado do sistema atual.
+2. **Documentação técnica vigente em `/docs/*.md` (documentos `01` a `16` e histórico metodológico)** — retrato consolidado e auditado do sistema atual.
 3. **Documento de continuidade nos artefatos do AI Studio (`NEXUS_CONTINUIDADE.md`)** — sincronizado com `/docs/`.
 4. **Documentos históricos em `/docs/archive/`** — preservam contexto de origem, especificações anteriores (`v4`/`v5`) e diagnósticos pontuais; **não devem ser tratados como retrato do estado atual** sem conferência no código.
 
@@ -44,7 +44,9 @@ Antes de qualquer leitura técnica ou execução, leia [`00_ORIENTACAO_E_AUTORID
 | **12** | [`12_RASTREABILIDADE.md`](./12_RASTREABILIDADE.md) | Matriz `Requisito → Funcionalidade → Módulo → Componente → Dados → Fluxo → Teste/ADR` | Rastrear impacto completo de qualquer mudança |
 | **13** | [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) | Ciclo de vida de ideias, revisão de decisões, autorização e continuidade | Antes de classificar ou reavaliar ideias |
 | **14** | [`14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`](./14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md) | Contrato JSON `v1`, entidades suportadas, estados e guia de integração da Entrada Estruturada para Etapa 3 | Antes de implementar ou integrar a Etapa 3 |
-| **15** | [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md) | Registro das mudanças no próprio modelo documental | Entender a evolução das regras documentais |
+| **15** | [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md) | Lacunas funcionais, defeitos, inconsistências e validações pendentes | Acompanhar o que falta e as evidências |
+| **16** | [`16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`](./16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md) | Estrutura inicial do guia para converter pedidos em operações JSON válidas; ainda não usar em produção | Consultar somente após validação do contrato real |
+| **17** | [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md) | Registro das mudanças no próprio modelo documental | Entender a evolução das regras documentais |
 
 ### Documentos Históricos e Arquivados (`/docs/archive/`)
 
