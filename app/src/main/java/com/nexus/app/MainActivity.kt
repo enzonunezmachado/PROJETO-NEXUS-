@@ -743,7 +743,7 @@ private fun NexusAppRoot(
                     onGenerateBackupJson = viewModel::generateBackupJson,
                     onNotifyExported = viewModel::notifyBackupExported,
                     onSelectImportMode = viewModel::setBackupImportMode,
-                    onInspectBackupJson = { rawJson -> viewModel.inspectBackupJson(rawJson) },
+                    onInspectBackupJson = { rawJson, mode -> viewModel.inspectBackupJson(rawJson, mode) },
                     onConfirmRestore = viewModel::confirmRestoreBackup,
                     onConfirmMerge = viewModel::confirmMergeBackup,
                     onDismissDialogs = viewModel::dismissBackupDialogs,

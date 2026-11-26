@@ -1,4 +1,3 @@
-
 name: NEXUS Android Build
 
 on:
@@ -22,17 +21,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
+      - name: Set up Android SDK (platform-tools & build-tools 35.0.0)
         uses: android-actions/setup-android@v4
         with:
-          packages: platform-tools
+          packages: |
+            platform-tools
+            build-tools;35.0.0
 
       - name: Set up Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Configure persistent signing keystores (if configured in Secrets)
+      - name: Validate and configure signing keystores
         env:
           NEXUS_DEBUG_KEYSTORE_BASE64: ${{ secrets.NEXUS_DEBUG_KEYSTORE_BASE64 }}
           NEXUS_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.NEXUS_DEBUG_KEYSTORE_PASSWORD }}
@@ -43,40 +44,84 @@ jobs:
           NEXUS_KEY_ALIAS: ${{ secrets.NEXUS_KEY_ALIAS }}
           NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
+
+          # --- Debug Keystore Validation ---
           if [ -n "$NEXUS_DEBUG_KEYSTORE_BASE64" ]; then
-            echo "$NEXUS_DEBUG_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nexus-debug.keystore"
-            echo "NEXUS_DEBUG_KEYSTORE_PATH=$RUNNER_TEMP/nexus-debug.keystore" >> "$GITHUB_ENV"
-            if [ -n "$NEXUS_DEBUG_KEYSTORE_PASSWORD" ]; then
-              echo "NEXUS_DEBUG_KEYSTORE_PASSWORD=$NEXUS_DEBUG_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-            else
-              echo "NEXUS_DEBUG_KEYSTORE_PASSWORD=android" >> "$GITHUB_ENV"
+            DEBUG_KS="$RUNNER_TEMP/nexus-debug.keystore"
+            if ! printf '%s' "$NEXUS_DEBUG_KEYSTORE_BASE64" | base64 -d > "$DEBUG_KS" || [ ! -s "$DEBUG_KS" ]; then
+              echo "::error::Falha ao decodificar NEXUS_DEBUG_KEYSTORE_BASE64."
+              exit 1
             fi
-            if [ -n "$NEXUS_DEBUG_KEY_ALIAS" ]; then
-              echo "NEXUS_DEBUG_KEY_ALIAS=$NEXUS_DEBUG_KEY_ALIAS" >> "$GITHUB_ENV"
-            else
-              echo "NEXUS_DEBUG_KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
+            DEBUG_STOREPASS="${NEXUS_DEBUG_KEYSTORE_PASSWORD:-android}"
+            DEBUG_ALIAS="${NEXUS_DEBUG_KEY_ALIAS:-androiddebugkey}"
+            DEBUG_KEYPASS="${NEXUS_DEBUG_KEY_PASSWORD:-android}"
+            export DEBUG_STOREPASS
+            if ! DEBUG_CERT_OUT="$(keytool -list -v -keystore "$DEBUG_KS" -storepass:env DEBUG_STOREPASS -alias "$DEBUG_ALIAS" 2>/dev/null)"; then
+              echo "::error::Keystore Debug inválido, senha incorreta ou alias configurado ausente."
+              exit 1
             fi
-            if [ -n "$NEXUS_DEBUG_KEY_PASSWORD" ]; then
-              echo "NEXUS_DEBUG_KEY_PASSWORD=$NEXUS_DEBUG_KEY_PASSWORD" >> "$GITHUB_ENV"
-            else
-              echo "NEXUS_DEBUG_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+            EXPECTED_DEBUG_SHA256="$(printf '%s\n' "$DEBUG_CERT_OUT" | grep -i 'SHA256:' | head -n1 | sed 's/.*SHA256:[[:space:]]*//i' | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')"
+            if [ -z "$EXPECTED_DEBUG_SHA256" ]; then
+              echo "::error::Não foi possível extrair o fingerprint SHA-256 do keystore Debug."
+              exit 1
             fi
+            echo "NEXUS_DEBUG_KEYSTORE_PATH=$DEBUG_KS" >> "$GITHUB_ENV"
+            echo "NEXUS_DEBUG_KEYSTORE_PASSWORD=$DEBUG_STOREPASS" >> "$GITHUB_ENV"
+            echo "NEXUS_DEBUG_KEY_ALIAS=$DEBUG_ALIAS" >> "$GITHUB_ENV"
+            echo "NEXUS_DEBUG_KEY_PASSWORD=$DEBUG_KEYPASS" >> "$GITHUB_ENV"
+            echo "DEBUG_SIGNING_MODE=persistent-secret" >> "$GITHUB_ENV"
+            echo "EXPECTED_DEBUG_SHA256=$EXPECTED_DEBUG_SHA256" >> "$GITHUB_ENV"
+            echo "Assinatura Debug persistente validada (SHA-256: $EXPECTED_DEBUG_SHA256)."
+          elif [ -n "$NEXUS_DEBUG_KEYSTORE_PASSWORD" ] || [ -n "$NEXUS_DEBUG_KEY_ALIAS" ] || [ -n "$NEXUS_DEBUG_KEY_PASSWORD" ]; then
+            echo "::error::Secrets parciais de Debug detectados sem NEXUS_DEBUG_KEYSTORE_BASE64."
+            exit 1
+          else
+            echo "DEBUG_SIGNING_MODE=ephemeral-runner-default" >> "$GITHUB_ENV"
+            echo "EXPECTED_DEBUG_SHA256=" >> "$GITHUB_ENV"
+            echo "::warning::NEXUS_DEBUG_KEYSTORE_BASE64 não configurado; o APK Debug usará o certificado efêmero padrão do runner (não adequado para preservar dados entre runners distintos sem keystore persistente)."
           fi
-          if [ -n "$NEXUS_KEYSTORE_BASE64" ] && [ -n "$NEXUS_KEYSTORE_PASSWORD" ] && [ -n "$NEXUS_KEY_ALIAS" ] && [ -n "$NEXUS_KEY_PASSWORD" ]; then
-            echo "$NEXUS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nexus-release.jks"
-            echo "NEXUS_KEYSTORE_PATH=$RUNNER_TEMP/nexus-release.jks" >> "$GITHUB_ENV"
+
+          # --- Release Keystore Validation ---
+          RELEASE_COUNT=0
+          MISSING_RELEASE=""
+          if [ -n "$NEXUS_KEYSTORE_BASE64" ]; then RELEASE_COUNT=$((RELEASE_COUNT + 1)); else MISSING_RELEASE="$MISSING_RELEASE NEXUS_KEYSTORE_BASE64"; fi
+          if [ -n "$NEXUS_KEYSTORE_PASSWORD" ]; then RELEASE_COUNT=$((RELEASE_COUNT + 1)); else MISSING_RELEASE="$MISSING_RELEASE NEXUS_KEYSTORE_PASSWORD"; fi
+          if [ -n "$NEXUS_KEY_ALIAS" ]; then RELEASE_COUNT=$((RELEASE_COUNT + 1)); else MISSING_RELEASE="$MISSING_RELEASE NEXUS_KEY_ALIAS"; fi
+          if [ -n "$NEXUS_KEY_PASSWORD" ]; then RELEASE_COUNT=$((RELEASE_COUNT + 1)); else MISSING_RELEASE="$MISSING_RELEASE NEXUS_KEY_PASSWORD"; fi
+
+          if [ "$RELEASE_COUNT" -gt 0 ] && [ "$RELEASE_COUNT" -lt 4 ]; then
+            echo "::error::Configuração parcial dos Secrets de Release ($RELEASE_COUNT/4). Ausente(s):$MISSING_RELEASE"
+            exit 1
+          elif [ "$RELEASE_COUNT" -eq 4 ]; then
+            RELEASE_KS="$RUNNER_TEMP/nexus-release.jks"
+            if ! printf '%s' "$NEXUS_KEYSTORE_BASE64" | base64 -d > "$RELEASE_KS" || [ ! -s "$RELEASE_KS" ]; then
+              echo "::error::Falha ao decodificar NEXUS_KEYSTORE_BASE64."
+              exit 1
+            fi
+            if ! RELEASE_CERT_OUT="$(keytool -list -v -keystore "$RELEASE_KS" -storepass:env NEXUS_KEYSTORE_PASSWORD -alias "$NEXUS_KEY_ALIAS" 2>/dev/null)"; then
+              echo "::error::Keystore Release inválido, senha incorreta ou alias configurado não encontrado."
+              exit 1
+            fi
+            EXPECTED_RELEASE_SHA256="$(printf '%s\n' "$RELEASE_CERT_OUT" | grep -i 'SHA256:' | head -n1 | sed 's/.*SHA256:[[:space:]]*//i' | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')"
+            if [ -z "$EXPECTED_RELEASE_SHA256" ]; then
+              echo "::error::Não foi possível extrair o fingerprint SHA-256 do keystore Release."
+              exit 1
+            fi
+            echo "NEXUS_KEYSTORE_PATH=$RELEASE_KS" >> "$GITHUB_ENV"
             echo "HAS_RELEASE_SIGNING=true" >> "$GITHUB_ENV"
+            echo "RELEASE_SIGNING_MODE=persistent-release-secret" >> "$GITHUB_ENV"
+            echo "EXPECTED_RELEASE_SHA256=$EXPECTED_RELEASE_SHA256" >> "$GITHUB_ENV"
+            echo "Assinatura Release persistente validada (SHA-256: $EXPECTED_RELEASE_SHA256)."
+          else
+            echo "HAS_RELEASE_SIGNING=false" >> "$GITHUB_ENV"
+            echo "RELEASE_SIGNING_MODE=skipped-no-secrets" >> "$GITHUB_ENV"
+            echo "EXPECTED_RELEASE_SHA256=" >> "$GITHUB_ENV"
+            echo "::notice::Release APK ignorado de forma limpa: nenhum dos 4 Secrets NEXUS_KEYSTORE_* está configurado."
           fi
 
       - name: Run Unit Tests and Build NEXUS Debug APK
         run: gradle :app:testDebugUnitTest :app:assembleDebug
-
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: NEXUS-Android-APK
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
 
       - name: Build Signed NEXUS Release APK (when release secrets configured)
         if: env.HAS_RELEASE_SIGNING == 'true'
@@ -86,6 +131,88 @@ jobs:
           NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
         run: gradle :app:assembleRelease
 
+      - name: Verify APK Signatures and Certificate Fingerprints
+        run: |
+          set -euo pipefail
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)"
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::error::apksigner não encontrado em ANDROID_HOME/build-tools."
+            exit 1
+          fi
+
+          DEBUG_APK="$(find app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' | head -n1)"
+          if [ -z "$DEBUG_APK" ] || [ ! -f "$DEBUG_APK" ]; then
+            echo "::error::APK Debug não encontrado em app/build/outputs/apk/debug."
+            exit 1
+          fi
+
+          DEBUG_SIG_OUT="$("$APKSIGNER" verify --verbose --print-certs "$DEBUG_APK")"
+          ACTUAL_DEBUG_SHA256="$(printf '%s\n' "$DEBUG_SIG_OUT" | grep -i 'SHA-256 digest:' | head -n1 | awk -F: '{print $NF}' | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          if [ -z "$ACTUAL_DEBUG_SHA256" ]; then
+            echo "::error::APK Debug sem certificado SHA-256 válido."
+            exit 1
+          fi
+          if [ "${DEBUG_SIGNING_MODE:-}" = "persistent-secret" ] && [ "$ACTUAL_DEBUG_SHA256" != "${EXPECTED_DEBUG_SHA256:-}" ]; then
+            echo "::error::Fingerprint SHA-256 do APK Debug ($ACTUAL_DEBUG_SHA256) diverge do keystore configurado ($EXPECTED_DEBUG_SHA256)."
+            exit 1
+          fi
+
+          REPORT_FILE="$RUNNER_TEMP/signing-verification-report.txt"
+          {
+            echo "NEXUS Signing Verification Report"
+            echo "================================="
+            echo "Debug APK: $(basename "$DEBUG_APK")"
+            echo "Debug Signing Mode: ${DEBUG_SIGNING_MODE:-unknown}"
+            echo "Debug Certificate SHA-256: $ACTUAL_DEBUG_SHA256"
+            if [ "${DEBUG_SIGNING_MODE:-}" = "ephemeral-runner-default" ]; then
+              echo "Debug Note: Certificado efêmero do runner; configure NEXUS_DEBUG_KEYSTORE_* para chave Debug fixa entre runners."
+            fi
+          } > "$REPORT_FILE"
+
+          if [ "${HAS_RELEASE_SIGNING:-false}" = "true" ]; then
+            RELEASE_APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' ! -name '*-unsigned.apk' | head -n1)"
+            if [ -z "$RELEASE_APK" ] || [ ! -f "$RELEASE_APK" ]; then
+              echo "::error::APK Release assinado não encontrado em app/build/outputs/apk/release."
+              exit 1
+            fi
+            RELEASE_SIG_OUT="$("$APKSIGNER" verify --verbose --print-certs "$RELEASE_APK")"
+            ACTUAL_RELEASE_SHA256="$(printf '%s\n' "$RELEASE_SIG_OUT" | grep -i 'SHA-256 digest:' | head -n1 | awk -F: '{print $NF}' | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+            if [ -z "$ACTUAL_RELEASE_SHA256" ]; then
+              echo "::error::APK Release sem certificado SHA-256 válido."
+              exit 1
+            fi
+            if [ "$ACTUAL_RELEASE_SHA256" != "${EXPECTED_RELEASE_SHA256:-}" ]; then
+              echo "::error::Fingerprint SHA-256 do APK Release ($ACTUAL_RELEASE_SHA256) diverge do keystore configurado ($EXPECTED_RELEASE_SHA256)."
+              exit 1
+            fi
+            {
+              echo "Release APK: $(basename "$RELEASE_APK")"
+              echo "Release Signing Mode: ${RELEASE_SIGNING_MODE:-persistent-release-secret}"
+              echo "Release Certificate SHA-256: $ACTUAL_RELEASE_SHA256"
+            } >> "$REPORT_FILE"
+          else
+            {
+              echo "Release APK: SKIPPED (Secrets NEXUS_KEYSTORE_* ausentes)"
+              echo "Release Signing Mode: ${RELEASE_SIGNING_MODE:-skipped-no-secrets}"
+            } >> "$REPORT_FILE"
+          fi
+
+          cat "$REPORT_FILE"
+          {
+            echo "## NEXUS Android Build & Signing Verification"
+            echo '```'
+            cat "$REPORT_FILE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-Android-APK
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
       - name: Upload Signed Release APK
         if: env.HAS_RELEASE_SIGNING == 'true'
         uses: actions/upload-artifact@v4
@@ -93,3 +220,11 @@ jobs:
           name: NEXUS-Android-Release-APK
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+
+      - name: Upload Signing Verification Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-Signing-Verification-Report
+          path: ${{ runner.temp }}/signing-verification-report.txt
+          if-no-files-found: ignore

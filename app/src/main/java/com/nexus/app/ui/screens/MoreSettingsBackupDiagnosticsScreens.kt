@@ -48,6 +48,9 @@ import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -1019,7 +1022,7 @@ fun BackupScreen(
     onGenerateBackupJson: suspend () -> Result<String>,
     onNotifyExported: () -> Unit,
     onSelectImportMode: (BackupImportMode) -> Unit,
-    onInspectBackupJson: (String) -> Unit,
+    onInspectBackupJson: (String, BackupImportMode) -> Unit,
     onConfirmRestore: () -> Unit,
     onConfirmMerge: () -> Unit,
     onDismissDialogs: () -> Unit,
@@ -1029,6 +1032,7 @@ fun BackupScreen(
     val palette = LocalNexusPalette.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var pendingLaunchMode by remember { mutableStateOf(BackupImportMode.INCREMENTAL_MERGE) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -1056,6 +1060,7 @@ fun BackupScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        val launchMode = pendingLaunchMode
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
@@ -1064,10 +1069,10 @@ fun BackupScreen(
                     } ?: error("Não foi possível ler o arquivo selecionado.")
                 }
             }.onSuccess { rawJson ->
-                onInspectBackupJson(rawJson)
+                onInspectBackupJson(rawJson, launchMode)
             }.onFailure { err ->
                 onLogError("Backup (Leitura SAF)", err)
-                onInspectBackupJson("")
+                onInspectBackupJson("", launchMode)
             }
         }
     }
@@ -1129,6 +1134,7 @@ fun BackupScreen(
                     Button(
                         enabled = !backupState.isBusy,
                         onClick = {
+                            pendingLaunchMode = BackupImportMode.INCREMENTAL_MERGE
                             onSelectImportMode(BackupImportMode.INCREMENTAL_MERGE)
                             importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                         },
@@ -1143,7 +1149,7 @@ fun BackupScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Modo seguro recomendado: soma registros novos, preserva alterações locais, não apaga nada e bloqueia duplicidades.",
+                        text = "Modo seguro (recomendado): analisa o arquivo antes de confirmar, adiciona apenas registros novos, preserva alterações locais e não apaga nenhum dado.",
                         style = MaterialTheme.typography.labelSmall,
                         color = palette.textSecondary
                     )
@@ -1151,6 +1157,7 @@ fun BackupScreen(
                     OutlinedButton(
                         enabled = !backupState.isBusy,
                         onClick = {
+                            pendingLaunchMode = BackupImportMode.FULL_RESTORE
                             onSelectImportMode(BackupImportMode.FULL_RESTORE)
                             importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                         },
@@ -1162,7 +1169,7 @@ fun BackupScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Modo destrutivo: apaga os dados atuais do dispositivo e substitui integralmente pelo arquivo escolhido.",
+                        text = "Modo destrutivo: apaga integralmente os dados atuais deste dispositivo e substitui pelo conteúdo do backup escolhido.",
                         style = MaterialTheme.typography.labelSmall,
                         color = palette.textSecondary
                     )
@@ -1173,24 +1180,24 @@ fun BackupScreen(
                 item {
                     NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
                         Text(
-                            text = "Resultado da última mesclagem incremental",
+                            text = "Resultado da mesclagem incremental",
                             style = MaterialTheme.typography.titleMedium,
                             color = palette.positive
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = buildString {
-                                appendLine("Encontrados no arquivo: ${mergeSummary.totalFoundInFile}")
-                                appendLine("Novos identificados: ${mergeSummary.totalNewRecords} · Inseridos: ${mergeSummary.totalInserted}")
-                                appendLine("Já existentes (idênticos): ${mergeSummary.totalAlreadyExisting}")
-                                appendLine("Locais exclusivos preservados: ${mergeSummary.totalPreservedLocalOnly}")
-                                appendLine("Conflitos (versão local mantida): ${mergeSummary.totalConflicts}")
-                                appendLine("Ignorados / inválidos: ${mergeSummary.totalInvalid}")
-                                appendLine("Para revisão / vínculos ajustados: ${mergeSummary.totalNeedsReview}")
-                                appendLine("Singletons preservados: ${mergeSummary.totalSingletonSkipped}")
+                                appendLine("Analisados no arquivo: ${mergeSummary.totalFoundInFile}")
+                                appendLine("• Adicionados com sucesso: ${mergeSummary.totalInserted}")
+                                appendLine("• Já existiam (iguais): ${mergeSummary.totalAlreadyExisting}")
+                                appendLine("• Conflitos (versão local mantida): ${mergeSummary.totalConflicts}")
+                                appendLine("• Rejeitados / inválidos: ${mergeSummary.totalInvalid}")
+                                appendLine("• Precisam de revisão (vínculos ajustados): ${mergeSummary.totalNeedsReview}")
+                                appendLine("• Configurações locais preservadas: ${mergeSummary.totalSingletonSkipped}")
+                                appendLine("• Exclusivos deste aparelho mantidos intactos: ${mergeSummary.totalPreservedLocalOnly}")
                                 if (mergeSummary.marketConfigApplied || mergeSummary.marketFavoritesFound > 0 || mergeSummary.marketAlertsFound > 0) {
                                     appendLine(
-                                        "Mercado: +${mergeSummary.marketFavoritesAdded} fav. (${mergeSummary.marketFavoritesAlreadyExisting} existentes) · " +
+                                        "• Mercado: +${mergeSummary.marketFavoritesAdded} favorito(s) (${mergeSummary.marketFavoritesAlreadyExisting} existentes) · " +
                                             "+${mergeSummary.marketAlertsAdded} alerta(s) (${mergeSummary.marketAlertsConflicts} conflito(s), ${mergeSummary.marketAlertsInvalid} inválido(s))"
                                     )
                                 }
@@ -1199,11 +1206,11 @@ fun BackupScreen(
                                 }
                                 if (activeEntities.isNotEmpty()) {
                                     appendLine()
-                                    appendLine("Resumo por tabela:")
+                                    appendLine("Resumo por categoria:")
                                     activeEntities.forEach { e ->
                                         appendLine(
-                                            "• ${e.label}: +${e.inserted} ins · ${e.alreadyExisting} exist · " +
-                                                "${e.conflicts} confl · ${e.invalid} inv · ${e.preservedLocalOnly} locais"
+                                            "• ${e.label}: +${e.inserted} novo(s) · ${e.alreadyExisting} já existente(s) · " +
+                                                "${e.conflicts} conflito(s) · ${e.invalid} inválido(s) · ${e.preservedLocalOnly} locais"
                                         )
                                     }
                                 }
@@ -1291,145 +1298,287 @@ fun BackupScreen(
     }
 
     backupState.pendingPreview?.let { preview ->
-        val isMergeMode = backupState.selectedMode == BackupImportMode.INCREMENTAL_MERGE
-        val mergeBlockedReason = if (isMergeMode) backupState.mergeCompatibilityError else null
+        if (backupState.selectedMode == BackupImportMode.INCREMENTAL_MERGE) {
+            val mergePlan = backupState.pendingMergePlan
+            val mergeBlockedReason = backupState.mergeCompatibilityError
 
-        AlertDialog(
-            onDismissRequest = onDismissDialogs,
-            containerColor = palette.surfaceElevated,
-            title = {
-                Text(
-                    text = if (isMergeMode) {
-                        "Confirmar mesclagem incremental?"
-                    } else {
-                        "Confirmar restauração completa?"
-                    },
-                    color = palette.textPrimary,
-                    fontWeight = FontWeight.SemiBold
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
+            AlertDialog(
+                onDismissRequest = onDismissDialogs,
+                containerColor = palette.surfaceElevated,
+                title = {
                     Text(
-                        text = "Formato v${preview.formatVersion} · Banco v${preview.databaseVersion} · App ${preview.appVersion}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = palette.textSecondary
-                    )
-                    Text(
-                        text = "Exportado em: ${preview.exportedAt}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = palette.textSecondary
-                    )
-                    HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
-                    Text(
-                        text = "Modo de importação:",
-                        style = MaterialTheme.typography.labelMedium,
+                        text = "Prévia da mesclagem incremental",
                         color = palette.textPrimary,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelectImportMode(BackupImportMode.INCREMENTAL_MERGE) },
-                        verticalAlignment = Alignment.CenterVertically
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        RadioButton(
-                            selected = isMergeMode,
-                            onClick = { onSelectImportMode(BackupImportMode.INCREMENTAL_MERGE) }
+                        Text(
+                            text = "Formato v${preview.formatVersion} · Banco v${preview.databaseVersion} · App ${preview.appVersion}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.textSecondary
                         )
                         Text(
-                            text = "Mesclar com dados locais (preserva tudo)",
+                            text = "Exportado em: ${preview.exportedAt}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.textSecondary
+                        )
+                        preview.compatibilityNotice?.let { notice ->
+                            Text(
+                                text = notice,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.warning
+                            )
+                        }
+                        mergeBlockedReason?.let { blocked ->
+                            Text(
+                                text = blocked,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.danger,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
+                        if (backupState.isPreparingPreview) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = palette.highlight
+                                )
+                                Text(
+                                    text = "Comparando arquivo com os dados locais (nenhuma gravação foi feita)...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = palette.textSecondary
+                                )
+                            }
+                        } else if (mergePlan != null) {
+                            Text(
+                                text = "Simulação real antes de aplicar:",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = palette.textPrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text("• Encontrados no arquivo: ${mergePlan.totalFoundInFile}", color = palette.textSecondary)
+                            Text("• Novos a adicionar: ${mergePlan.totalNewRecords}", color = palette.positive, fontWeight = FontWeight.SemiBold)
+                            Text("• Já existentes (iguais): ${mergePlan.totalAlreadyExisting}", color = palette.textSecondary)
+                            Text(
+                                text = "• Conflitos (versão local será mantida): ${mergePlan.totalConflicts}",
+                                color = if (mergePlan.totalConflicts > 0) palette.warning else palette.textSecondary
+                            )
+                            Text(
+                                text = "• Inválidos / rejeitados: ${mergePlan.totalInvalid}",
+                                color = if (mergePlan.totalInvalid > 0) palette.danger else palette.textSecondary
+                            )
+                            Text(
+                                text = "• Exigem revisão / vínculos ajustados: ${mergePlan.totalNeedsReview}",
+                                color = if (mergePlan.totalNeedsReview > 0) palette.warning else palette.textSecondary
+                            )
+                            Text("• Exclusivos locais preservados: ${mergePlan.totalPreservedLocalOnly}", color = palette.textSecondary)
+                            Text("• Configurações locais mantidas: ${mergePlan.totalSingletonSkipped}", color = palette.textSecondary)
+
+                            if (preview.includesMarketConfig || mergePlan.marketFavoritesFound > 0 || mergePlan.marketAlertsFound > 0) {
+                                Text(
+                                    text = "• Mercado: +${mergePlan.marketFavoritesAdded} fav. (${mergePlan.marketFavoritesAlreadyExisting} existentes) · " +
+                                        "+${mergePlan.marketAlertsAdded} alerta(s) (${mergePlan.marketAlertsConflicts} conflito(s), ${mergePlan.marketAlertsInvalid} inválido(s))",
+                                    color = palette.textSecondary
+                                )
+                            }
+
+                            val activeEntities = mergePlan.perEntity.filter {
+                                it.newRecords > 0 || it.conflicts > 0 || it.invalid > 0 || it.needsReview > 0
+                            }
+                            if (activeEntities.isNotEmpty()) {
+                                HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
+                                Text(
+                                    text = "Alterações previstas por categoria:",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = palette.textPrimary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                activeEntities.forEach { e ->
+                                    Text(
+                                        text = "• ${e.label}: +${e.newRecords} novo(s) · ${e.alreadyExisting} exist. · ${e.conflicts} confl. · ${e.invalid} inv.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.textSecondary
+                                    )
+                                }
+                            }
+
+                            if (mergePlan.issues.isNotEmpty()) {
+                                HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
+                                Text(
+                                    text = "Destaques de conflitos/revisão (${mergePlan.issues.size}):",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = palette.warning,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                mergePlan.issues.take(8).forEach { issue ->
+                                    Text(
+                                        text = "• ${issue.tableName} (${issue.recordId}): ${issue.reason}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.textSecondary
+                                    )
+                                }
+                                if (mergePlan.issues.size > 8) {
+                                    Text(
+                                        text = "... e mais ${mergePlan.issues.size - 8} ocorrência(s).",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.textSecondary
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Nenhum registro atual será apagado ou sobrescrito.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.positive
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        enabled = !backupState.isBusy &&
+                            !backupState.isPreparingPreview &&
+                            mergePlan != null &&
+                            mergeBlockedReason == null,
+                        onClick = onConfirmMerge,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = palette.highlight,
+                            contentColor = palette.background
+                        )
+                    ) {
+                        Text("Confirmar mesclagem")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismissDialogs) {
+                        Text("Cancelar", color = palette.textPrimary)
+                    }
+                }
+            )
+        } else {
+            var destructiveConfirmed by remember(preview) { mutableStateOf(false) }
+
+            AlertDialog(
+                onDismissRequest = onDismissDialogs,
+                containerColor = palette.surfaceElevated,
+                title = {
+                    Text(
+                        text = "Restaurar backup completo?",
+                        color = palette.danger,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(
+                            text = "ATENÇÃO — AÇÃO DESTRUTIVA",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.danger,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Todos os dados atualmente salvos neste aparelho serão apagados e substituídos pelos ${preview.totalRecords} itens deste arquivo. Se você só deseja importar registros novos sem apagar nada, cancele e use 'Mesclar informações de um backup'.",
                             style = MaterialTheme.typography.bodySmall,
                             color = palette.textPrimary
                         )
+                        HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
+                        Text(
+                            text = "Formato v${preview.formatVersion} · Banco v${preview.databaseVersion} · App ${preview.appVersion}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.textSecondary
+                        )
+                        Text(
+                            text = "Exportado em: ${preview.exportedAt}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = palette.textSecondary
+                        )
+                        preview.compatibilityNotice?.let { notice ->
+                            Text(
+                                text = notice,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.warning
+                            )
+                        }
+                        HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
+                        Text("Conteúdo que substituirá o banco (${preview.totalRecords} itens):", color = palette.textPrimary)
+                        Text("• Configurações: ${preview.settingsCount} · Categorias: ${preview.categoriesCount}", color = palette.textSecondary)
+                        Text("• Personalização: ${preview.personalizationSettingsCount} · Frases: ${preview.quotesCount}", color = palette.textSecondary)
+                        Text("• Objetivos pessoais: ${preview.personalGoalsCount} · Marcos: ${preview.goalMilestonesCount} · Evolução: ${preview.goalProgressLogsCount}", color = palette.textSecondary)
+                        Text("• Projetos: ${preview.projectsCount} · Eventos: ${preview.eventsCount}", color = palette.textSecondary)
+                        Text("• Tarefas: ${preview.tasksCount} · Subtarefas: ${preview.subtasksCount}", color = palette.textSecondary)
+                        Text("• Séries recorrentes: ${preview.recurrencesCount} · Exceções: ${preview.recurrenceExceptionsCount}", color = palette.textSecondary)
+                        Text("• Compromissos: ${preview.appointmentsCount}", color = palette.textSecondary)
+                        Text("• Cartões: ${preview.creditCardsCount} · Faturas: ${preview.statementsCount}", color = palette.textSecondary)
+                        Text("• Parcelamentos: ${preview.installmentPurchasesCount} · Recorrências: ${preview.recurringRulesCount}", color = palette.textSecondary)
+                        Text("• Transações: ${preview.transactionsCount} · Empréstimos: ${preview.loansCount}", color = palette.textSecondary)
+                        Text("• Orçamentos: ${preview.budgetsCount} · Metas: ${preview.financialGoalsCount}", color = palette.textSecondary)
+                        Text("• Lembretes: ${preview.remindersCount} · Rotina: ${preview.routineSettingsCount} · Briefings: ${preview.briefingHistoryCount}", color = palette.textSecondary)
+                        Text("• Auditoria: ${preview.auditHistoryCount} · Logs: ${preview.errorLogsCount}", color = palette.textSecondary)
+                        Text(
+                            text = if (preview.includesMarketConfig) {
+                                "• Mercado: ${preview.marketFavoritesCount} favorito(s) · ${preview.marketAlertsCount} alerta(s)"
+                            } else {
+                                "• Mercado: não incluído neste backup (favoritos e alertas locais preservados)"
+                            },
+                            color = palette.textSecondary
+                        )
+                        HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { destructiveConfirmed = !destructiveConfirmed }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = destructiveConfirmed,
+                                onCheckedChange = { destructiveConfirmed = it },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = palette.danger,
+                                    uncheckedColor = palette.textSecondary
+                                )
+                            )
+                            Text(
+                                text = "Entendo que todos os dados atuais deste aparelho serão apagados e substituídos.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = palette.textPrimary
+                            )
+                        }
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelectImportMode(BackupImportMode.FULL_RESTORE) },
-                        verticalAlignment = Alignment.CenterVertically
+                },
+                confirmButton = {
+                    Button(
+                        enabled = !backupState.isBusy && destructiveConfirmed,
+                        onClick = onConfirmRestore,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = palette.danger,
+                            contentColor = palette.background
+                        )
                     ) {
-                        RadioButton(
-                            selected = !isMergeMode,
-                            onClick = { onSelectImportMode(BackupImportMode.FULL_RESTORE) }
-                        )
-                        Text(
-                            text = "Restaurar completo (apaga dados atuais)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.danger
-                        )
+                        Text("Substituir tudo")
                     }
-                    preview.compatibilityNotice?.let { notice ->
-                        Text(
-                            text = notice,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.warning
-                        )
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismissDialogs) {
+                        Text("Cancelar", color = palette.textPrimary)
                     }
-                    mergeBlockedReason?.let { blocked ->
-                        Text(
-                            text = blocked,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.danger,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
-                    Text("Conteúdo do arquivo (${preview.totalRecords} itens):", color = palette.textPrimary)
-                    Text("• Configurações: ${preview.settingsCount} · Categorias: ${preview.categoriesCount}", color = palette.textSecondary)
-                    Text("• Personalização: ${preview.personalizationSettingsCount} · Frases: ${preview.quotesCount}", color = palette.textSecondary)
-                    Text("• Objetivos pessoais: ${preview.personalGoalsCount} · Marcos: ${preview.goalMilestonesCount} · Evolução: ${preview.goalProgressLogsCount}", color = palette.textSecondary)
-                    Text("• Projetos: ${preview.projectsCount} · Eventos: ${preview.eventsCount}", color = palette.textSecondary)
-                    Text("• Tarefas: ${preview.tasksCount} · Subtarefas: ${preview.subtasksCount}", color = palette.textSecondary)
-                    Text("• Séries recorrentes: ${preview.recurrencesCount} · Exceções: ${preview.recurrenceExceptionsCount}", color = palette.textSecondary)
-                    Text("• Compromissos: ${preview.appointmentsCount}", color = palette.textSecondary)
-                    Text("• Cartões: ${preview.creditCardsCount} · Faturas: ${preview.statementsCount}", color = palette.textSecondary)
-                    Text("• Parcelamentos: ${preview.installmentPurchasesCount} · Recorrências: ${preview.recurringRulesCount}", color = palette.textSecondary)
-                    Text("• Transações: ${preview.transactionsCount} · Empréstimos: ${preview.loansCount}", color = palette.textSecondary)
-                    Text("• Orçamentos: ${preview.budgetsCount} · Metas: ${preview.financialGoalsCount}", color = palette.textSecondary)
-                    Text("• Lembretes: ${preview.remindersCount} · Rotina: ${preview.routineSettingsCount} · Briefings: ${preview.briefingHistoryCount}", color = palette.textSecondary)
-                    Text("• Auditoria: ${preview.auditHistoryCount} · Logs: ${preview.errorLogsCount}", color = palette.textSecondary)
-                    Text(
-                        text = if (preview.includesMarketConfig) {
-                            "• Mercado: ${preview.marketFavoritesCount} favorito(s) · ${preview.marketAlertsCount} alerta(s)"
-                        } else {
-                            "• Mercado: não incluído neste backup (favoritos e alertas locais preservados)"
-                        },
-                        color = palette.textSecondary
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = if (isMergeMode) {
-                            "Somente registros ausentes e válidos serão inseridos. Conflitos mantêm os dados já salvos neste aparelho."
-                        } else {
-                            "ATENÇÃO: todos os registros locais serão apagados e substituídos pelos dados deste arquivo."
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (isMergeMode) palette.positive else palette.danger
-                    )
                 }
-            },
-            confirmButton = {
-                Button(
-                    enabled = !backupState.isBusy && mergeBlockedReason == null,
-                    onClick = if (isMergeMode) onConfirmMerge else onConfirmRestore,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isMergeMode) palette.highlight else palette.danger,
-                        contentColor = palette.background
-                    )
-                ) {
-                    Text(if (isMergeMode) "Mesclar agora" else "Substituir tudo")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = onDismissDialogs) {
-                    Text("Cancelar", color = palette.textPrimary)
-                }
-            }
-        )
+            )
+        }
     }
 
     backupState.validationError?.let { errorMsg ->

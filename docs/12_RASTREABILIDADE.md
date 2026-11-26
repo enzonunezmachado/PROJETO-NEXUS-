@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Matriz Principal (`REQ-001` a `REQ-026`)
+## 1. Matriz Principal (`REQ-001` a `REQ-027`)
 
 | REQ | Funcionalidade | Módulo | Componentes / Arquivos Principais | Persistência (Tabela / Store) | Fluxo (`05_*`) | Testes & ADRs |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -32,8 +32,9 @@
 | `REQ-022` | 4 Widgets Glance responsivos (`SMALL`/`MEDIUM`/`LARGE`), config por ID, tema claro/escuro, deep-links | 11 — Widgets | `MyDayGlanceWidget.kt`, `MyTasksGlanceWidget.kt`, `FinanceGlanceWidget.kt`, `NexusSummaryGlanceWidget.kt`, `NexusWidgetTheme.kt`, `NexusWidgetConfigActivity.kt`, `NexusWidgetUpdater.kt` | `SharedPreferences` (`nexus_widget_instance_prefs`) + Room | §7 | `NexusPhase5WidgetUnitTests` · `ADR-014` |
 | `REQ-023` | Configurações (nome, temas Claro/Escuro, categorias), Personalização e Biblioteca de Frases (TXT/JSON) | 12 — Config/Frases | `MoreSettingsBackupDiagnosticsScreens.kt` (`SettingsScreen`, `DashboardCustomizationScreen`, `QuoteLibraryScreen`), `NexusTheme.kt` | `settings`, `categories`, `personalization_settings`, `quotes` | §7 | `NexusPhase6UnitTests` |
 | `REQ-024` | Busca Global unificada com detecção de conflitos em todo o conjunto de compromissos | 12 — Busca | `MoreSettingsBackupDiagnosticsScreens.kt` (`GlobalSearchScreen`), `NexusRepository.kt` (`observeGlobalSearch`) | Lê todas as principais tabelas de domínio | §7 | `NexusPhase1UnitTests` |
-| `REQ-025` | Backup JSON `v7` transacional via SAF (`v1..v7`), Modo 1 (restauração completa) e Modo 2 (mesclagem incremental idempotente), rollback Room ↔ Mercado, CSV 15 colunas e Diagnóstico | 13 — Backup/Diag. | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `MoreSettingsBackupDiagnosticsScreens.kt`, `GlobalErrorHandler.kt` | 27 tabelas Room + `marketConfig` (`SharedPreferences` + JSON alertas) + `error_logs` | §7 | `NexusPhase6UnitTests`, `NexusStage2UnitTests`, `MarketBackupIntegrationUnitTests`, `BackupIncrementalMergeUnitTests` · `ADR-004`, `ADR-013`, `ADR-015`, `ADR-016` |
+| `REQ-025` | Backup JSON `v7` transacional via SAF (`v1..v7`), Modo 1 (restauração completa com diálogo/checkbox destrutivo) e Modo 2 (prévia dry-run `previewMerge` + mesclagem incremental idempotente), rollback Room ↔ Mercado, CSV 15 colunas, Diagnóstico e verificação de assinatura `apksigner` SHA-256 no CI | 13 — Backup/Diag. | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `MoreSettingsBackupDiagnosticsScreens.kt`, `GlobalErrorHandler.kt`, `.github/workflows/android-build.yml` | 27 tabelas Room + `marketConfig` (`SharedPreferences` + JSON alertas) + `error_logs` | §7 | `NexusPhase6UnitTests`, `NexusStage2UnitTests`, `MarketBackupIntegrationUnitTests`, `BackupIncrementalMergeUnitTests` (`13` `@Test`) · `ADR-004`, `ADR-013`, `ADR-015`, `ADR-016` |
 | `REQ-026` | Backup completo `.zip` (`data.json` + `banners/`) *(não implementada)* | 13 — Backup | Planejado no Roadmap (§2 item 1 de `10_ROADMAP.md`) | — | — | — |
+| `REQ-027` | Camada interna de entrada estruturada (`contractVersion = 1`, `TASK`/`APPOINTMENT`/`EVENT`/`PROJECT`/`PERSONAL_GOAL`/`TRANSACTION`, sem sync externo ainda) para integração da Etapa 3 | 14 — Ingestão Interna | `StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt`, `NexusRepository.kt` (`processStructuredInputJson` / `processStructuredInputEnvelope`) | Tabelas oficiais Room `v6` (`tasks`, `appointments`, `events`, `projects`, `personal_goals`, `transactions`) + `audit_history` (`STRUCTURED_INPUT_OP`) | `14_CONTRATO_*` | `StructuredInputUnitTests` (`7` `@Test`) · `ADR-017` |
 
 
 ---

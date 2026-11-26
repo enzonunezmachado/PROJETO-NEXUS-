@@ -1,6 +1,7 @@
 package com.nexus.app
 
 import com.nexus.app.data.backup.AppointmentBackupDto
+import com.nexus.app.data.backup.BackupImportMode
 import com.nexus.app.data.backup.BackupManager
 import com.nexus.app.data.backup.BackupStorageGateway
 import com.nexus.app.data.backup.BackupValidationResult
@@ -1243,6 +1244,137 @@ class BackupIncrementalMergeUnitTests {
         assertEquals(listOf(MarketAssetCatalog.USD_BRL_CODE, MarketAssetCatalog.BTC_BRL_CODE), watchlistRepo.favoriteCodes.value)
         assertEquals(2, alertRepo.alerts.value.size)
         assertEquals(5.95, alertRepo.alerts.value.first { it.id == "alert-shared" }.targetPrice, 0.001)
+    }
+
+    // Scenarios 21 & 22: Dry-run previewMerge executes zero writes and matches actual merge predictions
+    @Test
+    fun `previewMerge runs real dry-run with zero writes and matches subsequent mergeBackupAtomically`() = runBlocking {
+        val storage = InMemoryBackupStorageGateway()
+        seedLocalDb(storage)
+        val watchlistStore = InMemoryWatchlistStore(listOf(MarketAssetCatalog.USD_BRL_CODE))
+        val alertStore = InMemoryAlertStore(
+            listOf(
+                MarketPriceAlert(
+                    id = "alert-local-only",
+                    assetCode = MarketAssetCatalog.USD_BRL_CODE,
+                    condition = MarketAlertCondition.PRICE_ABOVE,
+                    targetPrice = 6.20,
+                    isActive = true,
+                    status = MarketAlertStatus.WAITING,
+                    createdAtEpochMs = t0,
+                    updatedAtEpochMs = t0
+                )
+            )
+        )
+        val watchlistRepo = MarketWatchlistRepository(watchlistStore)
+        val alertRepo = MarketAlertRepository(alertStore)
+        val manager = BackupManager(storage, watchlistRepo, alertRepo)
+
+        val payload = NexusBackupPayload(
+            formatVersion = 7,
+            databaseVersion = 6,
+            categories = listOf(
+                CategoryBackupDto(id = "cat-local-1", name = "Moradia Local", colorHex = "#4C8BF5"),
+                CategoryBackupDto(id = "cat-preview-new", name = "Preview", colorHex = "#34C759")
+            ),
+            tasks = listOf(
+                TaskBackupDto(
+                    id = "task-shared-conflict",
+                    title = "Versão Antiga",
+                    status = TaskStatus.NOT_STARTED.name
+                ),
+                TaskBackupDto(
+                    id = "task-preview-orphan",
+                    title = "Órfã Opcional",
+                    projectId = "proj-missing"
+                )
+            ),
+            subtasks = listOf(
+                SubtaskBackupDto(id = "sub-invalid", taskId = "task-missing", title = "Sem tarefa")
+            ),
+            marketConfig = MarketBackupConfigDto(
+                favoriteAssetCodes = listOf(MarketAssetCatalog.USD_BRL_CODE, MarketAssetCatalog.BTC_BRL_CODE),
+                priceAlerts = listOf(
+                    MarketPriceAlertBackupDto(
+                        id = "alert-local-only",
+                        assetCode = MarketAssetCatalog.USD_BRL_CODE,
+                        condition = MarketAlertCondition.PRICE_ABOVE.name,
+                        targetPrice = 5.50,
+                        currencyOrUnit = "BRL"
+                    ),
+                    MarketPriceAlertBackupDto(
+                        id = "alert-preview-new",
+                        assetCode = MarketAssetCatalog.BTC_BRL_CODE,
+                        condition = MarketAlertCondition.PRICE_BELOW.name,
+                        targetPrice = 320_000.0,
+                        currencyOrUnit = "BRL"
+                    )
+                )
+            )
+        )
+
+        val categoriesBefore = storage.categories.toList()
+        val tasksBefore = storage.tasks.toList()
+        val subtasksBefore = storage.subtasks.toList()
+        val favsBefore = watchlistRepo.favoriteCodes.value.toList()
+        val alertsBefore = alertRepo.alerts.value.toList()
+
+        val preview = manager.previewMerge(payload)
+
+        // Zero side effects during preview
+        assertEquals(0, storage.clearAllCallsCount)
+        assertEquals(categoriesBefore, storage.categories)
+        assertEquals(tasksBefore, storage.tasks)
+        assertEquals(subtasksBefore, storage.subtasks)
+        assertEquals(favsBefore, watchlistRepo.favoriteCodes.value)
+        assertEquals(alertsBefore, alertRepo.alerts.value)
+        assertEquals(0, preview.totalInserted)
+        assertFalse(preview.marketConfigApplied)
+        assertEquals(2, preview.totalNewRecords) // cat-preview-new + task-preview-orphan
+        assertEquals(1, preview.totalAlreadyExisting) // cat-local-1
+        assertEquals(1, preview.totalConflicts) // task-shared-conflict
+        assertEquals(1, preview.totalInvalid) // sub-invalid
+        assertEquals(2, preview.totalNeedsReview) // sub-invalid + task-preview-orphan sanitized FK
+        assertEquals(1, preview.marketFavoritesAdded)
+        assertEquals(1, preview.marketAlertsAdded)
+        assertEquals(1, preview.marketAlertsConflicts)
+
+        // Executing merge immediately afterward yields exact same predictions applied
+        val applied = manager.mergeBackupAtomically(payload)
+        assertEquals(0, storage.clearAllCallsCount)
+        assertEquals(preview.totalNewRecords, applied.totalInserted)
+        assertEquals(preview.totalAlreadyExisting, applied.totalAlreadyExisting)
+        assertEquals(preview.totalConflicts, applied.totalConflicts)
+        assertEquals(preview.totalInvalid, applied.totalInvalid)
+        assertEquals(preview.totalNeedsReview, applied.totalNeedsReview)
+        assertEquals(preview.totalSingletonSkipped, applied.totalSingletonSkipped)
+        assertEquals(preview.totalPreservedLocalOnly, applied.totalPreservedLocalOnly)
+        assertEquals(preview.issues, applied.issues)
+        assertEquals(preview.marketFavoritesAdded, applied.marketFavoritesAdded)
+        assertEquals(preview.marketAlertsAdded, applied.marketAlertsAdded)
+        assertTrue(applied.marketConfigApplied)
+    }
+
+    @Test
+    fun `previewMerge rejects incompatible backup versions and preserves distinct import modes`() = runBlocking {
+        val storage = InMemoryBackupStorageGateway()
+        seedLocalDb(storage)
+        val manager = BackupManager(storage)
+
+        assertEquals(
+            setOf(BackupImportMode.FULL_RESTORE, BackupImportMode.INCREMENTAL_MERGE),
+            BackupImportMode.entries.toSet()
+        )
+
+        val incompatible = NexusBackupPayload(formatVersion = 99, databaseVersion = 6)
+        try {
+            manager.previewMerge(incompatible)
+            fail("Expected IllegalArgumentException in previewMerge for incompatible formatVersion")
+        } catch (_: IllegalArgumentException) {
+            // expected
+        }
+        assertEquals(0, storage.clearAllCallsCount)
+        assertEquals(2, storage.tasks.size)
     }
 
     private fun LoanBackupDtoFixture() = com.nexus.app.data.backup.LoanBackupDto(

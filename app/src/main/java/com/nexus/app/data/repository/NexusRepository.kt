@@ -7,6 +7,10 @@ import com.nexus.app.data.backup.BackupValidationResult
 import com.nexus.app.data.backup.MergeSummary
 import com.nexus.app.data.backup.NexusBackupPayload
 import com.nexus.app.data.backup.RestoreSummary
+import com.nexus.app.data.ingestion.RoomStructuredInputGateway
+import com.nexus.app.data.ingestion.StructuredBatchResult
+import com.nexus.app.data.ingestion.StructuredInputEnvelope
+import com.nexus.app.data.ingestion.StructuredInputProcessor
 import com.nexus.app.domain.rules.AgendaEngine
 import com.nexus.app.domain.rules.AgendaFilters
 import com.nexus.app.domain.rules.AgendaOccurrence
@@ -158,6 +162,7 @@ class NexusRepository(
     private val goalProgressLogDao = database.goalProgressLogDao()
     private val taskRecurrenceDao = database.taskRecurrenceDao()
     private val recurrenceExceptionDao = database.recurrenceExceptionDao()
+    private val structuredInputProcessor = StructuredInputProcessor(RoomStructuredInputGateway(database))
 
     fun observeSettings(): Flow<SettingsEntity> =
         settingsDao.observeSettings().combine(flowOf(Unit)) { entity, _ ->
@@ -2739,12 +2744,45 @@ class NexusRepository(
     fun validateBackupForMerge(payload: NexusBackupPayload): String? =
         backupManager.validateForMerge(payload)
 
+    suspend fun previewBackupMerge(payload: NexusBackupPayload): Result<MergeSummary> =
+        safeDbCall("Backup (Prévia de mesclagem)") {
+            backupManager.previewMerge(payload)
+        }
+
     suspend fun mergeBackupAtomically(payload: NexusBackupPayload): Result<MergeSummary> =
         safeDbCall("Backup (Mesclagem)") {
             val summary = backupManager.mergeBackupAtomically(payload)
             rescheduleAllRemindersInternal()
             notifyWidgetsChanged()
             summary
+        }
+
+    // --- Camada interna de entrada estruturada (Etapa 2) ---
+
+    suspend fun processStructuredInputJson(
+        rawJson: String,
+        atomicBatch: Boolean = false
+    ): Result<StructuredBatchResult> =
+        safeDbCall("Entrada Estruturada (JSON)") {
+            val result = structuredInputProcessor.processJson(rawJson, atomicBatch = atomicBatch)
+            if (result.appliedCount > 0) {
+                rescheduleAllRemindersInternal()
+                notifyWidgetsChanged()
+            }
+            result
+        }
+
+    suspend fun processStructuredInputEnvelope(
+        envelope: StructuredInputEnvelope,
+        atomicBatch: Boolean = false
+    ): Result<StructuredBatchResult> =
+        safeDbCall("Entrada Estruturada") {
+            val result = structuredInputProcessor.processEnvelope(envelope, atomicBatch = atomicBatch)
+            if (result.appliedCount > 0) {
+                rescheduleAllRemindersInternal()
+                notifyWidgetsChanged()
+            }
+            result
         }
 
     // --- Acoes do Assistente de Rotina e Notificacoes (Fase 4) ---

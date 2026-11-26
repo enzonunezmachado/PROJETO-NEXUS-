@@ -136,23 +136,39 @@
 
 ### `ADR-015` — Infraestrutura de Assinatura Persistente Externa para Atualização In-Place (`com.nexus.app`)
 - **Status:** Aceita e Ativa (`app/build.gradle.kts`, `keystore.properties.example`, `.gitignore`, `.github/workflows/android-build.yml`).
-- **Contexto:** o pipeline de CI (`ubuntu-latest`) compilava `:app:assembleDebug` sem keystore persistente, gerando um certificado debug efêmero por ambiente e provocando `INSTALL_FAILED_UPDATE_INCOMPATIBLE` ao tentar atualizar o app por cima de uma instalação existente (forçando desinstalação e perda do `nexus_local.db`, dado `android:allowBackup="false"`).
+- **Contexto:** o pipeline de CI (`ubuntu-latest`) compilava `:app:assembleDebug` sem keystore persistente, gerando um certificado debug efêmero por ambiente e provocando `INSTALL_FAILED_UPDATE_INCOMPATIBLE` ao tentar atualizar o app por cima de uma instalação existente (forçando desinstalação e perda do `nexus_local.db`, dado `android:allowBackup="false"`). Na Etapa 2, exigiu-se também falha rápida contra configurações parciais e verificação criptográfica pós-build.
 - **Decisão:**
   1. Preservar `applicationId = "com.nexus.app"` e incrementar `versionCode` / `versionName` a cada versão (`8` / `"5.3.0"`).
-  2. Adicionar configuração externa **opcional** em `app/build.gradle.kts` (`signingConfigs` para `debug` e `release`) lendo `keystore.properties` na raiz (ignorado no Git; modelo em `keystore.properties.example`) ou variáveis de ambiente (`NEXUS_DEBUG_KEYSTORE_*`, `NEXUS_KEYSTORE_*`), com suporte opcional a secrets `NEXUS_DEBUG_KEYSTORE_BASE64` e `NEXUS_KEYSTORE_BASE64` no workflow do GitHub Actions.
-  3. Nunca versionar `.jks`/`.keystore`/senhas no repositório e manter `:app:assembleDebug` funcional mesmo quando nenhum arquivo/variável de assinatura estiver configurado.
-- **Alternativas:** commitar keystore de debug no repositório ou adotar apenas builds locais sem suporte no CI.
-- **Consequências:** permite atualizações in-place preservando Room e stores locais assim que o mantenedor provisionar uma keystore persistente; builds de desenvolvimento avulsos continuam compilando sem bloqueio.
+  2. Configurar `signingConfigs` (`debug` e `release`) em `app/build.gradle.kts` lendo `keystore.properties` na raiz (ignorado no Git; modelo em `keystore.properties.example`) ou variáveis de ambiente (`NEXUS_DEBUG_KEYSTORE_*`, `NEXUS_KEYSTORE_*`), com **falha rápida (`GradleException`)** em configurações parciais (`1..3` de `4` campos) ou arquivos ausentes e bloqueio explícito de tarefas `assembleRelease`/`bundleRelease`/`packageRelease` sem assinatura `release` válida.
+  3. No `.github/workflows/android-build.yml`, instalar `build-tools;35.0.0`, validar secrets via `keytool -list -v` (`-storepass:env`), compilar `:app:assembleRelease` quando os 4 secrets `NEXUS_KEYSTORE_*` existirem, verificar todos os APKs gerados com `apksigner verify --verbose --print-certs` comparando o SHA-256 real contra o keystore configurado e publicar resumo público em `$GITHUB_STEP_SUMMARY` e `NEXUS-Signing-Verification-Report`.
+  4. Nunca versionar `.jks`/`.keystore`/senhas nem imprimir valores secretos em logs; manter `:app:assembleDebug` funcional quando nenhuma assinatura Debug externa for configurada.
+- **Alternativas:** commitar keystore de debug no repositório ou permitir builds release não assinados/configurações silenciosamente ignoradas.
+- **Consequências:** permite atualizações in-place preservando Room e stores locais com verificação automatizada de fingerprint SHA-256; erros de secrets são detectados antes de distribuir APKs incompatíveis.
 
 ---
 
-### `ADR-016` — Mesclagem Incremental Idempotente de Backups via `BackupStorageGateway` e `BackupMergeEngine`
+### `ADR-016` — Mesclagem Incremental Idempotente de Backups com Prévia Dry-Run (`BackupStorageGateway` e `BackupMergeEngine`)
 - **Status:** Aceita e Ativa (`BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `NexusRepository.kt`, `MoreSettingsBackupDiagnosticsScreens.kt`).
-- **Contexto:** até `v5.2.0`, a importação de backup (`BackupManager.restoreAtomically`) sempre executava `deleteAll` em todas as 27 tabelas, impossibilitando incorporar dados de outro backup ou aparelho sem apagar os registros já existentes no uso cotidiano.
+- **Contexto:** até `v5.2.0`, a importação de backup (`BackupManager.restoreAtomically`) sempre executava `deleteAll` em todas as 27 tabelas, impossibilitando incorporar dados de outro backup ou aparelho sem apagar os registros já existentes no uso cotidiano. Na Etapa 2, reforçou-se a previsibilidade pré-mesclagem e a proteção contra restauração destrutiva acidental.
 - **Decisão:**
-  1. Preservar `restoreAtomically` como **Modo 1 (Restauração Completa)** destrutivo e adicionar **Modo 2 (Mesclagem Incremental)** via `BackupMergeEngine` + `BackupStorageGateway` (`mergeBackupAtomically`).
-  2. Isolar o acesso transacional às 27 tabelas atrás da interface `BackupStorageGateway` (`RoomBackupStorageGateway` em produção dentro de `database.withTransaction`; `InMemoryBackupStorageGateway` em testes unitários JVM puros).
-  3. Adotar estratégia conservadora na mesclagem: ordem topológica (níveis 0–4), zero exclusões implícitas (`deleteAll` proibido), preservação integral dos dados locais e singletons em qualquer colisão por `id` ou chave natural `UNIQUE`, rejeição apenas do item com FK obrigatória inválida, nulificação de FK opcional quebrada com `NEEDS_REVIEW`, proteção financeira estrita (faturas únicas e bloqueio anti-dupla despesa `"pagamento de fatura"`) e união incremental de `marketConfig` com rollback coordenado Room ↔ Mercado.
-- **Alternativas:** sobrescrever registros locais pelo `updatedAt` mais recente (*last-write-wins*) ou reescrever IDs automaticamente na importação.
-- **Consequências:** garante idempotência e proteção absoluta contra perda silenciosa de edições locais; divergências entre registros com mesmo ID exigem inspeção do `MergeSummary` em vez de sobrescrita automática.
+  1. Preservar `restoreAtomically` como **Modo 1 (Restauração Completa)** destrutivo — em fluxo/diálogo separado com checkbox explícito de confirmação destrutiva — e manter **Modo 2 (Mesclagem Incremental)** via `BackupMergeEngine` + `BackupStorageGateway` (`mergeBackupAtomically`).
+  2. Compartilhar exatamente o mesmo planejador puro `BackupMergeEngine.computeMergePlan` entre `previewMerge(..., isDryRun = true)` e `mergeAtomically` (`isDryRun = false`), garantindo que a prévia exiba contagens e conflitos reais sem executar nenhuma escrita no Room ou nos stores do Mercado.
+  3. Isolar o acesso transacional às 27 tabelas atrás da interface `BackupStorageGateway` (`RoomBackupStorageGateway` em produção dentro de `database.withTransaction`; `InMemoryBackupStorageGateway` em testes unitários JVM puros).
+  4. Adotar estratégia conservadora na mesclagem: ordem topológica (níveis 0–4), zero exclusões implícitas (`deleteAll` proibido), preservação integral dos dados locais e singletons em qualquer colisão por `id` ou chave natural `UNIQUE`, rejeição apenas do item com FK obrigatória inválida, nulificação de FK opcional quebrada com `NEEDS_REVIEW`, proteção financeira estrita (faturas únicas e bloqueio anti-dupla despesa `"pagamento de fatura"`) e união incremental de `marketConfig` com rollback coordenado Room ↔ Mercado.
+- **Alternativas:** sobrescrever registros locais pelo `updatedAt` mais recente (*last-write-wins*), usar estimativa separada para o preview ou compartilhar um único diálogo genérico para os dois modos.
+- **Consequências:** garante idempotência, fidelidade absoluta entre prévia dry-run e execução real e proteção contra perda silenciosa de edições locais; divergências entre registros com mesmo ID exigem inspeção do `MergeSummary` em vez de sobrescrita automática.
+
+---
+
+### `ADR-017` — Camada Interna de Entrada Estruturada (`contractVersion = 1`) Sobre Banco Room Único `v6` (`audit_history`)
+- **Status:** Aceita e Ativa (`data/ingestion/StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt`, `NexusRepository.kt`, `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`).
+- **Contexto:** preparar o NEXUS na Etapa 2 para receber criações estruturadas de domínio (`TASK`, `APPOINTMENT`, `EVENT`, `PROJECT`, `PERSONAL_GOAL`, `TRANSACTION`) a partir de futuras fontes externas (Etapa 3) sem antecipar transporte de rede/GitHub API e sem criar um segundo banco SQLite ou alterar o schema Room `v6`.
+- **Decisão:**
+  1. Manter o **banco Room único `NexusDatabase` (`DATABASE_VERSION = 6`)**, gravando diretamente nas tabelas oficiais via `RoomStructuredInputGateway` dentro de `database.withTransaction` e atualizando lembretes/widgets via `NexusRepository`.
+  2. Registrar a idempotência por `operationId` na tabela existente `audit_history` (`entityType = "STRUCTURED_INPUT_OP"`, `entityId = operationId`, `action = state.name`) exclusivamente para estados persistidos (`APPLIED` e `CONFLICT_PRESERVED_LOCAL`).
+  3. Impor contrato versionado (`contractVersion = 1`) com JSON estrito (`ignoreUnknownKeys = false`), validação rigorosa de campos obrigatórios, enums, FKs existentes e regras financeiras (`PAID` statement / anti-dupla despesa `ADR-006`), preservação local em colisões por ID/chave natural e suporte a modo por item (`atomicBatch = false`) ou lote atômico (`atomicBatch = true`).
+  4. Manter `FAILED_ROLLED_BACK` e `REJECTED` fora de `audit_history` para que falhas transacionais revertam integralmente e possam ser reprocessadas com o mesmo `operationId` sem falso `DUPLICATE_IGNORED`.
+- **Alternativas:** criar banco SQLite paralelo de staging, migrar `DATABASE_VERSION` para `7` adicionando tabela de inbox antes da Etapa 3 ou já acoplar sincronização HTTP/GitHub na Etapa 2.
+- **Consequências:** zero impacto de migração em instalações existentes, compatibilidade imediata com Backup `v7` e Widgets/Agenda, e fronteira limpa e testável (`StructuredInputUnitTests`) pronta para o conector da Etapa 3.
+
 

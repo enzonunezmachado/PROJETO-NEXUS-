@@ -44,19 +44,27 @@ android {
         val extDebugAlias = signingOption("debugKeyAlias", "NEXUS_DEBUG_KEYSTORE_ALIAS")
             ?: signingOption("debugKeyAlias", "NEXUS_DEBUG_KEY_ALIAS")
         val extDebugKeyPwd = signingOption("debugKeyPassword", "NEXUS_DEBUG_KEY_PASSWORD")
-        if (extDebugPath != null &&
-            extDebugStorePwd != null &&
-            extDebugAlias != null &&
-            extDebugKeyPwd != null
-        ) {
-            val keystoreFile = resolveKeystoreFile(extDebugPath)
-            if (keystoreFile.isFile) {
-                getByName("debug") {
-                    storeFile = keystoreFile
-                    storePassword = extDebugStorePwd
-                    keyAlias = extDebugAlias
-                    keyPassword = extDebugKeyPwd
-                }
+        val debugFields = listOf(extDebugPath, extDebugStorePwd, extDebugAlias, extDebugKeyPwd)
+        val debugConfiguredCount = debugFields.count { it != null }
+        if (debugConfiguredCount in 1..3) {
+            throw GradleException(
+                "Configuração de assinatura Debug incompleta ($debugConfiguredCount/4 campos informados). " +
+                    "Configure debugStoreFile, debugStorePassword, debugKeyAlias e debugKeyPassword (ou variáveis NEXUS_DEBUG_*) " +
+                    "ou remova todos para usar o keystore Debug local."
+            )
+        }
+        if (debugConfiguredCount == 4) {
+            val keystoreFile = resolveKeystoreFile(extDebugPath!!)
+            if (!keystoreFile.isFile) {
+                throw GradleException(
+                    "Arquivo de keystore Debug não encontrado no caminho configurado ('$extDebugPath')."
+                )
+            }
+            getByName("debug") {
+                storeFile = keystoreFile
+                storePassword = extDebugStorePwd
+                keyAlias = extDebugAlias
+                keyPassword = extDebugKeyPwd
             }
         }
 
@@ -64,20 +72,42 @@ android {
         val releaseStorePwd = signingOption("storePassword", "NEXUS_KEYSTORE_PASSWORD")
         val releaseAlias = signingOption("keyAlias", "NEXUS_KEY_ALIAS")
         val releaseKeyPwd = signingOption("keyPassword", "NEXUS_KEY_PASSWORD")
-        if (releasePath != null &&
-            releaseStorePwd != null &&
-            releaseAlias != null &&
-            releaseKeyPwd != null
-        ) {
-            val keystoreFile = resolveKeystoreFile(releasePath)
-            if (keystoreFile.isFile) {
-                create("release") {
-                    storeFile = keystoreFile
-                    storePassword = releaseStorePwd
-                    keyAlias = releaseAlias
-                    keyPassword = releaseKeyPwd
-                }
+        val releaseFields = listOf(releasePath, releaseStorePwd, releaseAlias, releaseKeyPwd)
+        val releaseConfiguredCount = releaseFields.count { it != null }
+        if (releaseConfiguredCount in 1..3) {
+            throw GradleException(
+                "Configuração de assinatura Release incompleta ($releaseConfiguredCount/4 campos informados). " +
+                    "Informe storeFile, storePassword, keyAlias e keyPassword (ou variáveis NEXUS_KEYSTORE_*)."
+            )
+        }
+        if (releaseConfiguredCount == 4) {
+            val keystoreFile = resolveKeystoreFile(releasePath!!)
+            if (!keystoreFile.isFile) {
+                throw GradleException(
+                    "Arquivo de keystore Release não encontrado no caminho configurado ('$releasePath')."
+                )
             }
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = releaseStorePwd
+                keyAlias = releaseAlias
+                keyPassword = releaseKeyPwd
+            }
+        }
+    }
+
+    gradle.taskGraph.whenReady {
+        val requestsReleasePackage = allTasks.any { task ->
+            task.project == project &&
+                (task.name.equals("assembleRelease", ignoreCase = true) ||
+                    task.name.equals("bundleRelease", ignoreCase = true) ||
+                    task.name.equals("packageRelease", ignoreCase = true))
+        }
+        if (requestsReleasePackage && signingConfigs.findByName("release") == null) {
+            throw GradleException(
+                "Build Release bloqueado: nenhuma configuração de assinatura Release válida foi encontrada " +
+                    "(keystore.properties ou 4 variáveis NEXUS_KEYSTORE_*)."
+            )
         }
     }
 

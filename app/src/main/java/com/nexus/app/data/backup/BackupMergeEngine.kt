@@ -80,12 +80,12 @@ internal object BackupMergeEngine {
         var singletonSkipped: Int = 0
         var preservedLocalOnly: Int = 0
 
-        fun build(): EntityMergeCounts = EntityMergeCounts(
+        fun build(isDryRun: Boolean = false): EntityMergeCounts = EntityMergeCounts(
             tableName = tableName,
             label = label,
             foundInFile = foundInFile,
             newRecords = newRecords,
-            inserted = inserted,
+            inserted = if (isDryRun) 0 else inserted,
             alreadyExisting = alreadyExisting,
             conflicts = conflicts,
             invalid = invalid,
@@ -93,6 +93,65 @@ internal object BackupMergeEngine {
             singletonSkipped = singletonSkipped,
             preservedLocalOnly = preservedLocalOnly
         )
+    }
+
+    private data class PlannedMergeBatch(
+        val settings: List<SettingsEntity>,
+        val routineSettings: List<RoutineAssistantSettingsEntity>,
+        val personalizationSettings: List<PersonalizationSettingsEntity>,
+        val categories: List<CategoryEntity>,
+        val creditCards: List<CreditCardEntity>,
+        val loans: List<LoanEntity>,
+        val quotes: List<QuoteEntity>,
+        val briefingHistory: List<BriefingHistoryEntity>,
+        val auditHistory: List<AuditHistoryEntity>,
+        val errorLogs: List<ErrorLogEntity>,
+        val personalGoals: List<PersonalGoalEntity>,
+        val projects: List<ProjectEntity>,
+        val events: List<EventEntity>,
+        val creditCardStatements: List<CreditCardStatementEntity>,
+        val installmentPurchases: List<InstallmentPurchaseEntity>,
+        val recurringRules: List<RecurringRuleEntity>,
+        val appointments: List<AppointmentEntity>,
+        val goalMilestones: List<GoalMilestoneEntity>,
+        val goalProgressLogs: List<GoalProgressLogEntity>,
+        val budgets: List<BudgetEntity>,
+        val financialGoals: List<FinancialGoalEntity>,
+        val taskRecurrences: List<TaskRecurrenceEntity>,
+        val tasks: List<TaskEntity>,
+        val transactions: List<TransactionEntity>,
+        val subtasks: List<SubtaskEntity>,
+        val recurrenceExceptions: List<RecurrenceExceptionEntity>,
+        val reminders: List<ReminderEntity>
+    )
+
+    private data class PlannedMergeResult(
+        val summary: MergeSummary,
+        val batch: PlannedMergeBatch,
+        val favoritesToApply: List<String>?,
+        val alertsToApply: List<MarketPriceAlert>?
+    )
+
+    suspend fun previewMerge(
+        storage: BackupStorageGateway,
+        payload: NexusBackupPayload,
+        marketWatchlistRepository: MarketWatchlistRepository? = null,
+        marketAlertRepository: MarketAlertRepository? = null
+    ): MergeSummary {
+        validateCompatibilityForMerge(payload)?.let { errorMsg ->
+            throw IllegalArgumentException(errorMsg)
+        }
+        val plan = computeMergePlan(
+            storage = storage,
+            payload = payload,
+            now = DateTimeUtils.nowEpochMillis(),
+            currentFavorites = marketWatchlistRepository?.favoriteCodes?.value.orEmpty(),
+            currentAlerts = marketAlertRepository?.alerts?.value.orEmpty(),
+            hasWatchlistRepo = marketWatchlistRepository != null,
+            hasAlertRepo = marketAlertRepository != null,
+            isDryRun = true
+        )
+        return plan.summary
     }
 
     suspend fun mergeAtomically(
@@ -106,14 +165,100 @@ internal object BackupMergeEngine {
         }
 
         val now = DateTimeUtils.nowEpochMillis()
+        val currentFavorites = marketWatchlistRepository?.favoriteCodes?.value.orEmpty()
+        val currentAlerts = marketAlertRepository?.alerts?.value.orEmpty()
+        var marketApplied = false
+        var marketWriteReached = false
+        var planResult: PlannedMergeResult? = null
+
+        try {
+            storage.inTransaction {
+                val plan = computeMergePlan(
+                    storage = storage,
+                    payload = payload,
+                    now = now,
+                    currentFavorites = currentFavorites,
+                    currentAlerts = currentAlerts,
+                    hasWatchlistRepo = marketWatchlistRepository != null,
+                    hasAlertRepo = marketAlertRepository != null,
+                    isDryRun = false
+                )
+                planResult = plan
+                val b = plan.batch
+
+                storage.insertSettings(b.settings)
+                storage.insertRoutineSettings(b.routineSettings)
+                storage.insertPersonalizationSettings(b.personalizationSettings)
+                storage.insertCategories(b.categories)
+                storage.insertCreditCards(b.creditCards)
+                storage.insertLoans(b.loans)
+                storage.insertQuotes(b.quotes)
+                storage.insertBriefingHistory(b.briefingHistory)
+                storage.insertAuditHistory(b.auditHistory)
+                storage.insertErrorLogs(b.errorLogs)
+                storage.insertPersonalGoals(b.personalGoals)
+                storage.insertProjects(b.projects)
+                storage.insertEvents(b.events)
+                storage.insertCreditCardStatements(b.creditCardStatements)
+                storage.insertInstallmentPurchases(b.installmentPurchases)
+                storage.insertRecurringRules(b.recurringRules)
+                storage.insertAppointments(b.appointments)
+                storage.insertGoalMilestones(b.goalMilestones)
+                storage.insertGoalProgressLogs(b.goalProgressLogs)
+                storage.insertBudgets(b.budgets)
+                storage.insertFinancialGoals(b.financialGoals)
+                storage.insertTaskRecurrences(b.taskRecurrences)
+                storage.insertTasks(b.tasks)
+                storage.insertTransactions(b.transactions)
+                storage.insertSubtasks(b.subtasks)
+                storage.insertRecurrenceExceptions(b.recurrenceExceptions)
+                storage.insertReminders(b.reminders)
+
+                // 7. Mercado (dentro da transação, com rollback coordenado se Room falhar no commit)
+                if (plan.favoritesToApply != null || plan.alertsToApply != null) {
+                    marketWriteReached = true
+                    val (_, _, applied) = BackupManager.applyMarketConfigWithRollback(
+                        watchlistRepo = marketWatchlistRepository,
+                        alertRepo = marketAlertRepository,
+                        validatedFavorites = plan.favoritesToApply,
+                        validatedAlerts = plan.alertsToApply
+                    )
+                    marketApplied = applied
+                }
+            }
+        } catch (ex: Exception) {
+            if (marketWriteReached) {
+                val planned = planResult
+                BackupManager.rollbackMarketConfig(
+                    watchlistRepo = marketWatchlistRepository,
+                    alertRepo = marketAlertRepository,
+                    previousFavorites = if (planned?.favoritesToApply != null) currentFavorites else null,
+                    previousAlerts = if (planned?.alertsToApply != null) currentAlerts else null
+                )
+            }
+            throw ex
+        }
+
+        val finalPlan = requireNotNull(planResult)
+        return finalPlan.summary.copy(marketConfigApplied = marketApplied)
+    }
+
+    private suspend fun computeMergePlan(
+        storage: BackupStorageGateway,
+        payload: NexusBackupPayload,
+        now: Long,
+        currentFavorites: List<String>,
+        currentAlerts: List<MarketPriceAlert>,
+        hasWatchlistRepo: Boolean,
+        hasAlertRepo: Boolean,
+        isDryRun: Boolean
+    ): PlannedMergeResult {
         val issues = mutableListOf<MergeIssueItem>()
         val perEntity = mutableListOf<EntityMergeCounts>()
 
-        // Pre-validate Market favorites and alerts outside writes (rollback-safe pattern)
+        // Pre-validate Market favorites and alerts (zero writes)
         val rawFavCodes = payload.marketConfig?.favoriteAssetCodes
         val rawAlertDtos = payload.marketConfig?.priceAlerts
-        val currentFavorites = marketWatchlistRepository?.favoriteCodes?.value.orEmpty()
-        val currentAlerts = marketAlertRepository?.alerts?.value.orEmpty()
 
         var marketFavFound = 0
         var marketFavAdded = 0
@@ -126,7 +271,7 @@ internal object BackupMergeEngine {
             val missing = sanitized.filter { it !in currentFavorites }
             marketFavExisting = sanitized.count { it in currentFavorites }
             marketFavAdded = missing.size
-            if (missing.isNotEmpty() && marketWatchlistRepository != null) {
+            if (missing.isNotEmpty() && hasWatchlistRepo) {
                 favoritesToApply = (currentFavorites + missing).distinct()
             }
         }
@@ -178,633 +323,587 @@ internal object BackupMergeEngine {
                     }
                 }
             }
-            if (addedAlerts.isNotEmpty() && marketAlertRepository != null) {
+            if (addedAlerts.isNotEmpty() && hasAlertRepo) {
                 alertsToApply = currentAlerts + addedAlerts
             }
         }
 
-        val previousFavorites = currentFavorites
-        val previousAlerts = currentAlerts
-        var marketApplied = false
-        var marketWriteReached = false
-
-        try {
-            storage.inTransaction {
-                // 1. Singletons (Regra 6 — nunca sobrescrever configurações singleton silenciosamente)
-                val localSettings = storage.getSettings()
-                val settingsStats = TableStatsBuilder("settings", "Configurações", payload.settings.size)
-                if (localSettings.isNotEmpty()) {
-                    val local = localSettings.first()
-                    settingsStats.preservedLocalOnly = 0
-                    payload.settings.forEach { dto ->
-                        settingsStats.singletonSkipped++
-                        val incoming = SettingsEntity(
-                            id = SettingsEntity.SINGLETON_ID,
-                            userName = dto.userName.ifBlank { "Enzo" },
-                            darkTheme = dto.darkTheme,
-                            declaredBalanceCents = dto.declaredBalanceCents,
-                            createdAt = local.createdAt,
-                            updatedAt = local.updatedAt
+        // 1. Singletons (Regra 6 — nunca sobrescrever configurações singleton silenciosamente)
+        val localSettings = storage.getSettings()
+        val settingsStats = TableStatsBuilder("settings", "Configurações", payload.settings.size)
+        val newSettings = mutableListOf<SettingsEntity>()
+        if (localSettings.isNotEmpty()) {
+            val local = localSettings.first()
+            settingsStats.preservedLocalOnly = 0
+            payload.settings.forEach { dto ->
+                settingsStats.singletonSkipped++
+                val incoming = SettingsEntity(
+                    id = SettingsEntity.SINGLETON_ID,
+                    userName = dto.userName.ifBlank { "Enzo" },
+                    darkTheme = dto.darkTheme,
+                    declaredBalanceCents = dto.declaredBalanceCents,
+                    createdAt = local.createdAt,
+                    updatedAt = local.updatedAt
+                )
+                if (incoming == local) {
+                    settingsStats.alreadyExisting++
+                } else {
+                    settingsStats.conflicts++
+                    issues.add(
+                        MergeIssueItem(
+                            tableName = "settings",
+                            recordId = SettingsEntity.SINGLETON_ID,
+                            kind = MergeIssueKind.SINGLETON_PRESERVED,
+                            reason = "Configuração singleton preservada localmente (nome, tema e saldo declarado)."
                         )
-                        if (incoming == local) {
-                            settingsStats.alreadyExisting++
-                        } else {
-                            settingsStats.conflicts++
-                            issues.add(
-                                MergeIssueItem(
-                                    tableName = "settings",
-                                    recordId = SettingsEntity.SINGLETON_ID,
-                                    kind = MergeIssueKind.SINGLETON_PRESERVED,
-                                    reason = "Configuração singleton preservada localmente (nome, tema e saldo declarado)."
-                                )
-                            )
-                        }
-                    }
-                } else if (payload.settings.isNotEmpty()) {
-                    val dto = payload.settings.first()
-                    val entity = SettingsEntity(
-                        id = SettingsEntity.SINGLETON_ID,
-                        userName = dto.userName.ifBlank { "Enzo" },
-                        darkTheme = dto.darkTheme,
-                        declaredBalanceCents = dto.declaredBalanceCents,
-                        createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                        updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
                     )
-                    storage.insertSettings(listOf(entity))
-                    settingsStats.newRecords = 1
-                    settingsStats.inserted = 1
-                    if (payload.settings.size > 1) {
-                        settingsStats.singletonSkipped = payload.settings.size - 1
-                    }
-                }
-                perEntity.add(settingsStats.build())
-
-                val localRoutine = storage.getRoutineSettings()
-                val routineStats = TableStatsBuilder(
-                    "routine_assistant_settings",
-                    "Configurações de rotina",
-                    payload.routineSettings.size
-                )
-                if (localRoutine.isNotEmpty()) {
-                    val local = localRoutine.first()
-                    payload.routineSettings.forEach { dto ->
-                        routineStats.singletonSkipped++
-                        val incoming = normalizeRoutineSettings(dto, local.createdAt, local.updatedAt)
-                        if (incoming == local) {
-                            routineStats.alreadyExisting++
-                        } else {
-                            routineStats.conflicts++
-                            issues.add(
-                                MergeIssueItem(
-                                    tableName = "routine_assistant_settings",
-                                    recordId = RoutineAssistantSettingsEntity.SINGLETON_ID,
-                                    kind = MergeIssueKind.SINGLETON_PRESERVED,
-                                    reason = "Configuração de rotina/notificações preservada localmente."
-                                )
-                            )
-                        }
-                    }
-                } else if (payload.routineSettings.isNotEmpty()) {
-                    val dto = payload.routineSettings.first()
-                    val entity = normalizeRoutineSettings(
-                        dto = dto,
-                        createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                        updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
-                    )
-                    storage.insertRoutineSettings(listOf(entity))
-                    routineStats.newRecords = 1
-                    routineStats.inserted = 1
-                    if (payload.routineSettings.size > 1) {
-                        routineStats.singletonSkipped = payload.routineSettings.size - 1
-                    }
-                }
-                perEntity.add(routineStats.build())
-
-                val localPers = storage.getPersonalizationSettings()
-                val persStats = TableStatsBuilder(
-                    "personalization_settings",
-                    "Personalização do painel",
-                    payload.personalizationSettings.size
-                )
-                if (localPers.isNotEmpty()) {
-                    val local = localPers.first()
-                    payload.personalizationSettings.forEach { dto ->
-                        persStats.singletonSkipped++
-                        val incoming = normalizePersonalization(dto, local.createdAt, local.updatedAt)
-                        if (incoming == local) {
-                            persStats.alreadyExisting++
-                        } else {
-                            persStats.conflicts++
-                            issues.add(
-                                MergeIssueItem(
-                                    tableName = "personalization_settings",
-                                    recordId = PersonalizationSettingsEntity.SINGLETON_ID,
-                                    kind = MergeIssueKind.SINGLETON_PRESERVED,
-                                    reason = "Personalização do dashboard preservada localmente."
-                                )
-                            )
-                        }
-                    }
-                } else if (payload.personalizationSettings.isNotEmpty()) {
-                    val dto = payload.personalizationSettings.first()
-                    val entity = normalizePersonalization(
-                        dto = dto,
-                        createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                        updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
-                    )
-                    storage.insertPersonalizationSettings(listOf(entity))
-                    persStats.newRecords = 1
-                    persStats.inserted = 1
-                    if (payload.personalizationSettings.size > 1) {
-                        persStats.singletonSkipped = payload.personalizationSettings.size - 1
-                    }
-                }
-                perEntity.add(persStats.build())
-
-                // 2. Level 0 — Sem dependências estrangeiras
-                val localCategories = storage.getCategories()
-                val validCategoryIds = localCategories.map { it.id }.toMutableSet()
-                val newCategories = mergeSimpleTable(
-                    tableName = "categories",
-                    label = "Categorias",
-                    dtos = payload.categories,
-                    localItems = localCategories,
-                    idOf = { it.id.trim() },
-                    localIdOf = { it.id },
-                    isBasicValid = { it.name.isNotBlank() },
-                    toEntity = { dto ->
-                        CategoryEntity(
-                            id = dto.id.trim(),
-                            name = dto.name.trim(),
-                            colorHex = dto.colorHex.ifBlank { "#9A9A9A" },
-                            scope = CategoryScope.fromStringOrDefault(dto.scope),
-                            isDefault = dto.isDefault,
-                            createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                            updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
-                        )
-                    },
-                    normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertCategories(newCategories)
-                validCategoryIds.addAll(newCategories.map { it.id })
-
-                val localCards = storage.getCreditCards()
-                val validCardIds = localCards.map { it.id }.toMutableSet()
-                val newCards = mergeSimpleTable(
-                    tableName = "credit_cards",
-                    label = "Cartões de crédito",
-                    dtos = payload.creditCards,
-                    localItems = localCards,
-                    idOf = { it.id.trim() },
-                    localIdOf = { it.id },
-                    isBasicValid = { it.name.isNotBlank() },
-                    toEntity = { dto ->
-                        CreditCardEntity(
-                            id = dto.id.trim(),
-                            name = dto.name.trim(),
-                            institution = dto.institution,
-                            totalLimitCents = dto.totalLimitCents,
-                            availableLimitCents = dto.availableLimitCents,
-                            closingDay = dto.closingDay.coerceIn(1, 31),
-                            dueDay = dto.dueDay.coerceIn(1, 31),
-                            colorHex = dto.colorHex.ifBlank { "#9A9A9A" },
-                            notes = dto.notes,
-                            createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                            updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
-                        )
-                    },
-                    normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertCreditCards(newCards)
-                validCardIds.addAll(newCards.map { it.id })
-
-                val localLoans = storage.getLoans()
-                val newLoans = mergeSimpleTable(
-                    tableName = "loans",
-                    label = "Empréstimos",
-                    dtos = payload.loans,
-                    localItems = localLoans,
-                    idOf = { it.id.trim() },
-                    localIdOf = { it.id },
-                    isBasicValid = {
-                        it.creditor.isNotBlank() &&
-                            it.installmentsTotal >= 1 &&
-                            it.originalAmountCents >= 0L &&
-                            it.contractedAmountCents >= 0L &&
-                            it.remainingBalanceCents >= 0L
-                    },
-                    toEntity = { dto ->
-                        LoanEntity(
-                            id = dto.id.trim(),
-                            creditor = dto.creditor.trim(),
-                            originalAmountCents = dto.originalAmountCents,
-                            contractedAmountCents = dto.contractedAmountCents,
-                            installmentsTotal = dto.installmentsTotal.coerceAtLeast(1),
-                            installmentAmountCents = dto.installmentAmountCents,
-                            paidInstallments = dto.paidInstallments.coerceAtLeast(0),
-                            nextDueAt = dto.nextDueAt,
-                            remainingBalanceCents = dto.remainingBalanceCents.coerceAtLeast(0L),
-                            finalDateAt = dto.finalDateAt,
-                            notes = dto.notes,
-                            createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                            updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
-                        )
-                    },
-                    normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertLoans(newLoans)
-
-                val localQuotes = storage.getQuotes()
-                val newQuotes = mergeSimpleTable(
-                    tableName = "quotes",
-                    label = "Frases",
-                    dtos = payload.quotes,
-                    localItems = localQuotes,
-                    idOf = { it.id.trim() },
-                    localIdOf = { it.id },
-                    isBasicValid = { it.text.isNotBlank() },
-                    toEntity = { dto ->
-                        QuoteEntity(
-                            id = dto.id.trim(),
-                            text = dto.text.trim(),
-                            author = dto.author.trim(),
-                            isActive = dto.isActive,
-                            lastShownDateIso = dto.lastShownDateIso,
-                            shownCount = dto.shownCount.coerceAtLeast(0),
-                            createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                            updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
-                        )
-                    },
-                    normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertQuotes(newQuotes)
-
-                val localBriefings = storage.getBriefingHistory()
-                val newBriefings = mergeTableWithNaturalKey(
-                    tableName = "briefing_history",
-                    label = "Histórico de briefings",
-                    dtos = payload.briefingHistory,
-                    localItems = localBriefings,
-                    idOf = { it.id.trim() },
-                    localIdOf = { it.id },
-                    naturalKeyOf = { entity -> entity.briefingType to entity.dateIso },
-                    isBasicValid = { it.dateIso.isNotBlank() },
-                    toEntity = { dto ->
-                        BriefingHistoryEntity(
-                            id = dto.id.trim(),
-                            briefingType = BriefingType.fromStringOrDefault(dto.briefingType),
-                            dateIso = dto.dateIso.trim(),
-                            summaryText = dto.summaryText,
-                            tasksCount = dto.tasksCount.coerceAtLeast(0),
-                            appointmentsCount = dto.appointmentsCount.coerceAtLeast(0),
-                            billsDueCount = dto.billsDueCount.coerceAtLeast(0),
-                            overdueCount = dto.overdueCount.coerceAtLeast(0),
-                            reviewedAt = dto.reviewedAt,
-                            createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                            updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
-                        )
-                    },
-                    normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertBriefingHistory(newBriefings)
-
-                val localAudits = storage.getAuditHistory()
-                val newAudits = mergeSimpleTable(
-                    tableName = "audit_history",
-                    label = "Auditoria",
-                    dtos = payload.auditHistory,
-                    localItems = localAudits,
-                    idOf = { it.id.trim() },
-                    localIdOf = { it.id },
-                    isBasicValid = { it.entityType.isNotBlank() && it.action.isNotBlank() },
-                    toEntity = { dto ->
-                        AuditHistoryEntity(
-                            id = dto.id.trim(),
-                            entityType = dto.entityType,
-                            entityId = dto.entityId,
-                            action = dto.action,
-                            summary = dto.summary,
-                            occurredAt = if (dto.occurredAt > 0L) dto.occurredAt else now,
-                            createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                            updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
-                        )
-                    },
-                    normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertAuditHistory(newAudits)
-
-                val localErrors = storage.getErrorLogs()
-                val newErrors = mergeSimpleTable(
-                    tableName = "error_logs",
-                    label = "Logs de erro",
-                    dtos = payload.errorLogs,
-                    localItems = localErrors,
-                    idOf = { it.id.trim() },
-                    localIdOf = { it.id },
-                    isBasicValid = { it.message.isNotBlank() },
-                    toEntity = { dto ->
-                        ErrorLogEntity(
-                            id = dto.id.trim(),
-                            source = dto.source.ifBlank { "Backup" },
-                            message = dto.message,
-                            stackTrace = dto.stackTrace,
-                            occurredAt = if (dto.occurredAt > 0L) dto.occurredAt else now,
-                            createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
-                            updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
-                        )
-                    },
-                    normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertErrorLogs(newErrors)
-
-                // 3. Level 1 — Dependências de Nível 0
-                val localPersonalGoals = storage.getPersonalGoals()
-                val validPersonalGoalIds = localPersonalGoals.map { it.id }.toMutableSet()
-                val newPersonalGoals = mergePersonalGoals(
-                    dtos = payload.personalGoals,
-                    localItems = localPersonalGoals,
-                    validCategoryIds = validCategoryIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertPersonalGoals(newPersonalGoals)
-                validPersonalGoalIds.addAll(newPersonalGoals.map { it.id })
-
-                val localProjects = storage.getProjects()
-                val validProjectIds = localProjects.map { it.id }.toMutableSet()
-                val newProjects = mergeProjects(
-                    dtos = payload.projects,
-                    localItems = localProjects,
-                    validPersonalGoalIds = validPersonalGoalIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertProjects(newProjects)
-                validProjectIds.addAll(newProjects.map { it.id })
-
-                val localEvents = storage.getEvents()
-                val validEventIds = localEvents.map { it.id }.toMutableSet()
-                val newEvents = mergeEvents(
-                    dtos = payload.events,
-                    localItems = localEvents,
-                    validCategoryIds = validCategoryIds,
-                    validCardIds = validCardIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertEvents(newEvents)
-                validEventIds.addAll(newEvents.map { it.id })
-
-                val localStatements = storage.getCreditCardStatements()
-                val localStatementsById = localStatements.associateBy { it.id }
-                val allStatementsById = localStatementsById.toMutableMap()
-                val newStatements = mergeStatements(
-                    dtos = payload.creditCardStatements,
-                    localItems = localStatements,
-                    validCardIds = validCardIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertCreditCardStatements(newStatements)
-                newStatements.forEach { allStatementsById[it.id] = it }
-                val validStatementIds = allStatementsById.keys
-
-                val localPurchases = storage.getInstallmentPurchases()
-                val validPurchaseIds = localPurchases.map { it.id }.toMutableSet()
-                val newPurchases = mergeInstallmentPurchases(
-                    dtos = payload.installmentPurchases,
-                    localItems = localPurchases,
-                    validCardIds = validCardIds,
-                    validCategoryIds = validCategoryIds,
-                    validEventIds = validEventIds,
-                    validProjectIds = validProjectIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertInstallmentPurchases(newPurchases)
-                validPurchaseIds.addAll(newPurchases.map { it.id })
-
-                val localRules = storage.getRecurringRules()
-                val validRuleIds = localRules.map { it.id }.toMutableSet()
-                val newRules = mergeRecurringRules(
-                    dtos = payload.recurringRules,
-                    localItems = localRules,
-                    validCategoryIds = validCategoryIds,
-                    validCardIds = validCardIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertRecurringRules(newRules)
-                validRuleIds.addAll(newRules.map { it.id })
-
-                val localAppointments = storage.getAppointments()
-                val validAppointmentIds = localAppointments.map { it.id }.toMutableSet()
-                val newAppointments = mergeAppointments(
-                    dtos = payload.appointments,
-                    localItems = localAppointments,
-                    validCategoryIds = validCategoryIds,
-                    validEventIds = validEventIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertAppointments(newAppointments)
-                validAppointmentIds.addAll(newAppointments.map { it.id })
-
-                // 4. Level 2 — Dependências de Nível 0 & 1
-                val localMilestones = storage.getGoalMilestones()
-                val newMilestones = mergeGoalMilestones(
-                    dtos = payload.goalMilestones,
-                    localItems = localMilestones,
-                    validPersonalGoalIds = validPersonalGoalIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertGoalMilestones(newMilestones)
-
-                val localGoalLogs = storage.getGoalProgressLogs()
-                val newGoalLogs = mergeGoalProgressLogs(
-                    dtos = payload.goalProgressLogs,
-                    localItems = localGoalLogs,
-                    validPersonalGoalIds = validPersonalGoalIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertGoalProgressLogs(newGoalLogs)
-
-                val localBudgets = storage.getBudgets()
-                val newBudgets = mergeBudgets(
-                    dtos = payload.budgets,
-                    localItems = localBudgets,
-                    validCategoryIds = validCategoryIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertBudgets(newBudgets)
-
-                val localFinGoals = storage.getFinancialGoals()
-                val newFinGoals = mergeFinancialGoals(
-                    dtos = payload.financialGoals,
-                    localItems = localFinGoals,
-                    validCategoryIds = validCategoryIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertFinancialGoals(newFinGoals)
-
-                val localRecurrences = storage.getTaskRecurrences()
-                val validRecurrenceIds = localRecurrences.map { it.id }.toMutableSet()
-                val newRecurrences = mergeTaskRecurrences(
-                    dtos = payload.recurrences,
-                    localItems = localRecurrences,
-                    validProjectIds = validProjectIds,
-                    validCategoryIds = validCategoryIds,
-                    validEventIds = validEventIds,
-                    validPersonalGoalIds = validPersonalGoalIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertTaskRecurrences(newRecurrences)
-                validRecurrenceIds.addAll(newRecurrences.map { it.id })
-
-                // 5. Level 3 — Tarefas & Transações
-                val localTasks = storage.getTasks()
-                val validTaskIds = localTasks.map { it.id }.toMutableSet()
-                val newTasks = mergeTasks(
-                    dtos = payload.tasks,
-                    localItems = localTasks,
-                    validProjectIds = validProjectIds,
-                    validCategoryIds = validCategoryIds,
-                    validEventIds = validEventIds,
-                    validPersonalGoalIds = validPersonalGoalIds,
-                    validRecurrenceIds = validRecurrenceIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertTasks(newTasks)
-                validTaskIds.addAll(newTasks.map { it.id })
-
-                val localTransactions = storage.getTransactions()
-                val validTransactionIds = localTransactions.map { it.id }.toMutableSet()
-                val newTransactions = mergeTransactions(
-                    dtos = payload.transactions,
-                    localItems = localTransactions,
-                    validCategoryIds = validCategoryIds,
-                    validProjectIds = validProjectIds,
-                    validEventIds = validEventIds,
-                    validTaskIds = validTaskIds,
-                    validCardIds = validCardIds,
-                    localStatementsById = localStatementsById,
-                    allStatementsById = allStatementsById,
-                    validPurchaseIds = validPurchaseIds,
-                    validRuleIds = validRuleIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertTransactions(newTransactions)
-                validTransactionIds.addAll(newTransactions.map { it.id })
-
-                // 6. Level 4 — Filhos finais (Subtarefas, Exceções, Lembretes)
-                val localSubtasks = storage.getSubtasks()
-                val newSubtasks = mergeSubtasks(
-                    dtos = payload.subtasks,
-                    localItems = localSubtasks,
-                    validTaskIds = validTaskIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertSubtasks(newSubtasks)
-
-                val localRecExceptions = storage.getRecurrenceExceptions()
-                val newRecExceptions = mergeRecurrenceExceptions(
-                    dtos = payload.recurrenceExceptions,
-                    localItems = localRecExceptions,
-                    validRecurrenceIds = validRecurrenceIds,
-                    validTaskIds = validTaskIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertRecurrenceExceptions(newRecExceptions)
-
-                val localReminders = storage.getReminders()
-                val newReminders = mergeReminders(
-                    dtos = payload.reminders,
-                    localItems = localReminders,
-                    validTaskIds = validTaskIds,
-                    validAppointmentIds = validAppointmentIds,
-                    validEventIds = validEventIds,
-                    validTransactionIds = validTransactionIds,
-                    validStatementIds = validStatementIds,
-                    now = now,
-                    issues = issues,
-                    perEntity = perEntity
-                )
-                storage.insertReminders(newReminders)
-
-                // 7. Mercado (dentro da transação, com rollback coordenado se Room falhar no commit)
-                if (favoritesToApply != null || alertsToApply != null) {
-                    marketWriteReached = true
-                    val (_, _, applied) = BackupManager.applyMarketConfigWithRollback(
-                        watchlistRepo = marketWatchlistRepository,
-                        alertRepo = marketAlertRepository,
-                        validatedFavorites = favoritesToApply,
-                        validatedAlerts = alertsToApply
-                    )
-                    marketApplied = applied
                 }
             }
-        } catch (ex: Exception) {
-            if (marketWriteReached) {
-                BackupManager.rollbackMarketConfig(
-                    watchlistRepo = marketWatchlistRepository,
-                    alertRepo = marketAlertRepository,
-                    previousFavorites = if (favoritesToApply != null) previousFavorites else null,
-                    previousAlerts = if (alertsToApply != null) previousAlerts else null
-                )
+        } else if (payload.settings.isNotEmpty()) {
+            val dto = payload.settings.first()
+            val entity = SettingsEntity(
+                id = SettingsEntity.SINGLETON_ID,
+                userName = dto.userName.ifBlank { "Enzo" },
+                darkTheme = dto.darkTheme,
+                declaredBalanceCents = dto.declaredBalanceCents,
+                createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+            )
+            newSettings.add(entity)
+            settingsStats.newRecords = 1
+            settingsStats.inserted = 1
+            if (payload.settings.size > 1) {
+                settingsStats.singletonSkipped = payload.settings.size - 1
             }
-            throw ex
+        }
+        perEntity.add(settingsStats.build(isDryRun))
+
+        val localRoutine = storage.getRoutineSettings()
+        val routineStats = TableStatsBuilder(
+            "routine_assistant_settings",
+            "Configurações de rotina",
+            payload.routineSettings.size
+        )
+        val newRoutineSettings = mutableListOf<RoutineAssistantSettingsEntity>()
+        if (localRoutine.isNotEmpty()) {
+            val local = localRoutine.first()
+            payload.routineSettings.forEach { dto ->
+                routineStats.singletonSkipped++
+                val incoming = normalizeRoutineSettings(dto, local.createdAt, local.updatedAt)
+                if (incoming == local) {
+                    routineStats.alreadyExisting++
+                } else {
+                    routineStats.conflicts++
+                    issues.add(
+                        MergeIssueItem(
+                            tableName = "routine_assistant_settings",
+                            recordId = RoutineAssistantSettingsEntity.SINGLETON_ID,
+                            kind = MergeIssueKind.SINGLETON_PRESERVED,
+                            reason = "Configuração de rotina/notificações preservada localmente."
+                        )
+                    )
+                }
+            }
+        } else if (payload.routineSettings.isNotEmpty()) {
+            val dto = payload.routineSettings.first()
+            val entity = normalizeRoutineSettings(
+                dto = dto,
+                createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+            )
+            newRoutineSettings.add(entity)
+            routineStats.newRecords = 1
+            routineStats.inserted = 1
+            if (payload.routineSettings.size > 1) {
+                routineStats.singletonSkipped = payload.routineSettings.size - 1
+            }
+        }
+        perEntity.add(routineStats.build(isDryRun))
+
+        val localPers = storage.getPersonalizationSettings()
+        val persStats = TableStatsBuilder(
+            "personalization_settings",
+            "Personalização do painel",
+            payload.personalizationSettings.size
+        )
+        val newPersonalizationSettings = mutableListOf<PersonalizationSettingsEntity>()
+        if (localPers.isNotEmpty()) {
+            val local = localPers.first()
+            payload.personalizationSettings.forEach { dto ->
+                persStats.singletonSkipped++
+                val incoming = normalizePersonalization(dto, local.createdAt, local.updatedAt)
+                if (incoming == local) {
+                    persStats.alreadyExisting++
+                } else {
+                    persStats.conflicts++
+                    issues.add(
+                        MergeIssueItem(
+                            tableName = "personalization_settings",
+                            recordId = PersonalizationSettingsEntity.SINGLETON_ID,
+                            kind = MergeIssueKind.SINGLETON_PRESERVED,
+                            reason = "Personalização do dashboard preservada localmente."
+                        )
+                    )
+                }
+            }
+        } else if (payload.personalizationSettings.isNotEmpty()) {
+            val dto = payload.personalizationSettings.first()
+            val entity = normalizePersonalization(
+                dto = dto,
+                createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+            )
+            newPersonalizationSettings.add(entity)
+            persStats.newRecords = 1
+            persStats.inserted = 1
+            if (payload.personalizationSettings.size > 1) {
+                persStats.singletonSkipped = payload.personalizationSettings.size - 1
+            }
+        }
+        perEntity.add(persStats.build(isDryRun))
+
+        // 2. Level 0 — Sem dependências estrangeiras
+        val localCategories = storage.getCategories()
+        val validCategoryIds = localCategories.map { it.id }.toMutableSet()
+        val newCategories = mergeSimpleTable(
+            tableName = "categories",
+            label = "Categorias",
+            dtos = payload.categories,
+            localItems = localCategories,
+            idOf = { it.id.trim() },
+            localIdOf = { it.id },
+            isBasicValid = { it.name.isNotBlank() },
+            toEntity = { dto ->
+                CategoryEntity(
+                    id = dto.id.trim(),
+                    name = dto.name.trim(),
+                    colorHex = dto.colorHex.ifBlank { "#9A9A9A" },
+                    scope = CategoryScope.fromStringOrDefault(dto.scope),
+                    isDefault = dto.isDefault,
+                    createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                    updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+                )
+            },
+            normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
+            issues = issues,
+            perEntity = perEntity
+        )
+        validCategoryIds.addAll(newCategories.map { it.id })
+
+        val localCards = storage.getCreditCards()
+        val validCardIds = localCards.map { it.id }.toMutableSet()
+        val newCards = mergeSimpleTable(
+            tableName = "credit_cards",
+            label = "Cartões de crédito",
+            dtos = payload.creditCards,
+            localItems = localCards,
+            idOf = { it.id.trim() },
+            localIdOf = { it.id },
+            isBasicValid = { it.name.isNotBlank() },
+            toEntity = { dto ->
+                CreditCardEntity(
+                    id = dto.id.trim(),
+                    name = dto.name.trim(),
+                    institution = dto.institution,
+                    totalLimitCents = dto.totalLimitCents,
+                    availableLimitCents = dto.availableLimitCents,
+                    closingDay = dto.closingDay.coerceIn(1, 31),
+                    dueDay = dto.dueDay.coerceIn(1, 31),
+                    colorHex = dto.colorHex.ifBlank { "#9A9A9A" },
+                    notes = dto.notes,
+                    createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                    updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+                )
+            },
+            normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
+            issues = issues,
+            perEntity = perEntity
+        )
+        validCardIds.addAll(newCards.map { it.id })
+
+        val localLoans = storage.getLoans()
+        val newLoans = mergeSimpleTable(
+            tableName = "loans",
+            label = "Empréstimos",
+            dtos = payload.loans,
+            localItems = localLoans,
+            idOf = { it.id.trim() },
+            localIdOf = { it.id },
+            isBasicValid = {
+                it.creditor.isNotBlank() &&
+                    it.installmentsTotal >= 1 &&
+                    it.originalAmountCents >= 0L &&
+                    it.contractedAmountCents >= 0L &&
+                    it.remainingBalanceCents >= 0L
+            },
+            toEntity = { dto ->
+                LoanEntity(
+                    id = dto.id.trim(),
+                    creditor = dto.creditor.trim(),
+                    originalAmountCents = dto.originalAmountCents,
+                    contractedAmountCents = dto.contractedAmountCents,
+                    installmentsTotal = dto.installmentsTotal.coerceAtLeast(1),
+                    installmentAmountCents = dto.installmentAmountCents,
+                    paidInstallments = dto.paidInstallments.coerceAtLeast(0),
+                    nextDueAt = dto.nextDueAt,
+                    remainingBalanceCents = dto.remainingBalanceCents.coerceAtLeast(0L),
+                    finalDateAt = dto.finalDateAt,
+                    notes = dto.notes,
+                    createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                    updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+                )
+            },
+            normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localQuotes = storage.getQuotes()
+        val newQuotes = mergeSimpleTable(
+            tableName = "quotes",
+            label = "Frases",
+            dtos = payload.quotes,
+            localItems = localQuotes,
+            idOf = { it.id.trim() },
+            localIdOf = { it.id },
+            isBasicValid = { it.text.isNotBlank() },
+            toEntity = { dto ->
+                QuoteEntity(
+                    id = dto.id.trim(),
+                    text = dto.text.trim(),
+                    author = dto.author.trim(),
+                    isActive = dto.isActive,
+                    lastShownDateIso = dto.lastShownDateIso,
+                    shownCount = dto.shownCount.coerceAtLeast(0),
+                    createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                    updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+                )
+            },
+            normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localBriefings = storage.getBriefingHistory()
+        val newBriefings = mergeTableWithNaturalKey(
+            tableName = "briefing_history",
+            label = "Histórico de briefings",
+            dtos = payload.briefingHistory,
+            localItems = localBriefings,
+            idOf = { it.id.trim() },
+            localIdOf = { it.id },
+            naturalKeyOf = { entity -> entity.briefingType to entity.dateIso },
+            isBasicValid = { it.dateIso.isNotBlank() },
+            toEntity = { dto ->
+                BriefingHistoryEntity(
+                    id = dto.id.trim(),
+                    briefingType = BriefingType.fromStringOrDefault(dto.briefingType),
+                    dateIso = dto.dateIso.trim(),
+                    summaryText = dto.summaryText,
+                    tasksCount = dto.tasksCount.coerceAtLeast(0),
+                    appointmentsCount = dto.appointmentsCount.coerceAtLeast(0),
+                    billsDueCount = dto.billsDueCount.coerceAtLeast(0),
+                    overdueCount = dto.overdueCount.coerceAtLeast(0),
+                    reviewedAt = dto.reviewedAt,
+                    createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                    updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+                )
+            },
+            normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localAudits = storage.getAuditHistory()
+        val newAudits = mergeSimpleTable(
+            tableName = "audit_history",
+            label = "Auditoria",
+            dtos = payload.auditHistory,
+            localItems = localAudits,
+            idOf = { it.id.trim() },
+            localIdOf = { it.id },
+            isBasicValid = { it.entityType.isNotBlank() && it.action.isNotBlank() },
+            toEntity = { dto ->
+                AuditHistoryEntity(
+                    id = dto.id.trim(),
+                    entityType = dto.entityType,
+                    entityId = dto.entityId,
+                    action = dto.action,
+                    summary = dto.summary,
+                    occurredAt = if (dto.occurredAt > 0L) dto.occurredAt else now,
+                    createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                    updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+                )
+            },
+            normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localErrors = storage.getErrorLogs()
+        val newErrors = mergeSimpleTable(
+            tableName = "error_logs",
+            label = "Logs de erro",
+            dtos = payload.errorLogs,
+            localItems = localErrors,
+            idOf = { it.id.trim() },
+            localIdOf = { it.id },
+            isBasicValid = { it.message.isNotBlank() },
+            toEntity = { dto ->
+                ErrorLogEntity(
+                    id = dto.id.trim(),
+                    source = dto.source.ifBlank { "Backup" },
+                    message = dto.message,
+                    stackTrace = dto.stackTrace,
+                    occurredAt = if (dto.occurredAt > 0L) dto.occurredAt else now,
+                    createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                    updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+                )
+            },
+            normalizeForCompare = { it.copy(createdAt = 0L, updatedAt = 0L) },
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        // 3. Level 1 — Dependências de Nível 0
+        val localPersonalGoals = storage.getPersonalGoals()
+        val validPersonalGoalIds = localPersonalGoals.map { it.id }.toMutableSet()
+        val newPersonalGoals = mergePersonalGoals(
+            dtos = payload.personalGoals,
+            localItems = localPersonalGoals,
+            validCategoryIds = validCategoryIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validPersonalGoalIds.addAll(newPersonalGoals.map { it.id })
+
+        val localProjects = storage.getProjects()
+        val validProjectIds = localProjects.map { it.id }.toMutableSet()
+        val newProjects = mergeProjects(
+            dtos = payload.projects,
+            localItems = localProjects,
+            validPersonalGoalIds = validPersonalGoalIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validProjectIds.addAll(newProjects.map { it.id })
+
+        val localEvents = storage.getEvents()
+        val validEventIds = localEvents.map { it.id }.toMutableSet()
+        val newEvents = mergeEvents(
+            dtos = payload.events,
+            localItems = localEvents,
+            validCategoryIds = validCategoryIds,
+            validCardIds = validCardIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validEventIds.addAll(newEvents.map { it.id })
+
+        val localStatements = storage.getCreditCardStatements()
+        val localStatementsById = localStatements.associateBy { it.id }
+        val allStatementsById = localStatementsById.toMutableMap()
+        val newStatements = mergeStatements(
+            dtos = payload.creditCardStatements,
+            localItems = localStatements,
+            validCardIds = validCardIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        newStatements.forEach { allStatementsById[it.id] = it }
+        val validStatementIds = allStatementsById.keys
+
+        val localPurchases = storage.getInstallmentPurchases()
+        val validPurchaseIds = localPurchases.map { it.id }.toMutableSet()
+        val newPurchases = mergeInstallmentPurchases(
+            dtos = payload.installmentPurchases,
+            localItems = localPurchases,
+            validCardIds = validCardIds,
+            validCategoryIds = validCategoryIds,
+            validEventIds = validEventIds,
+            validProjectIds = validProjectIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validPurchaseIds.addAll(newPurchases.map { it.id })
+
+        val localRules = storage.getRecurringRules()
+        val validRuleIds = localRules.map { it.id }.toMutableSet()
+        val newRules = mergeRecurringRules(
+            dtos = payload.recurringRules,
+            localItems = localRules,
+            validCategoryIds = validCategoryIds,
+            validCardIds = validCardIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validRuleIds.addAll(newRules.map { it.id })
+
+        val localAppointments = storage.getAppointments()
+        val validAppointmentIds = localAppointments.map { it.id }.toMutableSet()
+        val newAppointments = mergeAppointments(
+            dtos = payload.appointments,
+            localItems = localAppointments,
+            validCategoryIds = validCategoryIds,
+            validEventIds = validEventIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validAppointmentIds.addAll(newAppointments.map { it.id })
+
+        // 4. Level 2 — Dependências de Nível 0 & 1
+        val localMilestones = storage.getGoalMilestones()
+        val newMilestones = mergeGoalMilestones(
+            dtos = payload.goalMilestones,
+            localItems = localMilestones,
+            validPersonalGoalIds = validPersonalGoalIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localGoalLogs = storage.getGoalProgressLogs()
+        val newGoalLogs = mergeGoalProgressLogs(
+            dtos = payload.goalProgressLogs,
+            localItems = localGoalLogs,
+            validPersonalGoalIds = validPersonalGoalIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localBudgets = storage.getBudgets()
+        val newBudgets = mergeBudgets(
+            dtos = payload.budgets,
+            localItems = localBudgets,
+            validCategoryIds = validCategoryIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localFinGoals = storage.getFinancialGoals()
+        val newFinGoals = mergeFinancialGoals(
+            dtos = payload.financialGoals,
+            localItems = localFinGoals,
+            validCategoryIds = validCategoryIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localRecurrences = storage.getTaskRecurrences()
+        val validRecurrenceIds = localRecurrences.map { it.id }.toMutableSet()
+        val newRecurrences = mergeTaskRecurrences(
+            dtos = payload.recurrences,
+            localItems = localRecurrences,
+            validProjectIds = validProjectIds,
+            validCategoryIds = validCategoryIds,
+            validEventIds = validEventIds,
+            validPersonalGoalIds = validPersonalGoalIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validRecurrenceIds.addAll(newRecurrences.map { it.id })
+
+        // 5. Level 3 — Tarefas & Transações
+        val localTasks = storage.getTasks()
+        val validTaskIds = localTasks.map { it.id }.toMutableSet()
+        val newTasks = mergeTasks(
+            dtos = payload.tasks,
+            localItems = localTasks,
+            validProjectIds = validProjectIds,
+            validCategoryIds = validCategoryIds,
+            validEventIds = validEventIds,
+            validPersonalGoalIds = validPersonalGoalIds,
+            validRecurrenceIds = validRecurrenceIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validTaskIds.addAll(newTasks.map { it.id })
+
+        val localTransactions = storage.getTransactions()
+        val validTransactionIds = localTransactions.map { it.id }.toMutableSet()
+        val newTransactions = mergeTransactions(
+            dtos = payload.transactions,
+            localItems = localTransactions,
+            validCategoryIds = validCategoryIds,
+            validProjectIds = validProjectIds,
+            validEventIds = validEventIds,
+            validTaskIds = validTaskIds,
+            validCardIds = validCardIds,
+            localStatementsById = localStatementsById,
+            allStatementsById = allStatementsById,
+            validPurchaseIds = validPurchaseIds,
+            validRuleIds = validRuleIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validTransactionIds.addAll(newTransactions.map { it.id })
+
+        // 6. Level 4 — Filhos finais (Subtarefas, Exceções, Lembretes)
+        val localSubtasks = storage.getSubtasks()
+        val newSubtasks = mergeSubtasks(
+            dtos = payload.subtasks,
+            localItems = localSubtasks,
+            validTaskIds = validTaskIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localRecExceptions = storage.getRecurrenceExceptions()
+        val newRecExceptions = mergeRecurrenceExceptions(
+            dtos = payload.recurrenceExceptions,
+            localItems = localRecExceptions,
+            validRecurrenceIds = validRecurrenceIds,
+            validTaskIds = validTaskIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val localReminders = storage.getReminders()
+        val newReminders = mergeReminders(
+            dtos = payload.reminders,
+            localItems = localReminders,
+            validTaskIds = validTaskIds,
+            validAppointmentIds = validAppointmentIds,
+            validEventIds = validEventIds,
+            validTransactionIds = validTransactionIds,
+            validStatementIds = validStatementIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+
+        val finalizedPerEntity = if (isDryRun) {
+            perEntity.map { it.copy(inserted = 0) }
+        } else {
+            perEntity.toList()
         }
 
-        return MergeSummary(
-            totalFoundInFile = perEntity.sumOf { it.foundInFile },
-            totalNewRecords = perEntity.sumOf { it.newRecords },
-            totalInserted = perEntity.sumOf { it.inserted },
-            totalAlreadyExisting = perEntity.sumOf { it.alreadyExisting },
-            totalConflicts = perEntity.sumOf { it.conflicts },
-            totalInvalid = perEntity.sumOf { it.invalid },
-            totalNeedsReview = perEntity.sumOf { it.needsReview },
-            totalSingletonSkipped = perEntity.sumOf { it.singletonSkipped },
-            totalPreservedLocalOnly = perEntity.sumOf { it.preservedLocalOnly },
-            perEntity = perEntity,
+        val summary = MergeSummary(
+            totalFoundInFile = finalizedPerEntity.sumOf { it.foundInFile },
+            totalNewRecords = finalizedPerEntity.sumOf { it.newRecords },
+            totalInserted = finalizedPerEntity.sumOf { it.inserted },
+            totalAlreadyExisting = finalizedPerEntity.sumOf { it.alreadyExisting },
+            totalConflicts = finalizedPerEntity.sumOf { it.conflicts },
+            totalInvalid = finalizedPerEntity.sumOf { it.invalid },
+            totalNeedsReview = finalizedPerEntity.sumOf { it.needsReview },
+            totalSingletonSkipped = finalizedPerEntity.sumOf { it.singletonSkipped },
+            totalPreservedLocalOnly = finalizedPerEntity.sumOf { it.preservedLocalOnly },
+            perEntity = finalizedPerEntity,
             issues = issues,
             marketFavoritesFound = marketFavFound,
             marketFavoritesAdded = marketFavAdded,
@@ -814,7 +913,42 @@ internal object BackupMergeEngine {
             marketAlertsAlreadyExisting = marketAlertsExisting,
             marketAlertsConflicts = marketAlertsConflicts,
             marketAlertsInvalid = marketAlertsInvalid,
-            marketConfigApplied = marketApplied
+            marketConfigApplied = false
+        )
+
+        return PlannedMergeResult(
+            summary = summary,
+            batch = PlannedMergeBatch(
+                settings = newSettings,
+                routineSettings = newRoutineSettings,
+                personalizationSettings = newPersonalizationSettings,
+                categories = newCategories,
+                creditCards = newCards,
+                loans = newLoans,
+                quotes = newQuotes,
+                briefingHistory = newBriefings,
+                auditHistory = newAudits,
+                errorLogs = newErrors,
+                personalGoals = newPersonalGoals,
+                projects = newProjects,
+                events = newEvents,
+                creditCardStatements = newStatements,
+                installmentPurchases = newPurchases,
+                recurringRules = newRules,
+                appointments = newAppointments,
+                goalMilestones = newMilestones,
+                goalProgressLogs = newGoalLogs,
+                budgets = newBudgets,
+                financialGoals = newFinGoals,
+                taskRecurrences = newRecurrences,
+                tasks = newTasks,
+                transactions = newTransactions,
+                subtasks = newSubtasks,
+                recurrenceExceptions = newRecExceptions,
+                reminders = newReminders
+            ),
+            favoritesToApply = favoritesToApply,
+            alertsToApply = alertsToApply
         )
     }
 

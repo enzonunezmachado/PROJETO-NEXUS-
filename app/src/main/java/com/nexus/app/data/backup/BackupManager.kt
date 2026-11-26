@@ -1397,6 +1397,14 @@ class BackupManager internal constructor(
     fun validateForMerge(payload: NexusBackupPayload): String? =
         BackupMergeEngine.validateCompatibilityForMerge(payload)
 
+    suspend fun previewMerge(payload: NexusBackupPayload): MergeSummary =
+        BackupMergeEngine.previewMerge(
+            storage = storage,
+            payload = payload,
+            marketWatchlistRepository = marketWatchlistRepository,
+            marketAlertRepository = marketAlertRepository
+        )
+
     suspend fun mergeBackupAtomically(payload: NexusBackupPayload): MergeSummary =
         BackupMergeEngine.mergeAtomically(
             storage = storage,

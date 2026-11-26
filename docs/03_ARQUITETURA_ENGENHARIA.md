@@ -1,6 +1,6 @@
 # 03 — Arquitetura de Engenharia (`NEXUS Architecture`)
 
-> **Base verificada:** inspeção direta de `NexusApplication.kt`, `MainActivity.kt`, `NexusViewModel.kt`, `NexusRepository.kt`, `domain/rules/*`, `data/db/*`, `data/market/*`, `data/backup/*`, `notifications/*`, `widgets/*`, `app/build.gradle.kts`, `settings.gradle.kts` e `AndroidManifest.xml`.
+> **Base verificada:** inspeção direta de `NexusApplication.kt`, `MainActivity.kt`, `NexusViewModel.kt`, `NexusRepository.kt`, `domain/rules/*`, `data/db/*`, `data/market/*`, `data/backup/*`, `data/ingestion/*`, `notifications/*`, `widgets/*`, `app/build.gradle.kts`, `settings.gradle.kts`, `.github/workflows/android-build.yml` e `AndroidManifest.xml`.
 
 ---
 
@@ -53,7 +53,8 @@ flowchart TB
     subgraph DataCore["Persistência Núcleo (Room SQLite v6)"]
         Repo["NexusRepository"]
         DB["NexusDatabase<br/>27 Entidades · 27 DAOs · Migrações v1→v6"]
-        BM["BackupManager · BackupMergeEngine · BackupStorageGateway<br/>JSON v1–v7 (Restore Completo &amp; Merge Incremental) · CSV · Rollback"]
+        BM["BackupManager · BackupMergeEngine · BackupStorageGateway<br/>JSON v1–v7 (Restore Completo, Dry-Run Preview &amp; Merge Incremental) · CSV · Rollback"]
+        ING["data/ingestion (Etapa 2)<br/>StructuredInputProcessor · StructuredInputGateway<br/>Contrato JSON v1 (Room Único + audit_history)"]
     end
 
     subgraph DataMarket["Infraestrutura Módulo Mercado (Isolada do Room)"]
@@ -74,6 +75,8 @@ flowchart TB
     VM --> MRepo
     Repo --> Rules
     Repo --> DB
+    Repo --> ING
+    ING --> DB
     Repo --> Notif
     Repo --> Glance
     BM --> DB
@@ -96,9 +99,10 @@ flowchart TB
 | `domain.model` | 19+ enums globais (`NexusEnums`), DTOs de UI (`DomainModels`) e modelos/regras do Mercado | `NexusEnums.kt`, `DomainModels.kt`, `MarketQuoteModels.kt`, `MarketHistoryModels.kt`, `MarketAlertModels.kt` |
 | `domain.rules` | Motores e funções puras testáveis em JVM sem Contexto Android | `AgendaEngine.kt`, `FinanceRules.kt`, `RecurrenceEngine.kt`, `TaskRules.kt`, `ReminderRules.kt`, `BackNavigationRules.kt` |
 | `data.db` | Banco Room, TypeConverters, 27 entidades, 27 DAOs e migrações `1→6` | `NexusDatabase.kt`, `NexusMigrations.kt`, `NexusTypeConverters.kt`, `entity/NexusEntities.kt`, `dao/NexusDaos.kt` |
-| `data.repository` | Orquestração transacional SQLite, fluxos `Flow` reativos, agendamento de lembretes e sync widgets | `NexusRepository.kt` (~4.914 linhas) |
+| `data.repository` | Orquestração transacional SQLite, fluxos `Flow` reativos, agendamento de lembretes, backup e entrada estruturada | `NexusRepository.kt` (~4.964 linhas) |
 | `data.market` | Repositórios, stores (`Prefs`/`File`), workers e clientes HTTP públicos do Mercado | `MarketQuote*.kt`, `MarketHistory*.kt`, `MarketWatchlist*.kt`, `MarketAlert*.kt` |
-| `data.backup` | Exportação, restauração completa (Modo 1) e mesclagem incremental idempotente (Modo 2) JSON `v1..v7` (Room + `marketConfig`) e CSV financeiro | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt` |
+| `data.backup` | Exportação, restauração completa (Modo 1), prévia dry-run (`previewMerge`) e mesclagem incremental idempotente (Modo 2) JSON `v1..v7` (Room + `marketConfig`) e CSV financeiro | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt` |
+| `data.ingestion` | Camada interna de entrada estruturada `contractVersion = 1` sobre o Room `v6` + `audit_history` (preparada para Etapa 3) | `StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt` |
 | `notifications` | 5 canais Android O+, agendamento `AlarmManager`, receivers de ação/boot e worker de lembretes | `NexusNotificationChannels.kt`, `NexusNotificationScheduler.kt`, `NexusBroadcastReceivers.kt`, `NexusReminderSyncWorker.kt` |
 | `widgets` | 4 AppWidgets Glance responsivos, tema dual dia/noite, config por ID e `NexusWidgetUpdater` (`Mutex`) | `MyDayGlanceWidget.kt`, `MyTasksGlanceWidget.kt`, `FinanceGlanceWidget.kt`, `NexusSummaryGlanceWidget.kt`, `NexusWidgetConfig*.kt`, `NexusWidgetTheme.kt`, `NexusWidgetUpdater.kt` |
 | `ui` | ViewModel único, tema, componentes compartilhados, gráficos Canvas, mapper do Mercado e telas | `NexusViewModel.kt`, `theme/NexusTheme.kt`, `components/*`, `market/MarketPresentation.kt`, `screens/*` |

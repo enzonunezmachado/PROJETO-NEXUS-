@@ -188,3 +188,39 @@ Preparar o NEXUS para uso cotidiano contínuo resolvendo dois bloqueios operacio
 ### Próximo passo
 Executar o workflow `.github/workflows/android-build.yml` (ou `:app:testDebugUnitTest :app:assembleDebug` com JDK 17 + Android SDK), configurar keystore persistente para validar atualização in-place (`apksigner` + `adb install -r`) e validar a mesclagem incremental com backup real em dispositivo.
 
+---
+
+## 2026-11-25 — Etapa 2: Prévia Dry-Run de Backup, Entrada Estruturada Interna (v1) e Endurecimento de Assinatura/CI
+
+**Tipo:** evolução funcional implementada no código Android + pipeline CI + atualização sincronizada de `/docs/` e artefatos do Google AI Studio.
+
+### Motivação e evidência
+Completar os 3 pilares previstos para a **Etapa 2 de 4** após a Rodada 1:
+1. Eliminar risco de restauração destrutiva acidental e oferecer prévia dry-run fiel à execução real antes de confirmar a mesclagem incremental (**Frente A**).
+2. Disponibilizar uma camada interna versionada e testável de entrada estruturada (`contractVersion = 1`) sobre o banco Room único `v6` pronta para o conector externo da Etapa 3, sem introduzir segundo banco nem acoplar rede/GitHub API antecipadamente (**Frente B**).
+3. Impedir falhas silenciosas de assinatura no Gradle e no GitHub Actions, verificando criptograficamente o SHA-256 dos APKs emitidos via `apksigner` (**Frente C**).
+
+### Mudanças implementadas e documentadas
+1. **Frente A — Prévia Dry-Run e Separação de Fluxos de Backup (`ADR-016`):**
+   - Refatorado `BackupMergeEngine.kt` com `computeMergePlan` compartilhado e `previewMerge(..., isDryRun = true)` com garantia de zero gravações no Room e nos stores do Mercado.
+   - Adicionado `BackupManager.previewMerge`, `NexusRepository.previewBackupMerge`, `BackupUiState` e prévia assíncrona em `NexusViewModel.kt`, e separados completamente os fluxos na UI (`MoreSettingsBackupDiagnosticsScreens.kt` + `MainActivity.kt`): Restauração Completa com diálogo próprio e checkbox obrigatório de confirmação destrutiva; Mesclagem Incremental com diálogo de prévia dry-run antes de aplicar e resumo legível (`MergeSummary`) em pt-BR.
+   - Expandido `BackupIncrementalMergeUnitTests.kt` para `13` `@Test`.
+2. **Frente B — Camada Interna de Entrada Estruturada (`ADR-017`):**
+   - Criados `StructuredInputModels.kt`, `StructuredInputGateway.kt` e `StructuredInputProcessor.kt` em `app/src/main/java/com/nexus/app/data/ingestion/`, conectados ao `NexusRepository.kt` (`processStructuredInputJson`, `processStructuredInputEnvelope`) sobre Room `v6` + idempotência em `audit_history` (`STRUCTURED_INPUT_OP`).
+   - Criada a suíte `StructuredInputUnitTests.kt` (`7` `@Test`) cobrindo contrato `v1`, JSON estrito, enums, FKs, regras financeiras, conflitos locais, idempotência por `operationId`, rollback de lote atômico e retentativa limpa após `FAILED_ROLLED_BACK`.
+   - Criado o guia normativo `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`.
+3. **Frente C — Endurecimento de Assinatura e CI (`ADR-015`):**
+   - Endurecido `app/build.gradle.kts` para falhar imediatamente (`GradleException`) em configurações parciais (`1..3/4`) ou arquivos inexistentes e bloquear `assembleRelease`/`bundleRelease`/`packageRelease` sem configuração `release` válida.
+   - Atualizado `.github/workflows/android-build.yml` com `build-tools;35.0.0`, validação prévia via `keytool -list -v` (`-storepass:env`), build condicional `:app:assembleRelease`, verificação pós-build via `apksigner verify --verbose --print-certs` comparando o fingerprint SHA-256 e publicação do relatório público em `$GITHUB_STEP_SUMMARY` e `NEXUS-Signing-Verification-Report`.
+4. **Documentação e artefatos sincronizados:**
+   - Criado `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md` e atualizados `docs/README.md`, `02_ESPECIFICACAO_PRODUTO.md`, `03_ARQUITETURA_ENGENHARIA.md`, `04_MODELO_DADOS.md`, `07_ESTADO_ATUAL.md`, `08_QUALIDADE_SEGURANCA.md`, `10_ROADMAP.md`, `11_DECISOES_ADRS.md` (`ADR-015`, `ADR-016`, `ADR-017`), `12_RASTREABILIDADE.md` (`REQ-025`, `REQ-027`), `HISTORICO_DOCUMENTACAO.md`, além dos artefatos `NEXUS_CONTINUIDADE.md`, `NEXUS_CURRENT_STATE.md` e `NEXUS_IMPLEMENTATION_ROADMAP.md`.
+
+### Limites e itens não alterados
+- **Compilação Kotlin/Gradle e testes JUnit NÃO EXECUTADOS localmente:** este container não possui JDK, Gradle, Android SDK (`keytool`/`apksigner`/`adb`) nem emulador; os `17` arquivos de teste (`131` `@Test`) permanecem como `NÃO EXECUTADO` localmente. Apenas os blocos bash de `.github/workflows/android-build.yml` foram verificados via `bash -n` (exit 0) junto com inspeção estática dos arquivos modificados/criados.
+- **Sem transporte externo/GitHub API ainda:** reservado exclusivamente à **Etapa 3** sobre o contrato `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`.
+- **`applicationId = "com.nexus.app"`, `DATABASE_VERSION = 6`, `NexusMigrations.kt`, `CURRENT_FORMAT_VERSION = 7` e `web-mirror-pilot/`** permaneceram inalterados. `BUG-001` segue em aberto.
+
+### Próximo passo
+Executar `.github/workflows/android-build.yml` no GitHub Actions (com ou sem os 8 Secrets de assinatura configurados conforme manual entregue) e validar `NEXUS-Signing-Verification-Report`, prévia dry-run/mesclagem em aparelho real e posteriormente iniciar a **Etapa 3** conectando o transporte externo ao `NexusRepository.processStructuredInputJson` / `processStructuredInputEnvelope`.
+
+

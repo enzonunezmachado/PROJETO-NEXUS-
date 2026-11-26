@@ -1,6 +1,6 @@
 # 07 — Estado Real do Sistema (Auditoria Factual do Código)
 
-> **Data de referência da inspeção de código:** 2026-11-25 (Rodada 1 — Confiabilidade, Assinatura In-Place e Mesclagem Incremental de Backups)  
+> **Data de referência da inspeção de código:** 2026-11-25 (Etapa 2 — Finalização do Sistema de Backup com Prévia Dry-Run, Camada Interna de Entrada Estruturada e Pipeline de Assinatura/CI)  
 > **Histórico recente preservado:** relato de uso de 2026-11-22 sobre `BUG-001` mantido em aberto na Seção 4.  
 > **Escopo auditado:** inspeção direta de todos os arquivos-fonte `.kt`, `.xml`, `.kts`, `.toml` e `.yml` do repositório ativo.  
 > **Princípio absoluto:** nenhum item é marcado como aprovado em compilação/runtime sem execução real.
@@ -26,11 +26,11 @@
 | **Aplicativo** | `com.nexus.app`, `versionCode = 8`, `versionName = "5.3.0"`, assinatura configurável via `keystore.properties` / variáveis de ambiente | `app/build.gradle.kts`, `keystore.properties.example` |
 | **SDK / Kotlin / AGP** | `minSdk = 26`, `targetSdk = 35`, `compileSdk = 35`, Kotlin `2.1.0`, AGP `8.7.3`, KSP `2.1.0-1.0.29`, Java `17` | `app/build.gradle.kts`, `gradle/libs.versions.toml` |
 | **Room SQLite** | `DATABASE_VERSION = 6`, `27` entidades, `27` DAOs, `5` migrações (`1→6`), `exportSchema = true` | `NexusDatabase.kt`, `NexusMigrations.kt` |
-| **Backup** | `CURRENT_FORMAT_VERSION = 7` (27 tabelas + `marketConfig`), Modo 1 (Restauração Completa) + Modo 2 (Mesclagem Incremental `BackupMergeEngine`), retrocompatível `v1..v7`, CSV 15 cols | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt` |
+| **Backup & Entrada Estruturada** | `CURRENT_FORMAT_VERSION = 7` (27 tabelas + `marketConfig`), Modo 1 (Restauração Completa) + Modo 2 (`BackupMergeEngine.previewMerge` dry-run + `mergeAtomically`), retrocompatível `v1..v7`, CSV 15 cols; camada interna `data/ingestion/` (`contractVersion = 1`) sobre Room `v6` + `audit_history` | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `StructuredInput*.kt` |
 | **Mercado** | **12 ativos**, Lotes `01–09` implementados (cotações, histórico, gráficos, watchlist, alertas, backup v7) | `data/market/*`, `ui/market/*`, `MarketScreen.kt` |
 | **Permissões Manifest** | `INTERNET`, `ACCESS_NETWORK_STATE`, `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`, `SCHEDULE_EXACT_ALARM`; `allowBackup="false"` | `AndroidManifest.xml` |
-| **Testes JUnit no repo** | **16 arquivos** (`122` `@Test`) em `app/src/test/java/com/nexus/app/` (`0` `androidTest`) | `app/src/test/` |
-| **CI GitHub Actions** | `gradle :app:testDebugUnitTest :app:assembleDebug` + upload APK + suporte opcional a secrets `NEXUS_DEBUG_KEYSTORE_BASE64` / `NEXUS_KEYSTORE_BASE64` (`assembleRelease`) | `.github/workflows/android-build.yml` |
+| **Testes JUnit no repo** | **17 arquivos** (`131` `@Test`) em `app/src/test/java/com/nexus/app/` (`0` `androidTest`) | `app/src/test/` |
+| **CI GitHub Actions** | `platform-tools` + `build-tools;35.0.0`, validação `keytool` (`-storepass:env`), `gradle :app:testDebugUnitTest :app:assembleDebug` + `:app:assembleRelease` condicional, `apksigner verify --verbose --print-certs` (SHA-256), `$GITHUB_STEP_SUMMARY` & `NEXUS-Signing-Verification-Report` | `.github/workflows/android-build.yml` |
 | **Pasta `app/schemas/` e `gradlew`** | Ausentes no disco (`app/schemas/` gerada pelo KSP em build; CI usa `setup-gradle@v4`) | Raiz / `app/` |
 
 ---
@@ -52,7 +52,7 @@
 | **Eventos (`EventsScreen`) & Objetivos (`PlanningGoalsScreen`)** | `PARCIALMENTE IMPLEMENTADA` / `IMPLEMENTADA` | Eventos suportam CRUD, ingresso gratuito/pago/parcelado, custos extras, mapas e 2 colunas em telas largas (`>= 720.dp`); **faltam** `locationMode`, `bannerPath` (`PickVisualMedia`), ocultação padrão de `ticketFeesCents` e criação/listagem completa de compromissos vinculados na ficha do evento. Objetivos (`AUTO`/`MANUAL`, marcos, logs) e 2 colunas em `>= 720.dp` estão implementados. |
 | **Módulo Mercado (`Lotes 01–09`)** | `IMPLEMENTADA` | 12 ativos, provedores públicos com fallback, `MarketQuoteSyncWorker` (30m), `MarketHistoryChartCard` + cache em arquivo, watchlist, alertas de preço + `CHANNEL_MARKET_ALERTS` + deep-link, layout adaptativo em telas largas (`>= 720.dp` listagem / `>= 840.dp` detalhe em 2 painéis) e backup v7 com rollback coordenado (`MarketBackupIntegrationUnitTests.kt`). |
 | **Assistente de Rotina, Notificações & Widgets Glance** | `IMPLEMENTADA` | Briefing Diário, Revisão Noturna, adiamento 1 toque, 5 canais, `AlarmManager`, ações rápidas, `BootReceiver`, `NexusReminderSyncWorker` e 4 widgets Glance com paleta Grafite Suave/Dark (`DayNightColorProvider`) e composição limpa **sem borda externa** (`NexusWidgetShell`). |
-| **Configurações, Frases, Busca Global, Backup v7 (Restauração + Mesclagem Incremental) e Diagnóstico** | `IMPLEMENTADA` | `BackupManager` preserva `restoreAtomically` (Modo 1) e oferece `mergeBackupAtomically` via `BackupMergeEngine` + `BackupStorageGateway` (Modo 2 idempotente sem apagar dados existentes, com `MergeSummary` na `BackupScreen` e `BackupIncrementalMergeUnitTests`); `MoreSettingsBackupDiagnosticsScreens.kt` em `v7`; `GlobalSearch` calcula conflitos no conjunto completo de compromissos. **Falta apenas:** exportação/restauração `.zip` com banners de eventos. |
+| **Configurações, Frases, Busca Global, Backup v7 (Dry-Run + Mesclagem/Restauração), Entrada Estruturada e Diagnóstico** | `IMPLEMENTADA` | `BackupManager` separa explicitamente Restauração Completa (diálogo próprio + checkbox destrutivo obrigatório) de Mesclagem Incremental com prévia real dry-run (`BackupMergeEngine.previewMerge` sem gravações) e `MergeSummary` legível em pt-BR; camada interna `data/ingestion/` (`StructuredInputProcessor` + `RoomStructuredInputGateway`, `contractVersion = 1`) conectada ao `NexusRepository` sobre Room `v6` + `audit_history`; `GlobalSearch` calcula conflitos no conjunto completo. **Falta apenas:** exportação/restauração `.zip` com banners de eventos (e transporte externo na Etapa 3). |
 
 ---
 
@@ -78,7 +78,7 @@
 ## 5. Itens Não Verificados Neste Ambiente (`NÃO VERIFICADO`)
 
 Por ausência de **JDK, Gradle, Android SDK, emulador/dispositivo físico Android** neste container:
-1. Compilação Kotlin/Compose/KSP (`:app:kspDebugKotlin`, `:app:compileDebugKotlin`, `:app:compileDebugUnitTestKotlin`, `:app:assembleDebug`, `:app:assembleRelease`) — incluindo as evoluções visuais/adaptativas e a Rodada 1 (`versionCode = 8`, `BackupMergeEngine`, `BackupStorageGateway`, `signingConfigs`).
-2. Execução real das `16` suítes de teste JUnit (`122` `@Test`) em `:app:testDebugUnitTest` (incluindo `BackupIncrementalMergeUnitTests`, `NexusLote6RecurrenceUnitTests` e os `6` arquivos `Market*UnitTests`).
+1. Compilação Kotlin/Compose/KSP (`:app:kspDebugKotlin`, `:app:compileDebugKotlin`, `:app:compileDebugUnitTestKotlin`, `:app:assembleDebug`, `:app:assembleRelease`) — incluindo as evoluções visuais/adaptativas, a Rodada 1 e a Etapa 2 (`previewMerge`, diálogos separados, `data/ingestion/`, `signingConfigs` fail-fast).
+2. Execução real das `17` suítes de teste JUnit (`131` `@Test`) em `:app:testDebugUnitTest` (incluindo `BackupIncrementalMergeUnitTests` com `13` `@Test`, `StructuredInputUnitTests` com `7` `@Test`, `NexusLote6RecurrenceUnitTests` e os `6` arquivos `Market*UnitTests`). Apenas a sintaxe bash dos blocos de script em `.github/workflows/android-build.yml` foi validada localmente via `bash -n`.
 3. Geração de `app/schemas/` e testes reais de migração SQLite `1→2→3→4→5→6`.
-4. Validação em dispositivo Android real e tablet/emulador: atualização in-place via `adb install -r` com verificação prévia de certificado via `apksigner` após provisionamento de keystore persistente, mesclagem incremental de backup real, tema Grafite Suave, bordas proporcionais, widgets sem bordas, Agenda em 7 colunas vs deslizável e 2 painéis, ícone N-1, SAF, Doze, `BootReceiver`, notificações + deep-links e HTTP real.
+4. Validação em dispositivo Android real e tablet/emulador: atualização in-place via `adb install -r` com verificação `apksigner verify --verbose --print-certs` após provisionamento de keystore persistente, prévia dry-run e mesclagem incremental de backup real, tema Grafite Suave, bordas proporcionais, widgets sem bordas, Agenda em 7 colunas vs deslizável e 2 painéis, ícone N-1, SAF, Doze, `BootReceiver`, notificações + deep-links e HTTP real.

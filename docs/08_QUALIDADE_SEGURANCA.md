@@ -1,6 +1,6 @@
 # 08 — Qualidade, Segurança, Confiabilidade e Testes
 
-> **Base verificada:** `AndroidManifest.xml`, `app/build.gradle.kts`, `keystore.properties.example`, `GlobalErrorHandler.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `NexusRepository.kt`, `FileMarketAlertStore.kt`, `MarketQuoteRemoteDataSource.kt`, `MarketHistoryRemoteDataSource.kt`, `.github/workflows/android-build.yml`, `MoreSettingsBackupDiagnosticsScreens.kt` e os `16` arquivos em `app/src/test/java/com/nexus/app/`.
+> **Base verificada:** `AndroidManifest.xml`, `app/build.gradle.kts`, `keystore.properties.example`, `GlobalErrorHandler.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `data/ingestion/StructuredInput*.kt`, `NexusRepository.kt`, `FileMarketAlertStore.kt`, `MarketQuoteRemoteDataSource.kt`, `MarketHistoryRemoteDataSource.kt`, `.github/workflows/android-build.yml`, `MoreSettingsBackupDiagnosticsScreens.kt` e os `17` arquivos em `app/src/test/java/com/nexus/app/`.
 
 ---
 
@@ -31,9 +31,9 @@
 ## 3. Integridade Transacional, Falhas e Limites Físicos Conhecidos
 
 ### 3.1 Room SQLite
-- **Transações atômicas (`database.withTransaction`):** criação de parcelamentos, quitação de faturas (`payCreditCardStatement`), conclusão de tarefa recorrente com geração da próxima ocorrência (`completeTask`), restauração completa (`restoreBackupAtomically`) e mesclagem incremental (`mergeBackupAtomically`) executam em bloco transacional único.
-- **Proteção contra remoção de dados:** `fallbackToDestructiveMigration()` é estritamente proibido; toda evolução de schema usa `Migration` aditiva (`MIGRATION_1_2` a `MIGRATION_5_6`). Na mesclagem incremental (`BackupMergeEngine`), nenhuma tabela recebe `deleteAll`, singletons locais e conflitos por ID/chave `UNIQUE` preservam os dados do aparelho, e quebras de FK obrigatória rejeitam apenas o registro problemático enquanto FKs opcionais são zeradas com `NEEDS_REVIEW`.
-- **Sanitização de backup:** `BackupManager` (Modos 1 e 2) remove referências órfãs contra pais existentes e aplica fallbacks seguros em enums desconhecidos, aceitando JSONs `v1` a `v7` (`validateForMerge` bloqueia arquivos futuros incompatíveis quando `formatVersion > CURRENT_FORMAT_VERSION` ou `databaseVersion > DATABASE_VERSION`).
+- **Transações atômicas (`database.withTransaction`):** criação de parcelamentos, quitação de faturas (`payCreditCardStatement`), conclusão de tarefa recorrente com geração da próxima ocorrência (`completeTask`), restauração completa (`restoreBackupAtomically`), mesclagem incremental (`mergeBackupAtomically`) e ingestão estruturada (`RoomStructuredInputGateway.inTransaction`) executam em bloco transacional único.
+- **Proteção contra remoção de dados e prévia dry-run:** `fallbackToDestructiveMigration()` é estritamente proibido; toda evolução de schema usa `Migration` aditiva (`MIGRATION_1_2` a `MIGRATION_5_6`). Na mesclagem incremental (`BackupMergeEngine`), `previewMerge` reutiliza exatamente o mesmo `computeMergePlan` em modo `isDryRun = true` sem gravar no Room nem no Mercado; nenhuma tabela recebe `deleteAll`, singletons locais e conflitos por ID/chave `UNIQUE` preservam os dados do aparelho, e quebras de FK obrigatória rejeitam apenas o registro problemático enquanto FKs opcionais são zeradas com `NEEDS_REVIEW`. Na UI (`MoreSettingsBackupDiagnosticsScreens.kt`), a Restauração Completa exige diálogo próprio com checkbox explícito de confirmação destrutiva.
+- **Sanitização de backup e validação estrita de entrada estruturada:** `BackupManager` (Modos 1 e 2) remove referências órfãs contra pais existentes e aplica fallbacks seguros em enums desconhecidos, aceitando JSONs `v1` a `v7` (`validateForMerge` bloqueia arquivos futuros incompatíveis quando `formatVersion > CURRENT_FORMAT_VERSION` ou `databaseVersion > DATABASE_VERSION`). Na camada interna `data/ingestion/`, `StructuredInputProcessor` impõe JSON estrito (`ignoreUnknownKeys = false`), validação de `contractVersion = 1`, FKs reais, regras financeiras anti-dupla despesa/fatura `PAID`, preservação local em colisões e recibos idempotentes em `audit_history` (`STRUCTURED_INPUT_OP`) apenas para `APPLIED` / `CONFLICT_PRESERVED_LOCAL`, permitindo retentativa segura após `FAILED_ROLLED_BACK`.
 
 ### 3.2 Fronteira Transacional Room × Stores do Mercado (Backup v7)
 - No `BackupManager.restoreAtomically` (substituição) e no `BackupManager.mergeBackupAtomically` (união incremental):
@@ -54,22 +54,23 @@
 Arquivo: `/.github/workflows/android-build.yml` (`NEXUS Android Build`)
 
 - **Gatilhos:** `push` e `pull_request` nas branches `main` e `integracao-google`, além de `workflow_dispatch`.
-- **Ambiente:** `ubuntu-latest`, Java `17` (Temurin), Android SDK (`platform-tools`), Gradle `8.10.2` via `gradle/actions/setup-gradle@v4`.
-- **Comando executado:** `gradle :app:testDebugUnitTest :app:assembleDebug` (e opcionalmente `:app:assembleRelease` quando os secrets de release estiverem configurados).
-- **Assinatura persistente e atualização in-place (`ADR-015`):**
-  - `app/build.gradle.kts` suporta configuração externa opcional via `keystore.properties` (ignorado no `.gitignore`; modelo em `keystore.properties.example`) ou variáveis de ambiente (`NEXUS_DEBUG_KEYSTORE_*` / `NEXUS_KEYSTORE_*`) sem embutir segredos no código e mantendo o build `debug` funcional mesmo sem keystore configurada.
-  - `.github/workflows/android-build.yml` suporta os secrets opcionais `NEXUS_DEBUG_KEYSTORE_BASE64` e `NEXUS_KEYSTORE_BASE64` (+ senhas/aliases) para emitir APKs com certificado consistente entre builds, eliminando `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
-- **Artefato publicado:** `NEXUS-Android-APK` (`app/build/outputs/apk/debug/*.apk`, com `if-no-files-found: error`) e `NEXUS-Android-Release-APK` opcional quando configurado.
+- **Ambiente:** `ubuntu-latest`, Java `17` (Temurin), Android SDK (`platform-tools` + `build-tools;35.0.0`), Gradle `8.10.2` via `gradle/actions/setup-gradle@v4`.
+- **Comandos executados:** `gradle :app:testDebugUnitTest :app:assembleDebug` e, quando os 4 secrets `NEXUS_KEYSTORE_*` estiverem configurados, `gradle :app:assembleRelease`.
+- **Endurecimento de assinatura persistente e atualização in-place (`ADR-015`):**
+  - `app/build.gradle.kts` suporta configuração externa opcional via `keystore.properties` (ignorado no `.gitignore`; modelo em `keystore.properties.example`) ou variáveis de ambiente (`NEXUS_DEBUG_KEYSTORE_*` / `NEXUS_KEYSTORE_*`), **falhando imediatamente (`GradleException`)** em configurações parciais (`1..3` de `4` campos) ou arquivos ausentes, além de bloquear `assembleRelease`/`bundleRelease`/`packageRelease` sem configuração `release` válida. Quando nenhum campo Debug é informado, mantém o keystore Debug local funcional.
+  - `.github/workflows/android-build.yml` valida previamente `NEXUS_DEBUG_KEYSTORE_*` e `NEXUS_KEYSTORE_*` via `base64 -d` + `keytool -list -v` (com senha via `-storepass:env`, sem vazar segredos em logs), extrai o SHA-256 esperado e, após o build, executa `apksigner verify --verbose --print-certs` comparando o certificado real de cada APK contra o SHA-256 esperado do keystore.
+  - Emite relatório público (sem segredos) no `$GITHUB_STEP_SUMMARY` e no artefato `NEXUS-Signing-Verification-Report`.
+- **Artefatos publicados:** `NEXUS-Android-APK` (`app/build/outputs/apk/debug/*.apk`, `if-no-files-found: error`), `NEXUS-Android-Release-APK` (condicional quando configurado) e `NEXUS-Signing-Verification-Report`.
 - **Lacunas atuais no CI / Repositório:**
   1. Os scripts `./gradlew` e `gradlew.bat` não estão na raiz (CI depende de `setup-gradle@v4`).
   2. `app/schemas/` não é comitado nem publicado como artefato de build ainda.
-  3. Não há workflow nem etapa de testes instrumentados (`connectedDebugAndroidTest`), e o mantenedor ainda precisa provisionar o keystore persistente nos GitHub Secrets / `keystore.properties` locais para ativar a assinatura consistente entre releases.
+  3. Não há workflow nem etapa de testes instrumentados (`connectedDebugAndroidTest`), e o mantenedor precisa provisionar os GitHub Secrets / `keystore.properties` locais para ativar a assinatura persistente entre builds e releases.
 
 ---
 
-## 5. Cobertura Atual de Testes (`16` Arquivos JUnit, `122` `@Test`)
+## 5. Cobertura Atual de Testes (`17` Arquivos JUnit, `131` `@Test`)
 
-> **Aviso de honestidade:** todos os `16` arquivos existem em `app/src/test/java/com/nexus/app/`, totalizando **122** casos `@Test` em JUnit 4 puro (JVM). Neste container sem JDK/Gradle/Android SDK, **nenhum deles foi compilado ou executado localmente**.
+> **Aviso de honestidade:** todos os `17` arquivos existem em `app/src/test/java/com/nexus/app/`, totalizando **131** casos `@Test` em JUnit 4 puro (JVM). Neste container sem JDK/Gradle/Android SDK, **nenhum deles foi compilado ou executado localmente** (apenas a sintaxe bash dos blocos de script do workflow `.github/workflows/android-build.yml` foi validada via `bash -n`).
 
 | Arquivo de Teste | `@Test` | Escopo Principal Coberto |
 | --- | --- | --- |
@@ -88,7 +89,8 @@ Arquivo: `/.github/workflows/android-build.yml` (`NEXUS Android Build`)
 | `MarketWatchlistUnitTests.kt` | `3` | Adição/remoção, deduplicação preservando ordem e validação via `MarketAssetCatalog` |
 | `MarketAlertUnitTests.kt` | `5` | `MarketAlertRules`: avaliação acima/abaixo, prevenção de duplicidade (`awaitingConditionReset`, timestamp), rearme e validação de moeda/unidade |
 | `MarketBackupIntegrationUnitTests.kt` | `5` | Exportação/restauração Backup `v7` com `marketConfig`, retrocompatibilidade `null` vs `[]`, sanitização de alertas inválidos e rollback Room ↔ Mercado |
-| `BackupIncrementalMergeUnitTests.kt` | `11` | Suíte transacional (`InMemoryBackupStorageGateway`) cobrindo os 20 cenários de Modo 1 vs Modo 2: mesclagem idempotente sem `deleteAll`, preservação de conflitos/singletons, ordem topológica, FKs obrigatórias vs opcionais (`NEEDS_REVIEW`), coerência cartão/fatura/parcela/recorrência e bloqueio anti-dupla despesa, versões `v1..v7`/incompatíveis e rollback Room ↔ Mercado |
+| `BackupIncrementalMergeUnitTests.kt` | `13` | Suíte transacional (`InMemoryBackupStorageGateway`) cobrindo Modo 1 vs Modo 2: mesclagem idempotente sem `deleteAll`, preservação de conflitos/singletons, ordem topológica, FKs obrigatórias vs opcionais (`NEEDS_REVIEW`), coerência cartão/fatura/parcela/recorrência e bloqueio anti-dupla despesa, versões `v1..v7`/incompatíveis, rollback Room ↔ Mercado, paridade estrita do dry-run `previewMerge` (zero gravações) e separação explícita de modos |
+| `StructuredInputUnitTests.kt` | `7` | Suíte transacional (`InMemoryStructuredInputGateway`) cobrindo contrato `v1`, JSON estrito (`ignoreUnknownKeys = false`), enums inválidos, validação de FKs entre entidades (`TASK`, `APPOINTMENT`, `EVENT`, `PROJECT`, `PERSONAL_GOAL`, `TRANSACTION`), bloqueio financeiro (`PAID` / dupla despesa), preservação local em conflito, idempotência por `operationId`, rollback completo de `atomicBatch` e retentativa limpa após `FAILED_ROLLED_BACK` |
 
 ### Lacunas de Teste Identificadas
 - **`0` testes em `app/src/androidTest/`:** não há testes instrumentados de:
