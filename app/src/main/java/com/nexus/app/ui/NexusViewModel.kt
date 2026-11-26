@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.nexus.app.core.DateTimeUtils
+import com.nexus.app.data.backup.BackupImportMode
 import com.nexus.app.data.backup.BackupPreview
 import com.nexus.app.data.backup.BackupValidationResult
+import com.nexus.app.data.backup.MergeSummary
 import com.nexus.app.data.backup.RestoreSummary
 import com.nexus.app.data.db.entity.AuditHistoryEntity
 import com.nexus.app.data.db.entity.BriefingHistoryEntity
@@ -151,9 +153,12 @@ data class GoalsFilterState(
 
 data class BackupUiState(
     val isBusy: Boolean = false,
+    val selectedMode: BackupImportMode = BackupImportMode.INCREMENTAL_MERGE,
     val pendingPreview: BackupPreview? = null,
+    val mergeCompatibilityError: String? = null,
     val validationError: String? = null,
-    val lastRestoreSummary: RestoreSummary? = null
+    val lastRestoreSummary: RestoreSummary? = null,
+    val lastMergeSummary: MergeSummary? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -1246,13 +1251,41 @@ class NexusViewModel(
         emitMessage("CSV financeiro exportado com sucesso")
     }
 
-    fun inspectBackupJson(rawJson: String) {
+    fun setBackupImportMode(mode: BackupImportMode) {
+        val current = _backupState.value
+        val compatError = if (mode == BackupImportMode.INCREMENTAL_MERGE) {
+            current.pendingPreview?.let { repository.validateBackupForMerge(it.payload) }
+        } else {
+            null
+        }
+        _backupState.value = current.copy(
+            selectedMode = mode,
+            mergeCompatibilityError = compatError
+        )
+    }
+
+    fun inspectBackupJson(
+        rawJson: String,
+        mode: BackupImportMode = _backupState.value.selectedMode
+    ) {
         when (val result = repository.validateBackupJson(rawJson)) {
             is BackupValidationResult.Valid -> {
-                _backupState.value = BackupUiState(pendingPreview = result.preview)
+                val compatError = if (mode == BackupImportMode.INCREMENTAL_MERGE) {
+                    repository.validateBackupForMerge(result.preview.payload)
+                } else {
+                    null
+                }
+                _backupState.value = BackupUiState(
+                    selectedMode = mode,
+                    pendingPreview = result.preview,
+                    mergeCompatibilityError = compatError
+                )
             }
             is BackupValidationResult.Invalid -> {
-                _backupState.value = BackupUiState(validationError = result.userMessage)
+                _backupState.value = BackupUiState(
+                    selectedMode = mode,
+                    validationError = result.userMessage
+                )
             }
         }
     }
@@ -1263,19 +1296,59 @@ class NexusViewModel(
             _backupState.value = _backupState.value.copy(isBusy = true)
             repository.restoreBackupAtomically(preview.payload)
                 .onSuccess { summary ->
-                    _backupState.value = BackupUiState(lastRestoreSummary = summary)
+                    _backupState.value = BackupUiState(
+                        selectedMode = BackupImportMode.FULL_RESTORE,
+                        lastRestoreSummary = summary
+                    )
                     emitMessage("Restauração concluída: ${summary.totalRestored} registros")
                 }
                 .onFailure { err ->
                     _backupState.value = BackupUiState(
+                        selectedMode = BackupImportMode.FULL_RESTORE,
                         validationError = "Falha na restauração (dados atuais preservados): ${err.message}"
                     )
                 }
         }
     }
 
+    fun confirmMergeBackup() {
+        val preview = _backupState.value.pendingPreview ?: return
+        val compatError = repository.validateBackupForMerge(preview.payload)
+        if (compatError != null) {
+            _backupState.value = _backupState.value.copy(
+                mergeCompatibilityError = compatError,
+                validationError = compatError
+            )
+            return
+        }
+        viewModelScope.launch {
+            _backupState.value = _backupState.value.copy(isBusy = true)
+            repository.mergeBackupAtomically(preview.payload)
+                .onSuccess { summary ->
+                    _backupState.value = BackupUiState(
+                        selectedMode = BackupImportMode.INCREMENTAL_MERGE,
+                        lastMergeSummary = summary
+                    )
+                    emitMessage(
+                        "Mesclagem concluída: ${summary.totalInserted} inserido(s), " +
+                            "${summary.totalConflicts} conflito(s), ${summary.totalInvalid} inválido(s)"
+                    )
+                }
+                .onFailure { err ->
+                    _backupState.value = BackupUiState(
+                        selectedMode = BackupImportMode.INCREMENTAL_MERGE,
+                        validationError = "Falha na mesclagem (dados atuais preservados): ${err.message}"
+                    )
+                }
+        }
+    }
+
     fun dismissBackupDialogs() {
-        _backupState.value = BackupUiState()
+        _backupState.value = _backupState.value.copy(
+            pendingPreview = null,
+            mergeCompatibilityError = null,
+            validationError = null
+        )
     }
 
     fun clearErrorLogs() {

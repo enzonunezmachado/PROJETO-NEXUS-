@@ -32,12 +32,64 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Configure persistent signing keystores (if configured in Secrets)
+        env:
+          NEXUS_DEBUG_KEYSTORE_BASE64: ${{ secrets.NEXUS_DEBUG_KEYSTORE_BASE64 }}
+          NEXUS_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.NEXUS_DEBUG_KEYSTORE_PASSWORD }}
+          NEXUS_DEBUG_KEY_ALIAS: ${{ secrets.NEXUS_DEBUG_KEY_ALIAS }}
+          NEXUS_DEBUG_KEY_PASSWORD: ${{ secrets.NEXUS_DEBUG_KEY_PASSWORD }}
+          NEXUS_KEYSTORE_BASE64: ${{ secrets.NEXUS_KEYSTORE_BASE64 }}
+          NEXUS_KEYSTORE_PASSWORD: ${{ secrets.NEXUS_KEYSTORE_PASSWORD }}
+          NEXUS_KEY_ALIAS: ${{ secrets.NEXUS_KEY_ALIAS }}
+          NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
+        run: |
+          if [ -n "$NEXUS_DEBUG_KEYSTORE_BASE64" ]; then
+            echo "$NEXUS_DEBUG_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nexus-debug.keystore"
+            echo "NEXUS_DEBUG_KEYSTORE_PATH=$RUNNER_TEMP/nexus-debug.keystore" >> "$GITHUB_ENV"
+            if [ -n "$NEXUS_DEBUG_KEYSTORE_PASSWORD" ]; then
+              echo "NEXUS_DEBUG_KEYSTORE_PASSWORD=$NEXUS_DEBUG_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            else
+              echo "NEXUS_DEBUG_KEYSTORE_PASSWORD=android" >> "$GITHUB_ENV"
+            fi
+            if [ -n "$NEXUS_DEBUG_KEY_ALIAS" ]; then
+              echo "NEXUS_DEBUG_KEY_ALIAS=$NEXUS_DEBUG_KEY_ALIAS" >> "$GITHUB_ENV"
+            else
+              echo "NEXUS_DEBUG_KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
+            fi
+            if [ -n "$NEXUS_DEBUG_KEY_PASSWORD" ]; then
+              echo "NEXUS_DEBUG_KEY_PASSWORD=$NEXUS_DEBUG_KEY_PASSWORD" >> "$GITHUB_ENV"
+            else
+              echo "NEXUS_DEBUG_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+            fi
+          fi
+          if [ -n "$NEXUS_KEYSTORE_BASE64" ] && [ -n "$NEXUS_KEYSTORE_PASSWORD" ] && [ -n "$NEXUS_KEY_ALIAS" ] && [ -n "$NEXUS_KEY_PASSWORD" ]; then
+            echo "$NEXUS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nexus-release.jks"
+            echo "NEXUS_KEYSTORE_PATH=$RUNNER_TEMP/nexus-release.jks" >> "$GITHUB_ENV"
+            echo "HAS_RELEASE_SIGNING=true" >> "$GITHUB_ENV"
+          fi
+
       - name: Run Unit Tests and Build NEXUS Debug APK
         run: gradle :app:testDebugUnitTest :app:assembleDebug
 
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: NEXUS-Android-APK
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Build Signed NEXUS Release APK (when release secrets configured)
+        if: env.HAS_RELEASE_SIGNING == 'true'
+        env:
+          NEXUS_KEYSTORE_PASSWORD: ${{ secrets.NEXUS_KEYSTORE_PASSWORD }}
+          NEXUS_KEY_ALIAS: ${{ secrets.NEXUS_KEY_ALIAS }}
+          NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease
+
+      - name: Upload Signed Release APK
+        if: env.HAS_RELEASE_SIGNING == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-Android-Release-APK
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error

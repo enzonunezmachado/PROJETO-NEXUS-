@@ -56,7 +56,7 @@
 | `REQ-022` | 4 Widgets Glance responsivos (`MyDay`, `MyTasks`, `Finance`, `NexusSummary`) com config isolada por ID, tema claro/escuro e deep-links | Módulo 11 — Widgets | `IMPLEMENTADA` |
 | `REQ-023` | Configurações (nome, tema claro/escuro, categorias), Personalização do Dashboard e Biblioteca de Frases (JSON/TXT sem frases embutidas) | Módulo 12 — Config/Personalização | `IMPLEMENTADA` |
 | `REQ-024` | Busca Global unificada (`GlobalSearchScreen`) | Módulo 12 / Busca | `IMPLEMENTADA` |
-| `REQ-025` | Backup JSON `v7` transacional via SAF (27 tabelas + `marketConfig` opcional com rollback), retrocompatibilidade `v1..v6`, CSV financeiro 15 colunas e Diagnóstico (`error_logs`) | Módulo 13 — Backup/Diagnóstico | `IMPLEMENTADA` |
+| `REQ-025` | Backup JSON `v7` transacional via SAF (27 tabelas + `marketConfig` com rollback): **Modo 1** restauração completa e **Modo 2** mesclagem incremental idempotente sem apagar dados locais, retrocompatibilidade `v1..v6`, CSV financeiro 15 colunas e Diagnóstico (`error_logs`) | Módulo 13 — Backup/Diagnóstico | `IMPLEMENTADA` |
 | `REQ-026` | Backup completo `.zip` (`data.json` + pasta `banners/`) | Módulo 13 — Backup | `NÃO IMPLEMENTADA` |
 
 ---
@@ -166,7 +166,9 @@
 - **Biblioteca de Frases (`QuoteLibraryScreen`):** começa vazia (zero frases fictícias), suporta CRUD e importação/exportação SAF em JSON ou TXT (`texto - autor` / `texto | autor`).
 - **Busca Global (`GlobalSearchScreen`):** busca textual unificada em tempo real em tarefas, projetos, compromissos (com detecção de conflitos sobre o conjunto total), eventos, transações, cartões e objetivos.
 
-### Módulo 13 — Backup, Restauração e Diagnóstico (`BackupManager` / `MoreSettingsBackupDiagnosticsScreens`)
-- **JSON `v7` via SAF:** exporta as 27 tabelas Room + `marketConfig` (favoritos e alertas válidos). Importação valida, mostra `BackupPreview`, tolera `v1..v6` (`null` em `marketConfig` preserva dados locais existentes), sanitiza FKs órfãs e executa restauração transacional em Room com rollback coordenado Room ↔ Mercado.
+### Módulo 13 — Backup, Restauração, Mesclagem Incremental e Diagnóstico (`BackupManager` / `BackupMergeEngine` / `MoreSettingsBackupDiagnosticsScreens`)
+- **JSON `v7` via SAF:** exporta as 27 tabelas Room + `marketConfig` (favoritos e alertas válidos). A importação valida o arquivo, exibe `BackupPreview`, tolera `v1..v6` (`null` em `marketConfig` preserva dados locais existentes) e oferece **dois modos explícitos** na UI:
+  - **Modo 1 — Restauração Completa (`restoreAtomically`):** limpa tabelas filhas → pais, substitui o banco inteiro e aplica `marketConfig` com rollback coordenado Room ↔ Mercado.
+  - **Modo 2 — Mesclagem Incremental (`mergeBackupAtomically`):** operação padrão recomendada e idempotente (`append-only` / sem exclusões implícitas). Insere registros inéditos na ordem topológica de dependências (`BackupMergeEngine`), preserva integralmente registros locais em caso de conflito por `id` ou chave natural `UNIQUE`, mantém singletons locais (`settings`, `routine_assistant_settings`, `personalization_settings`), rejeita linhas cuja FK obrigatória não exista no resultado final, zera FKs opcionais quebradas registrando `needsReview`, garante coerência financeira (cartões, faturas únicas por `(creditCardId, yearMonth)`, bloqueio de dupla despesa `"pagamento de fatura"`, parcelamentos e recorrentes) e faz união incremental de favoritos e alertas do Mercado com rollback coordenado Room ↔ Mercado. Ao final exibe `MergeSummary` detalhado (inseridos, conflitos ignorados, rejeitados/revisão e preservados locais).
 - **CSV Financeiro:** exporta `transactions` em UTF-8 com 15 colunas separadas por vírgula.
 - **Diagnóstico (`DiagnosticsScreen`):** exibe versão do app/DB, contagem reativa das 27 tabelas e últimos 50 registros de `error_logs` (`GlobalErrorHandler`) com opção de limpeza.

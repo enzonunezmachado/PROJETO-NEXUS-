@@ -1,6 +1,6 @@
 # 08 — Qualidade, Segurança, Confiabilidade e Testes
 
-> **Base verificada:** `AndroidManifest.xml`, `app/build.gradle.kts`, `GlobalErrorHandler.kt`, `BackupManager.kt`, `NexusRepository.kt`, `FileMarketAlertStore.kt`, `MarketQuoteRemoteDataSource.kt`, `MarketHistoryRemoteDataSource.kt`, `.github/workflows/android-build.yml`, `MoreSettingsBackupDiagnosticsScreens.kt` e os `15` arquivos em `app/src/test/java/com/nexus/app/`.
+> **Base verificada:** `AndroidManifest.xml`, `app/build.gradle.kts`, `keystore.properties.example`, `GlobalErrorHandler.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `NexusRepository.kt`, `FileMarketAlertStore.kt`, `MarketQuoteRemoteDataSource.kt`, `MarketHistoryRemoteDataSource.kt`, `.github/workflows/android-build.yml`, `MoreSettingsBackupDiagnosticsScreens.kt` e os `16` arquivos em `app/src/test/java/com/nexus/app/`.
 
 ---
 
@@ -31,17 +31,17 @@
 ## 3. Integridade Transacional, Falhas e Limites Físicos Conhecidos
 
 ### 3.1 Room SQLite
-- **Transações atômicas (`database.withTransaction`):** criação de parcelamentos, quitação de faturas (`payCreditCardStatement`), conclusão de tarefa recorrente com geração da próxima ocorrência (`completeTask`) e restauração completa (`restoreBackupAtomically`) executam em bloco transacional único.
-- **Proteção contra remoção de dados:** `fallbackToDestructiveMigration()` é estritamente proibido; toda evolução de schema usa `Migration` aditiva (`MIGRATION_1_2` a `MIGRATION_5_6`).
-- **Sanitização de backup:** `BackupManager.restoreAtomically` remove referências órfãs contra pais existentes e aplica fallbacks seguros em enums desconhecidos, aceitando JSONs `v1` a `v7`.
+- **Transações atômicas (`database.withTransaction`):** criação de parcelamentos, quitação de faturas (`payCreditCardStatement`), conclusão de tarefa recorrente com geração da próxima ocorrência (`completeTask`), restauração completa (`restoreBackupAtomically`) e mesclagem incremental (`mergeBackupAtomically`) executam em bloco transacional único.
+- **Proteção contra remoção de dados:** `fallbackToDestructiveMigration()` é estritamente proibido; toda evolução de schema usa `Migration` aditiva (`MIGRATION_1_2` a `MIGRATION_5_6`). Na mesclagem incremental (`BackupMergeEngine`), nenhuma tabela recebe `deleteAll`, singletons locais e conflitos por ID/chave `UNIQUE` preservam os dados do aparelho, e quebras de FK obrigatória rejeitam apenas o registro problemático enquanto FKs opcionais são zeradas com `NEEDS_REVIEW`.
+- **Sanitização de backup:** `BackupManager` (Modos 1 e 2) remove referências órfãs contra pais existentes e aplica fallbacks seguros em enums desconhecidos, aceitando JSONs `v1` a `v7` (`validateForMerge` bloqueia arquivos futuros incompatíveis quando `formatVersion > CURRENT_FORMAT_VERSION` ou `databaseVersion > DATABASE_VERSION`).
 
 ### 3.2 Fronteira Transacional Room × Stores do Mercado (Backup v7)
-- No `BackupManager.restoreAtomically`:
+- No `BackupManager.restoreAtomically` (substituição) e no `BackupManager.mergeBackupAtomically` (união incremental):
   - A validação de `marketConfig` ocorre antes da escrita.
   - `applyMarketConfigWithRollback` executa ao final de `database.withTransaction`, capturando snapshots prévios de favoritos e alertas.
   - Se a escrita de favoritos ou alertas falhar em memória/store, a exceção aborta o `withTransaction` do Room e restaura o snapshot do Mercado (`rollbackMarketConfig`).
   - Se o commit final do SQLite falhar no `catch` externo, `rollbackMarketConfig` também reverte favoritos e alertas.
-- **Limite físico documentado:** `SharedPreferencesMarketWatchlistStore` usa `.apply()` assíncrono e `FileMarketAlertStore` grava JSON via `.tmp` + `renameTo` (além de encapsular `runCatching` no uso cotidiano em workers). Sem commit distribuído XA/2PC de sistema de arquivos, uma morte abrupta de processo (`SIGKILL`) exatamente no milissegundo entre o commit SQLite e o flush em disco do SO pode deixar os dois armazenamentos momentaneamente assíncronos — risco aceito na arquitetura atual com Mercado fora do Room (ver [`ADR-010`](./11_DECISOES_ADRS.md) e [`ADR-013`](./11_DECISOES_ADRS.md)).
+- **Limite físico documentado:** `SharedPreferencesMarketWatchlistStore` usa `.apply()` assíncrono e `FileMarketAlertStore` grava JSON via `.tmp` + `renameTo` (além de encapsular `runCatching` no uso cotidiano em workers). Sem commit distribuído XA/2PC de sistema de arquivos, uma morte abrupta de processo (`SIGKILL`) exatamente no milissegundo entre o commit SQLite e o flush em disco do SO pode deixar os dois armazenamentos momentaneamente assíncronos — risco aceito na arquitetura atual com Mercado fora do Room (ver [`ADR-010`](./11_DECISOES_ADRS.md), [`ADR-013`](./11_DECISOES_ADRS.md) e [`ADR-016`](./11_DECISOES_ADRS.md)).
 
 ### 3.3 Captura de Erros e Diagnóstico
 - **`GlobalErrorHandler` (`core/GlobalErrorHandler.kt`):** intercepta exceções não tratadas por thread, grava `ErrorLogEntity` via `runBlocking(Dispatchers.IO)` na tabela `error_logs` (protegido contra falha recursiva) e delega ao handler padrão do Android.
@@ -55,18 +55,21 @@ Arquivo: `/.github/workflows/android-build.yml` (`NEXUS Android Build`)
 
 - **Gatilhos:** `push` e `pull_request` nas branches `main` e `integracao-google`, além de `workflow_dispatch`.
 - **Ambiente:** `ubuntu-latest`, Java `17` (Temurin), Android SDK (`platform-tools`), Gradle `8.10.2` via `gradle/actions/setup-gradle@v4`.
-- **Comando executado:** `gradle :app:testDebugUnitTest :app:assembleDebug`.
-- **Artefato publicado:** `NEXUS-Android-APK` (`app/build/outputs/apk/debug/*.apk`, com `if-no-files-found: error`).
+- **Comando executado:** `gradle :app:testDebugUnitTest :app:assembleDebug` (e opcionalmente `:app:assembleRelease` quando os secrets de release estiverem configurados).
+- **Assinatura persistente e atualização in-place (`ADR-015`):**
+  - `app/build.gradle.kts` suporta configuração externa opcional via `keystore.properties` (ignorado no `.gitignore`; modelo em `keystore.properties.example`) ou variáveis de ambiente (`NEXUS_DEBUG_KEYSTORE_*` / `NEXUS_KEYSTORE_*`) sem embutir segredos no código e mantendo o build `debug` funcional mesmo sem keystore configurada.
+  - `.github/workflows/android-build.yml` suporta os secrets opcionais `NEXUS_DEBUG_KEYSTORE_BASE64` e `NEXUS_KEYSTORE_BASE64` (+ senhas/aliases) para emitir APKs com certificado consistente entre builds, eliminando `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
+- **Artefato publicado:** `NEXUS-Android-APK` (`app/build/outputs/apk/debug/*.apk`, com `if-no-files-found: error`) e `NEXUS-Android-Release-APK` opcional quando configurado.
 - **Lacunas atuais no CI / Repositório:**
   1. Os scripts `./gradlew` e `gradlew.bat` não estão na raiz (CI depende de `setup-gradle@v4`).
   2. `app/schemas/` não é comitado nem publicado como artefato de build ainda.
-  3. Não há workflow nem etapa de testes instrumentados (`connectedDebugAndroidTest`) nem configuração de keystore persistente para assinatura `release`.
+  3. Não há workflow nem etapa de testes instrumentados (`connectedDebugAndroidTest`), e o mantenedor ainda precisa provisionar o keystore persistente nos GitHub Secrets / `keystore.properties` locais para ativar a assinatura consistente entre releases.
 
 ---
 
-## 5. Cobertura Atual de Testes (`15` Arquivos JUnit, `111` `@Test`)
+## 5. Cobertura Atual de Testes (`16` Arquivos JUnit, `122` `@Test`)
 
-> **Aviso de honestidade:** todos os `15` arquivos existem em `app/src/test/java/com/nexus/app/`, totalizando **111** casos `@Test` em JUnit 4 puro (JVM). Neste container sem JDK/Gradle/Android SDK, **nenhum deles foi compilado ou executado localmente**.
+> **Aviso de honestidade:** todos os `16` arquivos existem em `app/src/test/java/com/nexus/app/`, totalizando **122** casos `@Test` em JUnit 4 puro (JVM). Neste container sem JDK/Gradle/Android SDK, **nenhum deles foi compilado ou executado localmente**.
 
 | Arquivo de Teste | `@Test` | Escopo Principal Coberto |
 | --- | --- | --- |
@@ -85,6 +88,7 @@ Arquivo: `/.github/workflows/android-build.yml` (`NEXUS Android Build`)
 | `MarketWatchlistUnitTests.kt` | `3` | Adição/remoção, deduplicação preservando ordem e validação via `MarketAssetCatalog` |
 | `MarketAlertUnitTests.kt` | `5` | `MarketAlertRules`: avaliação acima/abaixo, prevenção de duplicidade (`awaitingConditionReset`, timestamp), rearme e validação de moeda/unidade |
 | `MarketBackupIntegrationUnitTests.kt` | `5` | Exportação/restauração Backup `v7` com `marketConfig`, retrocompatibilidade `null` vs `[]`, sanitização de alertas inválidos e rollback Room ↔ Mercado |
+| `BackupIncrementalMergeUnitTests.kt` | `11` | Suíte transacional (`InMemoryBackupStorageGateway`) cobrindo os 20 cenários de Modo 1 vs Modo 2: mesclagem idempotente sem `deleteAll`, preservação de conflitos/singletons, ordem topológica, FKs obrigatórias vs opcionais (`NEEDS_REVIEW`), coerência cartão/fatura/parcela/recorrência e bloqueio anti-dupla despesa, versões `v1..v7`/incompatíveis e rollback Room ↔ Mercado |
 
 ### Lacunas de Teste Identificadas
 - **`0` testes em `app/src/androidTest/`:** não há testes instrumentados de:

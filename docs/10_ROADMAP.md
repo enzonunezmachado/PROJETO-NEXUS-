@@ -6,7 +6,7 @@
 
 ## 1. Concluído no Código Atual
 
-### 1.1 Núcleo do Aplicativo e Evolução Base (`v5.2.0` · Room `v6`)
+### 1.1 Núcleo do Aplicativo e Evolução Base (`v5.3.0` · Room `v6`)
 - **Arquitetura base, Room `v6` (`27` tabelas), migrações `v1→v6` e Diagnóstico (`GlobalErrorHandler`, `DiagnosticsScreen`)**.
 - **Shell de Navegação (`MainActivity` + `BackNavigationRules`):** barra inferior na ordem `TASKS, AGENDA, HOME, FINANCE, EVENTS`, `BackHandler` conectado a `activeEditorDirty` e sub-rotas top-level vs child.
 - **Dashboard (`HomeScreen`):** cabeçalho compacto integrando saudação + data + frase diária discreta, `9` blocos reordenáveis/desligáveis, `TaskRingChart`, resumo financeiro compartilhado (`FinanceRules`), indicadores de projetos/objetivos, `AlertBannerCard` para alertas reais e próximos compromissos/eventos.
@@ -16,6 +16,9 @@
 - **Objetivos Pessoais (`PlanningGoalsScreen`) & Rotina (`RoutineAssistantScreen`):** modos `AUTO`/`MANUAL`, marcos, logs, Briefing Diário, Revisão Noturna com adiamento em 1 toque e `briefing_history`.
 - **Notificações, 4 Widgets Glance Dual-Theme (`DayNightColorProvider`), Biblioteca de Frases, Busca Global e Backup JSON `v1..v7`.**
 - **Evolução Visual e Adaptativa (2026-11-22):** tema claro **Grafite Suave** (`NexusTheme` e `NexusWidgetTheme`), revisão proporcional de contornos coloridos (`ColoredBorderRole`) em ambos os temas com bordas neutras preservadas, widgets Glance sem contorno externo, identidade tipográfica `NexusWordmark` (**N-1 — Monólito Chanfrado** + **E, X, U, S** *Kinetik Cut*), remoção do `N` verde redundante na TopBar (`COR-001`), launcher icon adaptativo **N-1**, saudação da Home na mesma linha e adaptação para telas maiores/tablets (`AgendaScreen` 7 dias vs deslizável, altura dinâmica, 2 painéis em tablet paisagem; 2 colunas/2 painéis em `HomeScreen`, `FinanceScreen`, `TasksAndProjectsScreen`, `EventsScreen`, `PlanningGoalsScreen` e `MarketScreen`).
+- **Rodada 1 — Confiabilidade, Atualização In-Place e Mesclagem Incremental (2026-11-25 · `v5.3.0`, `versionCode = 8`):**
+  - *Infraestrutura de atualização sem desinstalação:* preservação estrita de `applicationId = "com.nexus.app"`, incremento de `versionCode = 8` / `versionName = "5.3.0"`, configuração externa opcional de assinatura (`debug` e `release`) em `app/build.gradle.kts` via `keystore.properties` (modelo `keystore.properties.example`, `.gitignore` protegido) ou variáveis de ambiente, e suporte opcional a secrets no `.github/workflows/android-build.yml` (`NEXUS_DEBUG_KEYSTORE_BASE64`, `NEXUS_KEYSTORE_BASE64`).
+  - *Mesclagem Incremental de Backups (Modo 2):* `BackupStorageGateway` + `BackupMergeEngine` + `BackupManager.mergeBackupAtomically` preservando `restoreAtomically` (Modo 1), com ordem topológica, preservação local em conflitos/singletons, políticas de FK (`needsReview` vs rejeição), coerência financeira (cartões, faturas, parcelas, recorrentes e anti-dupla despesa), distinção explícita na `BackupScreen`, resumo `MergeSummary` e suíte `BackupIncrementalMergeUnitTests` (20 cenários).
 
 ### 1.2 Módulo Mercado Financeiro (`Lotes 01 a 09` — Módulo Concluído e Encerrado)
 - **Lotes 01–02:** infraestrutura offline-first em `SharedPreferences`, roteamento e fallback de provedores públicos sem token para `USD-BRL`, `EUR-BRL`, `BTC-BRL`, `ETH-BRL`, `SOL-BRL`.
@@ -51,8 +54,8 @@
 | **`INT-03` (residual)** | Remover gravação imediata de `onToggleSubtask` dentro de `TaskEditorSheet` antes de o usuário clicar em `"Salvar"` (usar rascunho em memória até confirmação) | `EntityEditors.kt`, `MainActivity.kt` | Baixo — evita mutação silenciosa se usuário descartar edição |
 | **Dependência ociosa** | Remover `androidx.navigation:navigation-compose:2.8.5` do catálogo e `app/build.gradle.kts` | `app/build.gradle.kts:65`, `gradle/libs.versions.toml` | Baixo — reduz tamanho do build e evita confusão arquitetural |
 | **Modularização gradual** | Quebrar arquivos monolíticos extensos (`NexusRepository.kt` ~4.914 linhas, `EntityEditors.kt` ~2.378, `FinanceScreen.kt`, `NexusViewModel.kt` ~1.521) conforme novos lotes tocarem nessas áreas | `data/repository/`, `ui/` | Médio — melhora legibilidade e tempo de análise K2 |
-| **Infraestrutura de build/testes** | Adicionar `./gradlew` na raiz, gerar/versionar `app/schemas/` após KSP real, validar assinatura consistente de APK e iniciar cobertura `androidTest` (migrações Room + UI crítica) | Raiz, `app/schemas/`, `.github/workflows/android-build.yml`, `app/src/androidTest/` | Alto para previsibilidade de releases futuras |
-| **Validação real em CI / Dispositivo** | Executar `gradle :app:testDebugUnitTest :app:assembleDebug` sobre o código atual e validar em aparelho/tablet real (evolução visual/adaptativa, notificações Android 13+, deep-link de alertas de mercado, backup `v7` e chamadas HTTP reais) | CI + Dispositivo Android | Crítico antes de publicar nova release |
+| **Infraestrutura de build/testes** | Adicionar `./gradlew` na raiz, gerar/versionar `app/schemas/` após KSP real, provisionar os secrets/keystore persistente para ativar assinatura consistente entre releases e iniciar cobertura `androidTest` (migrações Room + UI crítica) | Raiz, `app/schemas/`, `keystore.properties`, `.github/workflows/android-build.yml`, `app/src/androidTest/` | Alto para previsibilidade de releases futuras e atualização in-place |
+| **Validação real em CI / Dispositivo** | Executar `gradle :app:testDebugUnitTest :app:assembleDebug` sobre o código atual (`v5.3.0`) e validar em aparelho/tablet real (atualização in-place via `adb install -r` + `apksigner`, mesclagem incremental com backup real, evolução visual/adaptativa, notificações Android 13+, deep-link de mercado e HTTP real) | CI + Dispositivo Android | Crítico antes de publicar nova release |
 
 ---
 

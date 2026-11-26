@@ -131,3 +131,28 @@
 - **Contexto:** `INT-10` apontava widgets fixos no tema escuro enquanto o app possuía tema Claro e Escuro.
 - **Decisão:** utilizar `DayNightColorProvider` (`ColorProvider(day, night)`) em `NexusWidgetColors` espelhando tokens equivalentes de `NexusPalette` claro e escuro, com `SizeMode.Responsive` e confirmação em 2 etapas para conclusão de tarefa em widget.
 - **Consequências:** legibilidade consistente em launchers claros e escuros sem depender de reconfiguração manual por tema.
+
+---
+
+### `ADR-015` — Infraestrutura de Assinatura Persistente Externa para Atualização In-Place (`com.nexus.app`)
+- **Status:** Aceita e Ativa (`app/build.gradle.kts`, `keystore.properties.example`, `.gitignore`, `.github/workflows/android-build.yml`).
+- **Contexto:** o pipeline de CI (`ubuntu-latest`) compilava `:app:assembleDebug` sem keystore persistente, gerando um certificado debug efêmero por ambiente e provocando `INSTALL_FAILED_UPDATE_INCOMPATIBLE` ao tentar atualizar o app por cima de uma instalação existente (forçando desinstalação e perda do `nexus_local.db`, dado `android:allowBackup="false"`).
+- **Decisão:**
+  1. Preservar `applicationId = "com.nexus.app"` e incrementar `versionCode` / `versionName` a cada versão (`8` / `"5.3.0"`).
+  2. Adicionar configuração externa **opcional** em `app/build.gradle.kts` (`signingConfigs` para `debug` e `release`) lendo `keystore.properties` na raiz (ignorado no Git; modelo em `keystore.properties.example`) ou variáveis de ambiente (`NEXUS_DEBUG_KEYSTORE_*`, `NEXUS_KEYSTORE_*`), com suporte opcional a secrets `NEXUS_DEBUG_KEYSTORE_BASE64` e `NEXUS_KEYSTORE_BASE64` no workflow do GitHub Actions.
+  3. Nunca versionar `.jks`/`.keystore`/senhas no repositório e manter `:app:assembleDebug` funcional mesmo quando nenhum arquivo/variável de assinatura estiver configurado.
+- **Alternativas:** commitar keystore de debug no repositório ou adotar apenas builds locais sem suporte no CI.
+- **Consequências:** permite atualizações in-place preservando Room e stores locais assim que o mantenedor provisionar uma keystore persistente; builds de desenvolvimento avulsos continuam compilando sem bloqueio.
+
+---
+
+### `ADR-016` — Mesclagem Incremental Idempotente de Backups via `BackupStorageGateway` e `BackupMergeEngine`
+- **Status:** Aceita e Ativa (`BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `NexusRepository.kt`, `MoreSettingsBackupDiagnosticsScreens.kt`).
+- **Contexto:** até `v5.2.0`, a importação de backup (`BackupManager.restoreAtomically`) sempre executava `deleteAll` em todas as 27 tabelas, impossibilitando incorporar dados de outro backup ou aparelho sem apagar os registros já existentes no uso cotidiano.
+- **Decisão:**
+  1. Preservar `restoreAtomically` como **Modo 1 (Restauração Completa)** destrutivo e adicionar **Modo 2 (Mesclagem Incremental)** via `BackupMergeEngine` + `BackupStorageGateway` (`mergeBackupAtomically`).
+  2. Isolar o acesso transacional às 27 tabelas atrás da interface `BackupStorageGateway` (`RoomBackupStorageGateway` em produção dentro de `database.withTransaction`; `InMemoryBackupStorageGateway` em testes unitários JVM puros).
+  3. Adotar estratégia conservadora na mesclagem: ordem topológica (níveis 0–4), zero exclusões implícitas (`deleteAll` proibido), preservação integral dos dados locais e singletons em qualquer colisão por `id` ou chave natural `UNIQUE`, rejeição apenas do item com FK obrigatória inválida, nulificação de FK opcional quebrada com `NEEDS_REVIEW`, proteção financeira estrita (faturas únicas e bloqueio anti-dupla despesa `"pagamento de fatura"`) e união incremental de `marketConfig` com rollback coordenado Room ↔ Mercado.
+- **Alternativas:** sobrescrever registros locais pelo `updatedAt` mais recente (*last-write-wins*) ou reescrever IDs automaticamente na importação.
+- **Consequências:** garante idempotência e proteção absoluta contra perda silenciosa de edições locais; divergências entre registros com mesmo ID exigem inspeção do `MergeSummary` em vez de sobrescrita automática.
+

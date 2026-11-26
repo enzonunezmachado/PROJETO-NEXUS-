@@ -1,7 +1,7 @@
 # 07 — Estado Real do Sistema (Auditoria Factual do Código)
 
-> **Data de referência da inspeção de código:** 2026-11-22  
-**Atualização de comportamento relatado pelo usuário:** 2026-11-22 (pós-instalação do lote visual/adaptativo; não é nova auditoria de código)  
+> **Data de referência da inspeção de código:** 2026-11-25 (Rodada 1 — Confiabilidade, Assinatura In-Place e Mesclagem Incremental de Backups)  
+> **Histórico recente preservado:** relato de uso de 2026-11-22 sobre `BUG-001` mantido em aberto na Seção 4.  
 > **Escopo auditado:** inspeção direta de todos os arquivos-fonte `.kt`, `.xml`, `.kts`, `.toml` e `.yml` do repositório ativo.  
 > **Princípio absoluto:** nenhum item é marcado como aprovado em compilação/runtime sem execução real.
 
@@ -23,14 +23,14 @@
 
 | Dimensão | Valor Verificado | Arquivo Fonte |
 | --- | --- | --- |
-| **Aplicativo** | `com.nexus.app`, `versionCode = 7`, `versionName = "5.2.0"` | `app/build.gradle.kts` |
+| **Aplicativo** | `com.nexus.app`, `versionCode = 8`, `versionName = "5.3.0"`, assinatura configurável via `keystore.properties` / variáveis de ambiente | `app/build.gradle.kts`, `keystore.properties.example` |
 | **SDK / Kotlin / AGP** | `minSdk = 26`, `targetSdk = 35`, `compileSdk = 35`, Kotlin `2.1.0`, AGP `8.7.3`, KSP `2.1.0-1.0.29`, Java `17` | `app/build.gradle.kts`, `gradle/libs.versions.toml` |
 | **Room SQLite** | `DATABASE_VERSION = 6`, `27` entidades, `27` DAOs, `5` migrações (`1→6`), `exportSchema = true` | `NexusDatabase.kt`, `NexusMigrations.kt` |
-| **Backup** | `CURRENT_FORMAT_VERSION = 7` (27 tabelas + `marketConfig`), retrocompatível `v1..v7`, CSV 15 cols | `BackupModels.kt`, `BackupManager.kt` |
+| **Backup** | `CURRENT_FORMAT_VERSION = 7` (27 tabelas + `marketConfig`), Modo 1 (Restauração Completa) + Modo 2 (Mesclagem Incremental `BackupMergeEngine`), retrocompatível `v1..v7`, CSV 15 cols | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt` |
 | **Mercado** | **12 ativos**, Lotes `01–09` implementados (cotações, histórico, gráficos, watchlist, alertas, backup v7) | `data/market/*`, `ui/market/*`, `MarketScreen.kt` |
 | **Permissões Manifest** | `INTERNET`, `ACCESS_NETWORK_STATE`, `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`, `SCHEDULE_EXACT_ALARM`; `allowBackup="false"` | `AndroidManifest.xml` |
-| **Testes JUnit no repo** | **15 arquivos** em `app/src/test/java/com/nexus/app/` (`0` `androidTest`) | `app/src/test/` |
-| **CI GitHub Actions** | `gradle :app:testDebugUnitTest :app:assembleDebug` + upload APK | `.github/workflows/android-build.yml` |
+| **Testes JUnit no repo** | **16 arquivos** (`122` `@Test`) em `app/src/test/java/com/nexus/app/` (`0` `androidTest`) | `app/src/test/` |
+| **CI GitHub Actions** | `gradle :app:testDebugUnitTest :app:assembleDebug` + upload APK + suporte opcional a secrets `NEXUS_DEBUG_KEYSTORE_BASE64` / `NEXUS_KEYSTORE_BASE64` (`assembleRelease`) | `.github/workflows/android-build.yml` |
 | **Pasta `app/schemas/` e `gradlew`** | Ausentes no disco (`app/schemas/` gerada pelo KSP em build; CI usa `setup-gradle@v4`) | Raiz / `app/` |
 
 ---
@@ -52,7 +52,7 @@
 | **Eventos (`EventsScreen`) & Objetivos (`PlanningGoalsScreen`)** | `PARCIALMENTE IMPLEMENTADA` / `IMPLEMENTADA` | Eventos suportam CRUD, ingresso gratuito/pago/parcelado, custos extras, mapas e 2 colunas em telas largas (`>= 720.dp`); **faltam** `locationMode`, `bannerPath` (`PickVisualMedia`), ocultação padrão de `ticketFeesCents` e criação/listagem completa de compromissos vinculados na ficha do evento. Objetivos (`AUTO`/`MANUAL`, marcos, logs) e 2 colunas em `>= 720.dp` estão implementados. |
 | **Módulo Mercado (`Lotes 01–09`)** | `IMPLEMENTADA` | 12 ativos, provedores públicos com fallback, `MarketQuoteSyncWorker` (30m), `MarketHistoryChartCard` + cache em arquivo, watchlist, alertas de preço + `CHANNEL_MARKET_ALERTS` + deep-link, layout adaptativo em telas largas (`>= 720.dp` listagem / `>= 840.dp` detalhe em 2 painéis) e backup v7 com rollback coordenado (`MarketBackupIntegrationUnitTests.kt`). |
 | **Assistente de Rotina, Notificações & Widgets Glance** | `IMPLEMENTADA` | Briefing Diário, Revisão Noturna, adiamento 1 toque, 5 canais, `AlarmManager`, ações rápidas, `BootReceiver`, `NexusReminderSyncWorker` e 4 widgets Glance com paleta Grafite Suave/Dark (`DayNightColorProvider`) e composição limpa **sem borda externa** (`NexusWidgetShell`). |
-| **Configurações, Frases, Busca Global, Backup v7 e Diagnóstico** | `IMPLEMENTADA` | Todos funcionais; `MoreSettingsBackupDiagnosticsScreens.kt` atualizado para `v7`; `GlobalSearch` calcula conflitos no conjunto completo de compromissos. **Falta apenas:** exportação/restauração `.zip` com banners de eventos. |
+| **Configurações, Frases, Busca Global, Backup v7 (Restauração + Mesclagem Incremental) e Diagnóstico** | `IMPLEMENTADA` | `BackupManager` preserva `restoreAtomically` (Modo 1) e oferece `mergeBackupAtomically` via `BackupMergeEngine` + `BackupStorageGateway` (Modo 2 idempotente sem apagar dados existentes, com `MergeSummary` na `BackupScreen` e `BackupIncrementalMergeUnitTests`); `MoreSettingsBackupDiagnosticsScreens.kt` em `v7`; `GlobalSearch` calcula conflitos no conjunto completo de compromissos. **Falta apenas:** exportação/restauração `.zip` com banners de eventos. |
 
 ---
 
@@ -78,7 +78,7 @@
 ## 5. Itens Não Verificados Neste Ambiente (`NÃO VERIFICADO`)
 
 Por ausência de **JDK, Gradle, Android SDK, emulador/dispositivo físico Android** neste container:
-1. Compilação Kotlin/Compose/KSP (`:app:kspDebugKotlin`, `:app:compileDebugKotlin`, `:app:compileDebugUnitTestKotlin`, `:app:assembleDebug`) — incluindo as evoluções visuais/adaptativas recentes.
-2. Execução real das `15` suítes de teste JUnit em `:app:testDebugUnitTest` (incluindo `NexusLote6RecurrenceUnitTests` e os `6` arquivos `Market*UnitTests`).
+1. Compilação Kotlin/Compose/KSP (`:app:kspDebugKotlin`, `:app:compileDebugKotlin`, `:app:compileDebugUnitTestKotlin`, `:app:assembleDebug`, `:app:assembleRelease`) — incluindo as evoluções visuais/adaptativas e a Rodada 1 (`versionCode = 8`, `BackupMergeEngine`, `BackupStorageGateway`, `signingConfigs`).
+2. Execução real das `16` suítes de teste JUnit (`122` `@Test`) em `:app:testDebugUnitTest` (incluindo `BackupIncrementalMergeUnitTests`, `NexusLote6RecurrenceUnitTests` e os `6` arquivos `Market*UnitTests`).
 3. Geração de `app/schemas/` e testes reais de migração SQLite `1→2→3→4→5→6`.
-4. Validação visual e funcional em dispositivo Android real e tablet/emulador (tema Grafite Suave, bordas proporcionais em Dark/Light, widgets sem bordas, Agenda em 7 colunas vs deslizável e 2 painéis em tablet paisagem, ícone adaptativo N-1 no launcher, SAF, Doze, `BootReceiver`, notificações + deep-links de mercado e chamadas HTTP reais).
+4. Validação em dispositivo Android real e tablet/emulador: atualização in-place via `adb install -r` com verificação prévia de certificado via `apksigner` após provisionamento de keystore persistente, mesclagem incremental de backup real, tema Grafite Suave, bordas proporcionais, widgets sem bordas, Agenda em 7 colunas vs deslizável e 2 painéis, ícone N-1, SAF, Doze, `BootReceiver`, notificações + deep-links e HTTP real.

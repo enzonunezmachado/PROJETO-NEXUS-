@@ -1,6 +1,6 @@
 # 04 — Modelo de Dados & Dicionário Completo (`Room v6 + Stores Externos + Backup v7`)
 
-> **Fonte exata:** `NexusDatabase.kt`, `NexusEntities.kt`, `NexusMigrations.kt`, `NexusTypeConverters.kt`, `NexusEnums.kt`, `BackupModels.kt`, `BackupManager.kt`, `data/market/*Store.kt` e `NexusWidgetConfigStore.kt`.
+> **Fonte exata:** `NexusDatabase.kt`, `NexusEntities.kt`, `NexusMigrations.kt`, `NexusTypeConverters.kt`, `NexusEnums.kt`, `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `data/market/*Store.kt` e `NexusWidgetConfigStore.kt`.
 
 ---
 
@@ -131,10 +131,17 @@ O NEXUS divide sua persistência em **duas camadas complementares**:
   - `27` listas tipadas (`*BackupDto`) espelhando as 27 tabelas Room.
   - `marketConfig: MarketBackupConfigDto?` (`configVersion = 1`, `favoriteAssetCodes: List<String>?`, `priceAlerts: List<MarketPriceAlertBackupDto>?`).
 - **Retrocompatibilidade (`v1..v7`):** parser `Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }` com defaults em todos os DTOs. Se `marketConfig == null` (ou subcampos `== null`), preserva os favoritos/alertas locais existentes; se lista presente e vazia (`[]`), substitui por vazio.
-- **Validação & Ordem de Restauração (`BackupManager.restoreAtomically`):**
+- **Modo 1 — Restauração Completa (`BackupManager.restoreAtomically`):**
   1. Sanitiza FKs órfãs contra pais existentes e mapeia enums inválidos com fallback seguro.
   2. Valida `marketConfig`: filtra códigos inexistentes no `MarketAssetCatalog`, `targetPrice > 0 && isFinite()`, compatibilidade estrita de `currencyOrUnit` (`pts` para índices, código ISO para demais), normaliza estados inconsistentes (`WAITING` + `isActive=false` → `PAUSED`; `TRIGGERED` → `isActive=false`, `awaitingConditionReset=false`) e remove duplicidades.
   3. Dentro de `database.withTransaction`: limpa tabelas filhas → pais, insere pais → filhos na ordem topológica e executa `applyMarketConfigWithRollback` ao final; se o commit Room ou a gravação do Mercado falhar, aciona `rollbackMarketConfig` restaurando os snapshots prévios de favoritos e alertas.
   4. Pós-commit: não avalia alertas nem dispara notificações de mercado na restauração; ressincroniza apenas lembretes Room e atualiza widgets Glance.
+- **Modo 2 — Mesclagem Incremental (`BackupManager.mergeBackupAtomically` / `BackupMergeEngine`):**
+  1. Valida compatibilidade estrutural (`formatVersion in 1..CURRENT_FORMAT_VERSION` e `databaseVersion <= DATABASE_VERSION`) antes de abrir transação.
+  2. Opera via `BackupStorageGateway` dentro de `database.withTransaction` com **zero chamadas `deleteAll`** (nenhuma exclusão implícita).
+  3. Processa entidades na ordem topológica (níveis 0 a 4) aplicando preservação local estrita: colisões por `id` ou por chave natural `UNIQUE` (`tasks(recurrenceId, occurrenceDateIso)`, `recurrence_exceptions(recurrenceId, occurrenceDateIso)`, `credit_card_statements(creditCardId, yearMonth)`, `transactions(recurringRuleId, occurrenceIndex)`, `budgets(categoryId, yearMonth)`, `reminders(sourceType, sourceId, category)`, `briefing_history(briefingType, dateIso)`) e singletons (`settings`, `routine_assistant_settings`, `personalization_settings`) nunca sobrescrevem o estado local e são contabilizados em `MergeSummary`.
+  4. Política de integridade referencial: FKs obrigatórias ausentes no conjunto mesclado (`subtasks.taskId`, `recurrence_exceptions.recurrenceId`, `credit_card_statements.creditCardId`, `budgets.categoryId`, `goal_milestones.goalId`, `goal_progress_logs.goalId`) causam rejeição do registro; FKs opcionais ausentes são anuladas (`null`) com emissão de `MergeIssueItem` tipo `NEEDS_REVIEW`.
+  5. Proteções financeiras específicas: rejeita despesa redundante de `"pagamento de fatura"` quando já existe `CreditCardStatementEntity` correspondente (`ADR-006`), preserva `declaredBalanceCents` e limites locais e exige vínculo consistente entre parcelas/faturas/transações.
+  6. `marketConfig`: realiza união incremental sem duplicar códigos em `favoriteAssetCodes` nem alertas equivalentes (`id` ou assinatura `(assetCode, condition, targetPrice)`) sob o mesmo rollback coordenado Room ↔ Mercado.
 - **CSV Financeiro (`exportFinancialCsv`):** UTF-8 via SAF com **15 colunas** separadas por vírgula (valores `%.2f` em `Locale.US`, datas `dd/MM/yyyy`).
 - **Frases (`QuoteLibraryScreen`):** exportação e importação SAF em `.json` ou `.txt` (separadores ` - ` ou ` | `, ignorando linhas iniciadas por `#`).

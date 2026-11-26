@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.nexus.app.core.DateTimeUtils
 import com.nexus.app.data.backup.BackupManager
 import com.nexus.app.data.backup.BackupValidationResult
+import com.nexus.app.data.backup.MergeSummary
 import com.nexus.app.data.backup.NexusBackupPayload
 import com.nexus.app.data.backup.RestoreSummary
 import com.nexus.app.domain.rules.AgendaEngine
@@ -2730,6 +2731,17 @@ class NexusRepository(
     suspend fun restoreBackupAtomically(payload: NexusBackupPayload): Result<RestoreSummary> =
         safeDbCall("Backup (Restauração)") {
             val summary = backupManager.restoreAtomically(payload)
+            rescheduleAllRemindersInternal()
+            notifyWidgetsChanged()
+            summary
+        }
+
+    fun validateBackupForMerge(payload: NexusBackupPayload): String? =
+        backupManager.validateForMerge(payload)
+
+    suspend fun mergeBackupAtomically(payload: NexusBackupPayload): Result<MergeSummary> =
+        safeDbCall("Backup (Mesclagem)") {
+            val summary = backupManager.mergeBackupAtomically(payload)
             rescheduleAllRemindersInternal()
             notifyWidgetsChanged()
             summary

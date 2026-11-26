@@ -158,3 +158,33 @@ A varredura identificou títulos e comandos absolutos que poderiam ser interpret
 - `09_GUIA_DESENVOLVIMENTO.md`: “Regras Permanentes” passou a “Regras Vigentes”; incrementalidade foi mantida como padrão, sem proibir reescritas justificadas e aprovadas; restrições de backend/login foram explicitamente vinculadas ao ADR-003 ativo.
 
 **Limites:** não houve mudança de decisão arquitetural, código ou escopo. Os documentos foram ajustados para deixar claro que as regras atuais são obrigatórias enquanto vigentes, mas revisáveis pelo processo formal.
+
+---
+
+## 2026-11-25 — Rodada 1: Confiabilidade, Atualização In-Place e Mesclagem Incremental de Backups (`v5.3.0`)
+
+**Tipo:** evolução funcional implementada no código Android + atualização sincronizada de `/docs/` e artefatos do Google AI Studio.
+
+### Motivação e evidência
+Preparar o NEXUS para uso cotidiano contínuo resolvendo dois bloqueios operacionais reais:
+1. Conflitos de assinatura (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) em builds de CI/dispositivo que obrigavam a desinstalar o app antes de atualizar (apagando `nexus_local.db`, dado `android:allowBackup="false"`).
+2. Ausência de importação incremental de backups sem apagar o banco atual (`BackupManager.restoreAtomically` executava apenas substituição destrutiva completa).
+
+### Mudanças implementadas e documentadas
+1. **Assinatura persistente opcional e versionamento (`ADR-015`):**
+   - Preservado `applicationId = "com.nexus.app"`, atualizado `versionCode` (`7 -> 8`) e `versionName` (`"5.2.0" -> "5.3.0"`).
+   - Adicionada leitura segura opcional de `keystore.properties` / variáveis de ambiente em `app/build.gradle.kts`, criado `keystore.properties.example`, protegidas extensões sensíveis no `.gitignore` e adicionado suporte opcional a secrets (`NEXUS_DEBUG_KEYSTORE_BASE64`, `NEXUS_KEYSTORE_BASE64`) no `.github/workflows/android-build.yml`.
+2. **Mesclagem incremental idempotente (`ADR-016`):**
+   - Criados `BackupStorageGateway.kt` (`RoomBackupStorageGateway`), `BackupMergeEngine.kt` e a suíte `BackupIncrementalMergeUnitTests.kt` (`11` `@Test` cobrindo 20 cenários).
+   - Expandidos `BackupModels.kt` (`BackupImportMode`, `MergeSummary`, `MergeIssueItem`, `EntityMergeCounts`), `BackupManager.kt` (`validateForMerge`, `mergeBackupAtomically`), `NexusRepository.kt`, `NexusViewModel.kt`, `MainActivity.kt` e `MoreSettingsBackupDiagnosticsScreens.kt` (distinção explícita entre Modo 1 e Modo 2 na `BackupScreen`).
+3. **Documentação e artefatos sincronizados:**
+   - Atualizados `docs/README.md`, `02_ESPECIFICACAO_PRODUTO.md`, `03_ARQUITETURA_ENGENHARIA.md`, `04_MODELO_DADOS.md`, `07_ESTADO_ATUAL.md`, `08_QUALIDADE_SEGURANCA.md`, `10_ROADMAP.md`, `11_DECISOES_ADRS.md` (`ADR-015` e `ADR-016`), `12_RASTREABILIDADE.md`, `HISTORICO_DOCUMENTACAO.md` e os artefatos `NEXUS_CONTINUIDADE.md`, `NEXUS_CURRENT_STATE.md` e `NEXUS_IMPLEMENTATION_ROADMAP.md`.
+
+### Limites e itens não alterados
+- **Não compilado/executado localmente:** este container não possui JDK, Gradle, Android SDK (`apksigner`/`adb`) nem emulador; `:app:testDebugUnitTest` (16 arquivos, 122 `@Test`), `:app:assembleDebug` e testes em aparelho permanecem como `NÃO VERIFICADO` até execução no GitHub Actions ou máquina local.
+- **Sem secrets embutidos:** cabe ao mantenedor gerar/armazenar o arquivo `.jks` e configurar `keystore.properties` / GitHub Secrets.
+- **`web-mirror-pilot/`, `NexusDatabase` (`DATABASE_VERSION = 6`), `NexusMigrations.kt` e `CURRENT_FORMAT_VERSION = 7`** permaneceram inalterados. `BUG-001` segue em aberto para rodada própria.
+
+### Próximo passo
+Executar o workflow `.github/workflows/android-build.yml` (ou `:app:testDebugUnitTest :app:assembleDebug` com JDK 17 + Android SDK), configurar keystore persistente para validar atualização in-place (`apksigner` + `adb install -r`) e validar a mesclagem incremental com backup real em dispositivo.
+

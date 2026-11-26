@@ -548,7 +548,8 @@ data class BackupPreview(
     val marketFavoritesCount: Int = 0,
     val marketAlertsCount: Int = 0,
     val includesMarketConfig: Boolean = false,
-    val compatibilityNotice: String? = null
+    val compatibilityNotice: String? = null,
+    val databaseVersion: Int = payload.databaseVersion
 ) {
     val totalRecords: Int
         get() = settingsCount + categoriesCount + projectsCount + eventsCount +
@@ -566,6 +567,63 @@ sealed interface BackupValidationResult {
     data class Valid(val preview: BackupPreview) : BackupValidationResult
     data class Invalid(val userMessage: String) : BackupValidationResult
 }
+
+enum class BackupImportMode(val label: String) {
+    FULL_RESTORE("Restaurar backup completo"),
+    INCREMENTAL_MERGE("Mesclar informações de um backup")
+}
+
+enum class MergeIssueKind {
+    CONFLICT_KEPT_LOCAL,
+    INVALID_REJECTED,
+    REFERENCE_SANITIZED_NEEDS_REVIEW,
+    SINGLETON_PRESERVED,
+    FINANCIAL_INTEGRITY_GUARD
+}
+
+data class MergeIssueItem(
+    val tableName: String,
+    val recordId: String,
+    val kind: MergeIssueKind,
+    val reason: String
+)
+
+data class EntityMergeCounts(
+    val tableName: String,
+    val label: String,
+    val foundInFile: Int = 0,
+    val newRecords: Int = 0,
+    val inserted: Int = 0,
+    val alreadyExisting: Int = 0,
+    val conflicts: Int = 0,
+    val invalid: Int = 0,
+    val needsReview: Int = 0,
+    val singletonSkipped: Int = 0,
+    val preservedLocalOnly: Int = 0
+)
+
+data class MergeSummary(
+    val totalFoundInFile: Int,
+    val totalNewRecords: Int,
+    val totalInserted: Int,
+    val totalAlreadyExisting: Int,
+    val totalConflicts: Int,
+    val totalInvalid: Int,
+    val totalNeedsReview: Int,
+    val totalSingletonSkipped: Int,
+    val totalPreservedLocalOnly: Int,
+    val perEntity: List<EntityMergeCounts>,
+    val issues: List<MergeIssueItem> = emptyList(),
+    val marketFavoritesFound: Int = 0,
+    val marketFavoritesAdded: Int = 0,
+    val marketFavoritesAlreadyExisting: Int = 0,
+    val marketAlertsFound: Int = 0,
+    val marketAlertsAdded: Int = 0,
+    val marketAlertsAlreadyExisting: Int = 0,
+    val marketAlertsConflicts: Int = 0,
+    val marketAlertsInvalid: Int = 0,
+    val marketConfigApplied: Boolean = false
+)
 
 data class RestoreSummary(
     val settingsRestored: Int,

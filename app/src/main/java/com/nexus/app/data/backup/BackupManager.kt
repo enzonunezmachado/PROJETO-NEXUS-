@@ -1,6 +1,5 @@
 package com.nexus.app.data.backup
 
-import androidx.room.withTransaction
 import com.nexus.app.BuildConfig
 import com.nexus.app.core.DateTimeUtils
 import com.nexus.app.data.db.NexusDatabase
@@ -67,11 +66,21 @@ import kotlinx.serialization.json.jsonObject
 import java.util.Locale
 import java.util.UUID
 
-class BackupManager(
-    private val database: NexusDatabase,
+class BackupManager internal constructor(
+    private val storage: BackupStorageGateway,
     private val marketWatchlistRepository: MarketWatchlistRepository? = null,
     private val marketAlertRepository: MarketAlertRepository? = null
 ) {
+
+    constructor(
+        database: NexusDatabase,
+        marketWatchlistRepository: MarketWatchlistRepository? = null,
+        marketAlertRepository: MarketAlertRepository? = null
+    ) : this(
+        storage = RoomBackupStorageGateway(database),
+        marketWatchlistRepository = marketWatchlistRepository,
+        marketAlertRepository = marketAlertRepository
+    )
 
     private val tolerantJson = Json {
         ignoreUnknownKeys = true
@@ -88,7 +97,7 @@ class BackupManager(
             appVersion = BuildConfig.VERSION_NAME,
             exportedAt = DateTimeUtils.toIsoUtc(now),
             databaseVersion = NexusDatabase.DATABASE_VERSION,
-            settings = database.settingsDao().getAllOnce().map {
+            settings = storage.getSettings().map {
                 SettingsBackupDto(
                     id = it.id,
                     userName = it.userName,
@@ -98,7 +107,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            categories = database.categoryDao().getAllOnce().map {
+            categories = storage.getCategories().map {
                 CategoryBackupDto(
                     id = it.id,
                     name = it.name,
@@ -109,7 +118,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            projects = database.projectDao().getAllOnce().map {
+            projects = storage.getProjects().map {
                 ProjectBackupDto(
                     id = it.id,
                     name = it.name,
@@ -122,7 +131,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            events = database.eventDao().getAllOnce().map {
+            events = storage.getEvents().map {
                 EventBackupDto(
                     id = it.id,
                     name = it.name,
@@ -153,7 +162,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            tasks = database.taskDao().getAllOnce().map {
+            tasks = storage.getTasks().map {
                 TaskBackupDto(
                     id = it.id,
                     title = it.title,
@@ -174,7 +183,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            subtasks = database.subtaskDao().getAllOnce().map {
+            subtasks = storage.getSubtasks().map {
                 SubtaskBackupDto(
                     id = it.id,
                     taskId = it.taskId,
@@ -185,7 +194,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            appointments = database.appointmentDao().getAllOnce().map {
+            appointments = storage.getAppointments().map {
                 AppointmentBackupDto(
                     id = it.id,
                     title = it.title,
@@ -201,7 +210,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            creditCards = database.creditCardDao().getAllOnce().map {
+            creditCards = storage.getCreditCards().map {
                 CreditCardBackupDto(
                     id = it.id,
                     name = it.name,
@@ -216,7 +225,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            creditCardStatements = database.creditCardStatementDao().getAllOnce().map {
+            creditCardStatements = storage.getCreditCardStatements().map {
                 CreditCardStatementBackupDto(
                     id = it.id,
                     creditCardId = it.creditCardId,
@@ -230,7 +239,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            installmentPurchases = database.installmentPurchaseDao().getAllOnce().map {
+            installmentPurchases = storage.getInstallmentPurchases().map {
                 InstallmentPurchaseBackupDto(
                     id = it.id,
                     description = it.description,
@@ -247,7 +256,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            recurringRules = database.recurringRuleDao().getAllOnce().map {
+            recurringRules = storage.getRecurringRules().map {
                 RecurringRuleBackupDto(
                     id = it.id,
                     title = it.title,
@@ -267,7 +276,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            transactions = database.transactionDao().getAllOnce().map {
+            transactions = storage.getTransactions().map {
                 TransactionBackupDto(
                     id = it.id,
                     type = it.type.name,
@@ -296,7 +305,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            loans = database.loanDao().getAllOnce().map {
+            loans = storage.getLoans().map {
                 LoanBackupDto(
                     id = it.id,
                     creditor = it.creditor,
@@ -313,7 +322,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            budgets = database.budgetDao().getAllOnce().map {
+            budgets = storage.getBudgets().map {
                 BudgetBackupDto(
                     id = it.id,
                     categoryId = it.categoryId,
@@ -323,7 +332,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            financialGoals = database.financialGoalDao().getAllOnce().map {
+            financialGoals = storage.getFinancialGoals().map {
                 FinancialGoalBackupDto(
                     id = it.id,
                     name = it.name,
@@ -336,7 +345,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            auditHistory = database.auditHistoryDao().getAllOnce().map {
+            auditHistory = storage.getAuditHistory().map {
                 AuditHistoryBackupDto(
                     id = it.id,
                     entityType = it.entityType,
@@ -348,7 +357,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            errorLogs = database.errorLogDao().getAllOnce().map {
+            errorLogs = storage.getErrorLogs().map {
                 ErrorLogBackupDto(
                     id = it.id,
                     source = it.source,
@@ -359,7 +368,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            reminders = database.reminderDao().getAllOnce().map {
+            reminders = storage.getReminders().map {
                 ReminderBackupDto(
                     id = it.id,
                     sourceType = it.sourceType.name,
@@ -379,7 +388,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            routineSettings = database.routineAssistantSettingsDao().getAllOnce().map {
+            routineSettings = storage.getRoutineSettings().map {
                 RoutineAssistantSettingsBackupDto(
                     id = it.id,
                     notificationsEnabled = it.notificationsEnabled,
@@ -406,7 +415,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            briefingHistory = database.briefingHistoryDao().getAllOnce().map {
+            briefingHistory = storage.getBriefingHistory().map {
                 BriefingHistoryBackupDto(
                     id = it.id,
                     briefingType = it.briefingType.name,
@@ -421,7 +430,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            personalizationSettings = database.personalizationSettingsDao().getAllOnce().map {
+            personalizationSettings = storage.getPersonalizationSettings().map {
                 PersonalizationSettingsBackupDto(
                     id = it.id,
                     greetingEnabled = it.greetingEnabled,
@@ -438,7 +447,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            quotes = database.quoteDao().getAllOnce().map {
+            quotes = storage.getQuotes().map {
                 QuoteBackupDto(
                     id = it.id,
                     text = it.text,
@@ -450,7 +459,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            personalGoals = database.personalGoalDao().getAllOnce().map {
+            personalGoals = storage.getPersonalGoals().map {
                 PersonalGoalBackupDto(
                     id = it.id,
                     title = it.title,
@@ -466,7 +475,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            goalMilestones = database.goalMilestoneDao().getAllOnce().map {
+            goalMilestones = storage.getGoalMilestones().map {
                 GoalMilestoneBackupDto(
                     id = it.id,
                     goalId = it.goalId,
@@ -480,7 +489,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            goalProgressLogs = database.goalProgressLogDao().getAllOnce().map {
+            goalProgressLogs = storage.getGoalProgressLogs().map {
                 GoalProgressLogBackupDto(
                     id = it.id,
                     goalId = it.goalId,
@@ -491,7 +500,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            recurrences = database.taskRecurrenceDao().getAllOnce().map {
+            recurrences = storage.getTaskRecurrences().map {
                 TaskRecurrenceBackupDto(
                     id = it.id,
                     title = it.title,
@@ -516,7 +525,7 @@ class BackupManager(
                     updatedAt = it.updatedAt
                 )
             },
-            recurrenceExceptions = database.recurrenceExceptionDao().getAllOnce().map {
+            recurrenceExceptions = storage.getRecurrenceExceptions().map {
                 RecurrenceExceptionBackupDto(
                     id = it.id,
                     recurrenceId = it.recurrenceId,
@@ -565,11 +574,11 @@ class BackupManager(
     }
 
     suspend fun exportFinancialCsv(): String {
-        val transactions = database.transactionDao().getAllOnce()
-        val categories = database.categoryDao().getAllOnce().associateBy { it.id }
-        val projects = database.projectDao().getAllOnce().associateBy { it.id }
-        val events = database.eventDao().getAllOnce().associateBy { it.id }
-        val cards = database.creditCardDao().getAllOnce().associateBy { it.id }
+        val transactions = storage.getTransactions()
+        val categories = storage.getCategories().associateBy { it.id }
+        val projects = storage.getProjects().associateBy { it.id }
+        val events = storage.getEvents().associateBy { it.id }
+        val cards = storage.getCreditCards().associateBy { it.id }
 
         fun csvEscape(value: String): String {
             val clean = value.replace("\r", " ").replace("\n", " ")
@@ -1292,64 +1301,38 @@ class BackupManager(
         var marketWriteReached = false
 
         try {
-            database.withTransaction {
+            storage.inTransaction {
                 // Limpa na ordem inversa das chaves estrangeiras
-                database.goalProgressLogDao().deleteAll()
-                database.goalMilestoneDao().deleteAll()
-                database.reminderDao().deleteAll()
-                database.briefingHistoryDao().deleteAll()
-                database.routineAssistantSettingsDao().deleteAll()
-                database.personalizationSettingsDao().deleteAll()
-                database.quoteDao().deleteAll()
-                database.transactionDao().deleteAll()
-                database.subtaskDao().deleteAll()
-                database.recurrenceExceptionDao().deleteAll()
-                database.taskDao().deleteAll()
-                database.taskRecurrenceDao().deleteAll()
-                database.appointmentDao().deleteAll()
-                database.installmentPurchaseDao().deleteAll()
-                database.recurringRuleDao().deleteAll()
-                database.creditCardStatementDao().deleteAll()
-                database.budgetDao().deleteAll()
-                database.financialGoalDao().deleteAll()
-                database.loanDao().deleteAll()
-                database.eventDao().deleteAll()
-                database.creditCardDao().deleteAll()
-                database.projectDao().deleteAll()
-                database.personalGoalDao().deleteAll()
-                database.categoryDao().deleteAll()
-                database.settingsDao().deleteAll()
-                database.auditHistoryDao().deleteAll()
-                database.errorLogDao().deleteAll()
+                storage.clearAllForFullRestore()
 
                 // Reinsere em ordem segura de dependencia
-                database.settingsDao().insertAll(settingsEntities)
-                database.routineAssistantSettingsDao().insertAll(routineSettingsEntities)
-                database.personalizationSettingsDao().insertAll(personalizationEntities)
-                database.quoteDao().insertAll(quoteEntities)
-                database.categoryDao().insertAll(categoryEntities)
-                database.personalGoalDao().insertAll(personalGoalEntities)
-                database.goalMilestoneDao().insertAll(goalMilestoneEntities)
-                database.goalProgressLogDao().insertAll(goalProgressLogEntities)
-                database.projectDao().insertAll(projectEntities)
-                database.creditCardDao().insertAll(cardEntities)
-                database.eventDao().insertAll(eventEntities)
-                database.taskRecurrenceDao().insertAll(taskRecurrenceEntities)
-                database.taskDao().insertAll(taskEntities)
-                database.recurrenceExceptionDao().insertAll(recurrenceExceptionEntities)
-                database.subtaskDao().insertAll(subtaskEntities)
-                database.appointmentDao().insertAll(appointmentEntities)
-                database.creditCardStatementDao().insertAll(statementEntities)
-                database.installmentPurchaseDao().insertAll(installmentPurchaseEntities)
-                database.recurringRuleDao().insertAll(recurringRuleEntities)
-                database.transactionDao().insertAll(transactionEntities)
-                database.loanDao().insertAll(loanEntities)
-                database.budgetDao().insertAll(budgetEntities)
-                database.financialGoalDao().insertAll(goalEntities)
-                database.auditHistoryDao().insertAll(auditEntities)
-                database.errorLogDao().insertAll(errorLogEntities)
-                database.reminderDao().insertAll(reminderEntities)
-                database.briefingHistoryDao().insertAll(briefingHistoryEntities)
+                storage.insertSettings(settingsEntities)
+                storage.insertRoutineSettings(routineSettingsEntities)
+                storage.insertPersonalizationSettings(personalizationEntities)
+                storage.insertQuotes(quoteEntities)
+                storage.insertCategories(categoryEntities)
+                storage.insertPersonalGoals(personalGoalEntities)
+                storage.insertGoalMilestones(goalMilestoneEntities)
+                storage.insertGoalProgressLogs(goalProgressLogEntities)
+                storage.insertProjects(projectEntities)
+                storage.insertCreditCards(cardEntities)
+                storage.insertEvents(eventEntities)
+                storage.insertTaskRecurrences(taskRecurrenceEntities)
+                storage.insertTasks(taskEntities)
+                storage.insertRecurrenceExceptions(recurrenceExceptionEntities)
+                storage.insertSubtasks(subtaskEntities)
+                storage.insertAppointments(appointmentEntities)
+                storage.insertCreditCardStatements(statementEntities)
+                storage.insertInstallmentPurchases(installmentPurchaseEntities)
+                storage.insertRecurringRules(recurringRuleEntities)
+                storage.insertTransactions(transactionEntities)
+                storage.insertLoans(loanEntities)
+                storage.insertBudgets(budgetEntities)
+                storage.insertFinancialGoals(goalEntities)
+                storage.insertAuditHistory(auditEntities)
+                storage.insertErrorLogs(errorLogEntities)
+                storage.insertReminders(reminderEntities)
+                storage.insertBriefingHistory(briefingHistoryEntities)
 
                 // Aplica configurações do Mercado antes do commit do Room:
                 // se falhar ao gravar favoritos/alertas, o SQLite sofre rollback junto;
@@ -1410,6 +1393,17 @@ class BackupManager(
             marketConfigApplied = marketApplied
         )
     }
+
+    fun validateForMerge(payload: NexusBackupPayload): String? =
+        BackupMergeEngine.validateCompatibilityForMerge(payload)
+
+    suspend fun mergeBackupAtomically(payload: NexusBackupPayload): MergeSummary =
+        BackupMergeEngine.mergeAtomically(
+            storage = storage,
+            payload = payload,
+            marketWatchlistRepository = marketWatchlistRepository,
+            marketAlertRepository = marketAlertRepository
+        )
 
     companion object {
         internal fun applyMarketConfigWithRollback(

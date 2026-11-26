@@ -75,6 +75,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nexus.app.BuildConfig
 import com.nexus.app.core.DateTimeUtils
+import com.nexus.app.data.backup.BackupImportMode
+import com.nexus.app.data.backup.MergeIssueKind
 import com.nexus.app.data.backup.NexusBackupPayload
 import com.nexus.app.data.db.NexusDatabase
 import com.nexus.app.data.db.entity.CategoryEntity
@@ -1016,8 +1018,10 @@ fun BackupScreen(
     onBack: () -> Unit,
     onGenerateBackupJson: suspend () -> Result<String>,
     onNotifyExported: () -> Unit,
+    onSelectImportMode: (BackupImportMode) -> Unit,
     onInspectBackupJson: (String) -> Unit,
     onConfirmRestore: () -> Unit,
+    onConfirmMerge: () -> Unit,
     onDismissDialogs: () -> Unit,
     onLogError: (String, Throwable) -> Unit,
     modifier: Modifier = Modifier
@@ -1111,26 +1115,135 @@ fun BackupScreen(
             item {
                 NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
                     Text(
-                        text = "Importar / Restaurar backup",
+                        text = "Importar dados de um backup",
                         style = MaterialTheme.typography.titleMedium,
                         color = palette.textPrimary
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Valida o arquivo, mostra o resumo por tabela e restaura o banco local em transação única junto aos favoritos e alertas do Mercado. Compatível com backups v1 a v${NexusBackupPayload.CURRENT_FORMAT_VERSION}.",
+                        text = "Escolha entre mesclar apenas registros novos preservando tudo o que já existe no aparelho, ou substituir o banco inteiro por um backup (compatível com v1 a v${NexusBackupPayload.CURRENT_FORMAT_VERSION}).",
                         style = MaterialTheme.typography.bodyMedium,
                         color = palette.textSecondary
                     )
                     Spacer(modifier = Modifier.height(14.dp))
-                    OutlinedButton(
+                    Button(
                         enabled = !backupState.isBusy,
                         onClick = {
+                            onSelectImportMode(BackupImportMode.INCREMENTAL_MERGE)
                             importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                         },
                         shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, palette.border)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = palette.highlight,
+                            contentColor = palette.background
+                        ),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Selecionar arquivo de backup", color = palette.textPrimary)
+                        Text("Mesclar informações de um backup")
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Modo seguro recomendado: soma registros novos, preserva alterações locais, não apaga nada e bloqueia duplicidades.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        enabled = !backupState.isBusy,
+                        onClick = {
+                            onSelectImportMode(BackupImportMode.FULL_RESTORE)
+                            importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, palette.danger),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Restaurar backup completo (substituir tudo)", color = palette.danger)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Modo destrutivo: apaga os dados atuais do dispositivo e substitui integralmente pelo arquivo escolhido.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary
+                    )
+                }
+            }
+
+            backupState.lastMergeSummary?.let { mergeSummary ->
+                item {
+                    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+                        Text(
+                            text = "Resultado da última mesclagem incremental",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = palette.positive
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = buildString {
+                                appendLine("Encontrados no arquivo: ${mergeSummary.totalFoundInFile}")
+                                appendLine("Novos identificados: ${mergeSummary.totalNewRecords} · Inseridos: ${mergeSummary.totalInserted}")
+                                appendLine("Já existentes (idênticos): ${mergeSummary.totalAlreadyExisting}")
+                                appendLine("Locais exclusivos preservados: ${mergeSummary.totalPreservedLocalOnly}")
+                                appendLine("Conflitos (versão local mantida): ${mergeSummary.totalConflicts}")
+                                appendLine("Ignorados / inválidos: ${mergeSummary.totalInvalid}")
+                                appendLine("Para revisão / vínculos ajustados: ${mergeSummary.totalNeedsReview}")
+                                appendLine("Singletons preservados: ${mergeSummary.totalSingletonSkipped}")
+                                if (mergeSummary.marketConfigApplied || mergeSummary.marketFavoritesFound > 0 || mergeSummary.marketAlertsFound > 0) {
+                                    appendLine(
+                                        "Mercado: +${mergeSummary.marketFavoritesAdded} fav. (${mergeSummary.marketFavoritesAlreadyExisting} existentes) · " +
+                                            "+${mergeSummary.marketAlertsAdded} alerta(s) (${mergeSummary.marketAlertsConflicts} conflito(s), ${mergeSummary.marketAlertsInvalid} inválido(s))"
+                                    )
+                                }
+                                val activeEntities = mergeSummary.perEntity.filter {
+                                    it.foundInFile > 0 || it.preservedLocalOnly > 0
+                                }
+                                if (activeEntities.isNotEmpty()) {
+                                    appendLine()
+                                    appendLine("Resumo por tabela:")
+                                    activeEntities.forEach { e ->
+                                        appendLine(
+                                            "• ${e.label}: +${e.inserted} ins · ${e.alreadyExisting} exist · " +
+                                                "${e.conflicts} confl · ${e.invalid} inv · ${e.preservedLocalOnly} locais"
+                                        )
+                                    }
+                                }
+                            }.trimEnd(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.textPrimary
+                        )
+                        if (mergeSummary.issues.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            HorizontalDivider(color = palette.border)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Ocorrências e conflitos (${mergeSummary.issues.size}):",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = palette.warning,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            mergeSummary.issues.take(15).forEach { issue ->
+                                val prefix = when (issue.kind) {
+                                    MergeIssueKind.CONFLICT_KEPT_LOCAL -> "[Conflito/Local mantido]"
+                                    MergeIssueKind.INVALID_REJECTED -> "[Inválido]"
+                                    MergeIssueKind.REFERENCE_SANITIZED_NEEDS_REVIEW -> "[Revisão]"
+                                    MergeIssueKind.SINGLETON_PRESERVED -> "[Config. local]"
+                                    MergeIssueKind.FINANCIAL_INTEGRITY_GUARD -> "[Proteção financeira]"
+                                }
+                                Text(
+                                    text = "$prefix ${issue.tableName} (${issue.recordId}): ${issue.reason}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.textSecondary
+                                )
+                            }
+                            if (mergeSummary.issues.size > 15) {
+                                Text(
+                                    text = "... e mais ${mergeSummary.issues.size - 15} ocorrência(s).",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.textSecondary
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1139,7 +1252,7 @@ fun BackupScreen(
                 item {
                     NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
                         Text(
-                            text = "Resultado da última restauração",
+                            text = "Resultado da última restauração completa",
                             style = MaterialTheme.typography.titleMedium,
                             color = palette.positive
                         )
@@ -1178,11 +1291,22 @@ fun BackupScreen(
     }
 
     backupState.pendingPreview?.let { preview ->
+        val isMergeMode = backupState.selectedMode == BackupImportMode.INCREMENTAL_MERGE
+        val mergeBlockedReason = if (isMergeMode) backupState.mergeCompatibilityError else null
+
         AlertDialog(
             onDismissRequest = onDismissDialogs,
             containerColor = palette.surfaceElevated,
             title = {
-                Text("Confirmar restauração?", color = palette.textPrimary, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = if (isMergeMode) {
+                        "Confirmar mesclagem incremental?"
+                    } else {
+                        "Confirmar restauração completa?"
+                    },
+                    color = palette.textPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
             },
             text = {
                 Column(
@@ -1190,7 +1314,7 @@ fun BackupScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "Formato v${preview.formatVersion} · App ${preview.appVersion}",
+                        text = "Formato v${preview.formatVersion} · Banco v${preview.databaseVersion} · App ${preview.appVersion}",
                         style = MaterialTheme.typography.labelMedium,
                         color = palette.textSecondary
                     )
@@ -1199,15 +1323,62 @@ fun BackupScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = palette.textSecondary
                     )
+                    HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(
+                        text = "Modo de importação:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.textPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectImportMode(BackupImportMode.INCREMENTAL_MERGE) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = isMergeMode,
+                            onClick = { onSelectImportMode(BackupImportMode.INCREMENTAL_MERGE) }
+                        )
+                        Text(
+                            text = "Mesclar com dados locais (preserva tudo)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.textPrimary
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelectImportMode(BackupImportMode.FULL_RESTORE) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = !isMergeMode,
+                            onClick = { onSelectImportMode(BackupImportMode.FULL_RESTORE) }
+                        )
+                        Text(
+                            text = "Restaurar completo (apaga dados atuais)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.danger
+                        )
+                    }
                     preview.compatibilityNotice?.let { notice ->
                         Text(
                             text = notice,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             color = palette.warning
                         )
                     }
+                    mergeBlockedReason?.let { blocked ->
+                        Text(
+                            text = blocked,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.danger,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                     HorizontalDivider(color = palette.border, modifier = Modifier.padding(vertical = 4.dp))
-                    Text("Resumo a restaurar (${preview.totalRecords} itens):", color = palette.textPrimary)
+                    Text("Conteúdo do arquivo (${preview.totalRecords} itens):", color = palette.textPrimary)
                     Text("• Configurações: ${preview.settingsCount} · Categorias: ${preview.categoriesCount}", color = palette.textSecondary)
                     Text("• Personalização: ${preview.personalizationSettingsCount} · Frases: ${preview.quotesCount}", color = palette.textSecondary)
                     Text("• Objetivos pessoais: ${preview.personalGoalsCount} · Marcos: ${preview.goalMilestonesCount} · Evolução: ${preview.goalProgressLogsCount}", color = palette.textSecondary)
@@ -1229,23 +1400,28 @@ fun BackupScreen(
                         },
                         color = palette.textSecondary
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Os dados atuais serão substituídos de forma atômica.",
+                        text = if (isMergeMode) {
+                            "Somente registros ausentes e válidos serão inseridos. Conflitos mantêm os dados já salvos neste aparelho."
+                        } else {
+                            "ATENÇÃO: todos os registros locais serão apagados e substituídos pelos dados deste arquivo."
+                        },
                         style = MaterialTheme.typography.labelMedium,
-                        color = palette.warning
+                        color = if (isMergeMode) palette.positive else palette.danger
                     )
                 }
             },
             confirmButton = {
                 Button(
-                    onClick = onConfirmRestore,
+                    enabled = !backupState.isBusy && mergeBlockedReason == null,
+                    onClick = if (isMergeMode) onConfirmMerge else onConfirmRestore,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = palette.highlight,
+                        containerColor = if (isMergeMode) palette.highlight else palette.danger,
                         contentColor = palette.background
                     )
                 ) {
-                    Text("Restaurar agora")
+                    Text(if (isMergeMode) "Mesclar agora" else "Substituir tudo")
                 }
             },
             dismissButton = {
@@ -1260,7 +1436,7 @@ fun BackupScreen(
         AlertDialog(
             onDismissRequest = onDismissDialogs,
             containerColor = palette.surfaceElevated,
-            title = { Text("Arquivo inválido", color = palette.danger) },
+            title = { Text("Operação não concluída", color = palette.danger) },
             text = { Text(errorMsg, color = palette.textPrimary) },
             confirmButton = {
                 TextButton(onClick = onDismissDialogs) {
