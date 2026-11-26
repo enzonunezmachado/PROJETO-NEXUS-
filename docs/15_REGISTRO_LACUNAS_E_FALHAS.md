@@ -1,0 +1,105 @@
+# 15 — Registro Consolidado de Lacunas, Defeitos e Validações Pendentes
+
+> **Finalidade:** manter em um único lugar rastreável as funcionalidades incompletas, inconsistências documentais, defeitos observados durante implementação e validações ainda não concluídas. Este registro complementa — não substitui — requisitos, estado atual, roadmap, ADRs e código.
+>
+> **Regra de rigor:** “implementado” não significa “validado”; falha corrigida em uma execução não deve ser tratada como pendência aberta, mas precisa manter seu histórico. Este é o inventário inicial consolidado em 26/11/2026, não uma declaração de que todos os arquivos e fluxos do aplicativo foram novamente auditados nesta atualização.
+
+## 1. Prioridade alta — recorrência de compromissos e eventos
+
+| Campo | Registro |
+|---|---|
+| ID | `GAP-001` |
+| Requisito relacionado | `REQ-009` |
+| Estado | **NÃO IMPLEMENTADA — pendência funcional conhecida** |
+| Origem | `docs/02_ESPECIFICACAO_PRODUTO.md`, `docs/07_ESTADO_ATUAL.md`, `docs/10_ROADMAP.md`, `docs/12_RASTREABILIDADE.md`, `ADR-008` |
+| Escopo afetado | Compromissos, Eventos, Agenda, lembretes/notificações, persistência, backup e entrada estruturada |
+| Evidência prática | No povoamento de 26/11/2026, a corrida semanal “A Vida é um Corre”, quinta-feira às 20h, não pôde ser registrada como compromisso recorrente pela ponte. Foi preservada apenas como informação dentro da checklist da rotina semanal; isso não cria ocorrências reais na Agenda nem lembretes recorrentes. |
+
+### Situação confirmada
+- A recorrência de **Tarefas** existe no código: regras, exceções, projeção virtual na Agenda e materialização idempotente ao concluir.
+- A recorrência de **Compromissos e Eventos** está explicitamente marcada como não implementada em `REQ-009`.
+- A `ADR-008` registra que a expansão para esses domínios foi adiada para lote futuro.
+- O contrato da ponte `v1` não oferece entidade `RECURRENCE` nem campos de regra recorrente para `APPOINTMENT`/`EVENT`. O DTO de tarefa pode referenciar `recurrenceId`, mas isso não equivale a permitir criar uma regra nova por meio da ponte.
+- Portanto, atualmente não se deve representar uma série recorrente como vários registros únicos inventados, nem dizer que uma tarefa de checklist equivale a um compromisso recorrente.
+
+### Trabalho necessário antes de implementar
+1. Levantar o modelo real atual de `TaskRecurrenceEntity`, `RecurrenceExceptionEntity`, `RecurrenceEngine`, `AgendaEngine`, lembretes e regras de notificação.
+2. Definir se a regra será generalizada por tipo de entidade ou se compromissos/eventos terão vínculos/tabelas específicas; avaliar migração Room e compatibilidade de backup.
+3. Definir frequências, intervalos, dias da semana, âncora mensal, início/fim, limite de ocorrências, fuso horário e comportamento em horário de verão.
+4. Definir exceções por ocorrência: pular/cancelar, mover data/hora, sobrescrever dados, editar/excluir “só esta” ou “toda a série”.
+5. Definir semântica específica de Evento (duração de vários dias, custos/ingressos, tarefas e compromissos vinculados) versus Compromisso (início/fim, conflito de horários e lembretes).
+6. Garantir projeção virtual na janela solicitada, sem pré-gerar centenas de linhas; identidade estável, idempotência, histórico e ausência de duplicação.
+7. Definir como lembretes e notificações serão agendados/cancelados para ocorrências projetadas e exceções.
+8. Planejar backup/restauração/mesclagem e entrada estruturada para regras e exceções, com versionamento compatível.
+9. Criar testes unitários de regra, exceções, limites de janela, mudança de fuso/DST, idempotência, conflitos, lembretes e regressão da recorrência de tarefas.
+10. Validar em aparelho: criar série, visualizar na Agenda, editar uma ocorrência, editar a série, cancelar uma ocorrência, reiniciar o app e verificar lembretes sem duplicação.
+
+**Critério de conclusão:** um compromisso semanal real pode ser criado uma única vez como série, aparece nas datas corretas da Agenda, mantém exceções e lembretes corretos e sobrevive a backup/restauração e reabertura do app. O mesmo deve ser demonstrado para Eventos conforme regras específicas aprovadas.
+
+**Dependência da ponte:** decidir explicitamente como estender o contrato de entrada estruturada. Não alterar silenciosamente o contrato `v1` estrito nem inventar uma entidade/campo antes de aprovar o modelo.
+
+## 2. Inconsistência documental encontrada na ponte
+
+| Campo | Registro |
+|---|---|
+| ID | `DOC-001` |
+| Estado | **CORRIGIDA NESTA ATUALIZAÇÃO DOCUMENTAL** |
+| Arquivo | `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md` |
+| Problema | O exemplo JSON de `TASK.subtasks` e `CHECKLIST.items` usava `isDone` e `orderIndex`, enquanto os campos reais do contrato/código são `isCompleted` e `sortOrder`. |
+| Risco | O ChatGPT ou outra fonte poderia copiar o exemplo e produzir JSON rejeitado pelo parser estrito (`ignoreUnknownKeys = false`). |
+| Correção | Exemplo oficial atualizado para os nomes de campos reais. |
+| Validação restante | Conferir o exemplo com os DTOs atuais e manter teste/fixture compartilhado para impedir divergência futura. |
+
+## 3. Limitação de recorrência na entrada estruturada
+
+| Campo | Registro |
+|---|---|
+| ID | `GAP-002` |
+| Estado | **ABERTA — limitação conhecida do contrato `v1`** |
+| Arquivos | `StructuredInputModels.kt`, `StructuredInputProcessor.kt`, `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md` |
+| Problema | O contrato aceita `APPOINTMENT` e `EVENT` como registros únicos, mas não define série/regra/exceções recorrentes. Também não oferece uma operação para criar a regra de recorrência de uma nova tarefa. |
+| Consequência | A Secretária ChatGPT não consegue registrar fielmente compromissos/eventos recorrentes nem criar uma nova série de tarefas via Inbox; referenciar `recurrenceId` não cria a regra. |
+| Próximo passo | Resolver junto de `GAP-001`, definindo versão/extensão do contrato, DTOs, validação, preview, idempotência, conflitos e importação transacional. Não simular recorrência com ocorrências avulsas. |
+
+## 4. Pendências funcionais e técnicas já rastreadas
+
+Os itens abaixo já constam dos documentos oficiais e permanecem no inventário para evitar que desapareçam entre rodadas. Consultar o estado atual antes de iniciar cada correção:
+
+| ID | Item | Estado registrado | Fonte principal |
+|---|---|---|---|
+| `BUG-001` | Perda de rota/rascunho ao girar aparelho ou recriar Activity | EM ABERTO; exige validação em dispositivo | `07_ESTADO_ATUAL.md`, `12_RASTREABILIDADE.md` |
+| `INT-01` | Motor legado `observeUnifiedAgenda()` ainda alimenta Dashboard/Briefings | EM ABERTO | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
+| `INT-03` | Toggle de subtarefa persiste antes de tocar em “Salvar” | PARCIALMENTE EM ABERTO | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
+| `REQ-012` | Listagem/criação direta de compromissos na ficha de Evento | PARCIALMENTE IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `12_RASTREABILIDADE.md` |
+| `REQ-014` | Campos avançados de Evento (`locationMode`, banner local, apresentação de taxas) | NÃO IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `10_ROADMAP.md` |
+| `REQ-026` | Backup ZIP com banners de Eventos | NÃO IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `10_ROADMAP.md` |
+| Build/dispositivo | Atualização in-place com keystore persistente, migrações Room e fluxos críticos em aparelho | NÃO VERIFICADO até validação correspondente | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
+
+## 5. Erros encontrados durante a Rodada 3 — histórico e resultado
+
+| Execução | Problema encontrado | Tratamento / resultado conhecido |
+|---|---|---|
+| GitHub Actions #47 — run `45745484984` | Erros Kotlin em `InboxRepository.kt` (controle `break/continue` em lambda), referência inexistente `palette.negative` e argumento incorreto `NexusEmptyState(message)` em vez de `subtitle` | Correções aplicadas em branch de correção; não considerar #47 validado. |
+| GitHub Actions #48 — run `45747309389` | Um teste falhou: `StructuredInputUnitTests > previewEnvelope performs zero DB writes while validating intra-batch links`; a classificação de CHECKLIST como criação/atualização estava incorreta | Corrigido o cálculo semântico em `prepareAndApplyChecklist` para classificar checklist de tarefa existente como atualização. |
+| GitHub Actions #50 — run `45748189511` | Reexecução após correção | **Build job SUCCESS**; testes unitários e APK Debug concluíram com sucesso. Release foi ignorado por ausência de secrets de assinatura Release. Isso valida o workflow dessa execução, não os testes em aparelho, migrações reais ou atualização in-place. |
+
+## 6. Regras de manutenção deste registro
+
+1. Ao descobrir falha, registrar sintoma, evidência, ambiente, commit/run, causa (somente quando confirmada), correção, estado e validação pendente.
+2. Não apagar falhas corrigidas: movê-las para histórico/estado resolvido, mantendo a evidência.
+3. Não marcar como corrigido apenas porque o código foi alterado; exigir o teste apropriado.
+4. Ao concluir uma lacuna, atualizar também requisito, estado atual, rastreabilidade, roadmap, ADR/arquitetura e contrato afetados.
+5. Distinguir falha de implementação, limitação deliberada de escopo, dívida técnica, inconsistência documental e validação não executada.
+6. Atualizar o espelho `NEXUS-DOCUMENTACAO/GOOGLE_IA/docs/` e os artefatos internos do AI Studio quando acessíveis; o espelho e os artefatos nunca substituem a origem em `PROJETO-NEXUS-/docs/`.
+
+## 7. Relação com outros documentos
+
+- Requisitos e status: `02_ESPECIFICACAO_PRODUTO.md`
+- Arquitetura e modelo de dados: `03_ARQUITETURA_ENGENHARIA.md`, `04_MODELO_DADOS.md`
+- Estado factual: `07_ESTADO_ATUAL.md`
+- Qualidade/testes: `08_QUALIDADE_SEGURANCA.md`
+- Planejamento: `10_ROADMAP.md`
+- Decisões: `11_DECISOES_ADRS.md`
+- Rastreabilidade: `12_RASTREABILIDADE.md`
+- Entrada estruturada: `14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`
+- Histórico: `HISTORICO_DOCUMENTACAO.md`
