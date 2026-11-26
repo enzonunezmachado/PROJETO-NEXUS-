@@ -173,3 +173,33 @@
 - **Camada Interna de Entrada Estruturada (`data/ingestion/`, Etapa 2):** contrato JSON/DTO interno versionado (`contractVersion = 1`) acoplado ao `NexusRepository` (`processStructuredInputJson` / `processStructuredInputEnvelope`) para ingerir operações de `TASK`, `APPOINTMENT`, `EVENT`, `PROJECT`, `PERSONAL_GOAL` e `TRANSACTION` diretamente no Room `v6` com validação estrita, checagem de FKs e regras financeiras, idempotência por `operationId` em `audit_history`, preservação local em conflitos e rollback atômico seguro (preparado para a Etapa 3, sem acesso externo/GitHub nesta etapa).
 - **CSV Financeiro:** exporta `transactions` em UTF-8 com 15 colunas separadas por vírgula.
 - **Diagnóstico (`DiagnosticsScreen`):** exibe versão do app/DB, contagem reativa das 27 tabelas e últimos 50 registros de `error_logs` (`GlobalErrorHandler`) com opção de limpeza.
+
+
+---
+
+## Requisitos transversais em evolução — completude de registros
+
+> Os requisitos abaixo registram a direção funcional aprovada para a Rodada 4. Não significam que já existam no código. A implementação deve respeitar o modelo de dados real, os ADRs vigentes e os critérios de aceite.
+
+| ID | Requisito | Estado |
+|---|---|---|
+| `REQ-029` | Compromissos e Eventos podem possuir checklist opcional, com itens ordenados e estado de conclusão persistido. O checklist deve ser independente do checklist de tarefas vinculadas e não pode ser confundido com lembretes ou notas. | **PLANEJADA — Rodada 4** |
+| `REQ-030` | Compromissos e Eventos podem possuir identidade visual contextual (ícone/categoria visual), para diferenciar atividades como academia, corrida, consulta, viagem, show ou reunião na Agenda e nas fichas. O ícone identifica o tipo/contexto do registro; nunca substitui status, vínculo ou controle de ação. | **PLANEJADA — Rodada 4/5** |
+| `REQ-031` | A integração externa deve expor um catálogo versionado e legível por máquina das capacidades e contratos efetivamente suportados pelo aplicativo, separado de qualquer snapshot dos dados pessoais atuais. | **PLANEJADA — Rodada 6** |
+| `REQ-032` | O usuário deve poder solicitar sincronização de entrada e saída com prévia/resultado claros. O desenho deve contemplar sincronização manual bidirecional e avaliar automação periódica opcional sem prometer horário exato de execução. | **PLANEJADA — Rodada 6** |
+
+### Regras esperadas para checklists de Compromissos e Eventos (`REQ-029`)
+- O checklist é opcional; registros simples não devem ganhar campos ou etapas desnecessárias.
+- Cada item tem identidade, título, ordem e estado de conclusão próprios.
+- O checklist pertence ao compromisso/evento, não às tarefas relacionadas. Tarefas vinculadas continuam sendo entidades independentes.
+- Em registros recorrentes, cada ocorrência deve ter estado próprio; a série pode fornecer um modelo reutilizável, mas marcar um item em uma ocorrência não pode marcar as demais.
+- Definir explicitamente como alterações no checklist-base afetam ocorrências passadas, futuras e exceções.
+- Considerar backup/restauração/merge, importação estruturada, exportação de estado, notificações e histórico.
+- Não persistir mudanças de rascunho antes de salvar/confirmar o editor.
+
+### Regras esperadas para identidade contextual (`REQ-030`)
+- Permitir representar contextos reais distintos sem depender apenas do título textual.
+- Ícone é metadado de apresentação associado a uma categoria/contexto controlado; não é um emoji arbitrário que o ChatGPT inventa livremente.
+- Definir catálogo permitido, fallback, acessibilidade, tema claro/escuro, Agenda, lista, ficha, widgets e backup.
+- Diferenciar o ícone do registro do controle de concluir, pagar, editar ou abrir.
+- Exemplo de caso a suportar: uma atividade de academia pode usar um ícone de atividade física na Agenda, enquanto sua recorrência, horário e checklist continuam sendo dados estruturados independentes.
