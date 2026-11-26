@@ -57,3 +57,25 @@
 | Exclusões | Não considerar layout adaptativo, build verde ou teste unitário isolado como prova de correção |
 
 **Regra:** qualquer implementação de correção deve atualizar esta matriz com arquivos/componentes reais, estado de implementação, testes efetivamente executados e evidência. Só marcar como resolvido/validado após teste funcional em dispositivo cobrindo o fluxo.
+
+
+## 3. Lacunas e falhas transversais adicionais
+
+### GAP-001 — Recorrência de Compromissos e Eventos (REQ-009)
+
+| Campo | Registro |
+|---|---|
+| Estado | **NÃO IMPLEMENTADA** |
+| Evidência | `02_ESPECIFICACAO_PRODUTO.md` e `07_ESTADO_ATUAL.md` classificam `REQ-009` como não implementada; `ADR-008` adia a expansão além de tarefas. |
+| Impacto | Não é possível criar uma série recorrente de compromisso/evento, projetar ocorrências e gerenciar exceções/lembretes de forma integrada. |
+| Entrada estruturada | `contractVersion = 1` não suporta regras recorrentes novas para `TASK`, `APPOINTMENT` ou `EVENT`. |
+| Evidência prática | A corrida semanal “A Vida é um Corre” não pôde ser cadastrada como compromisso recorrente no povoamento de 26/11/2026. |
+| Próximo passo | Especificar domínio, exceções, projeção, notificações, backup e extensão versionada da Inbox; ver `15_REGISTRO_LACUNAS_E_FALHAS.md`. |
+
+### GAP-002 — Recorrência ausente no contrato de entrada estruturada
+
+A ponte aceita entidades únicas `APPOINTMENT` e `EVENT`, mas não cria uma regra recorrente. A referência opcional `TASK.recurrenceId` não cria uma regra nova. A limitação deve ser resolvida junto de `GAP-001`, sem simular séries por múltiplos registros únicos.
+
+### DOC-001 — Exemplo de checklist divergente do DTO real
+
+O exemplo JSON de `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md` usava `isDone`/`orderIndex`, mas o contrato/código atual usa `isCompleted`/`sortOrder`. **Corrigido nesta atualização documental**; manter fixture/teste para evitar regressão.
