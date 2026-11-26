@@ -373,3 +373,35 @@ As correções da ponte `NEXUS-INBOX` que haviam sido validadas apenas na branch
 - Não há JDK, Gradle ou Android SDK neste container; compilação Kotlin/Compose, `:app:testDebugUnitTest`, `:app:assembleDebug` e fluxo real com `NEXUS-INBOX` no aparelho dependem da sincronização manual do usuário com o GitHub (`main`) e execução do CI/dispositivo.
 - `GAP-001`, `GAP-002`, `GAP-003` e `BUG-001` não foram implementados (reservados para a Rodada 4).
 - O repositório espelho `NEXUS-DOCUMENTACAO/GOOGLE_IA/docs/` e `CHATGPT/ATUALIZACAO/PLANO_MESTRE_DE_EVOLUCAO.md` não existem neste container e precisam ser sincronizados pelo usuário externamente se necessário.
+
+
+---
+
+## 2026-11-26 — Encerramento da Rodada 3 após CI na main e importação real
+
+**Tipo:** atualização de estado de implementação, CI e validação prática.
+
+### Motivação e evidências
+Após a revisão e correções da Ponte ChatGPT → NEXUS-INBOX → Android, o código foi sincronizado na branch `main`. A GitHub Actions #70 (run `45792119560`) terminou com sucesso, executando os testes unitários e gerando o APK Debug. O Release foi ignorado por ausência dos secrets de assinatura. Em seguida, o usuário confirmou que o aplicativo funcionou no aparelho e que conseguiu importar registros pela ponte.
+
+Commit de referência: `4041611a4ef4e111c3633790d0c09babdecb2ae8`.
+
+### Mudanças introduzidas
+1. Rodada 3 alterada de EM ANDAMENTO para CONCLUÍDA no roadmap técnico e no Plano Mestre.
+2. Registradas a CI verde na `main` e a confirmação de importação real pelo usuário.
+3. Mantidos como cenários de acompanhamento, sem alegar validação individual: descarte sem gravação, reconsulta sem duplicidade, sincronização periódica, notificações/deep-links, reinício/rotação e verificações adicionais de segurança do token.
+4. Próxima etapa operacional definida como início da Rodada 4, começando pela investigação conjunta de `GAP-001` e `GAP-003`; `GAP-002` permanece dependente da definição dos modelos de recorrência.
+
+### Arquivos afetados
+- `docs/10_ROADMAP.md`
+- `docs/07_ESTADO_ATUAL.md`
+- `docs/15_REGISTRO_LACUNAS_E_FALHAS.md`
+- `docs/HISTORICO_DOCUMENTACAO.md`
+- `NEXUS-DOCUMENTACAO/GOOGLE_IA/docs/` (espelho dos quatro documentos acima)
+- `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/PLANO_MESTRE_DE_EVOLUCAO.md`
+
+### Limites e itens não alterados
+- Nenhum código Android, schema Room ou contrato Inbox foi alterado nesta atualização documental.
+- A conclusão da Rodada 3 não comprova individualmente todos os cenários de confiabilidade listados no gate contínuo.
+- Release continua sem assinatura persistente configurada; a Actions #70 gerou APK Debug e não Release.
+- GAP-001, GAP-002 e GAP-003 permanecem abertos para a Rodada 4.
