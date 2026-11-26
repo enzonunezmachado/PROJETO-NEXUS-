@@ -312,3 +312,20 @@ Durante o povoamento inicial pela ponte ChatGPT → NEXUS-INBOX, ficou evidente 
 - `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`
 - `docs/HISTORICO_DOCUMENTACAO.md`
 
+
+
+## 2026-11-26 — Reorganização das etapas e decisão sobre branches da Rodada 3
+
+**Motivação:** a Rodada 3 (ponte ChatGPT → GitHub → Android) avançou, mas as correções finais ficaram em branches isoladas. Ao mesmo tempo, a revisão de requisitos evidenciou lacunas funcionais importantes, especialmente recorrência de Compromissos e Eventos. A antiga Rodada 4, que previa aplicar a proposta Claude, não deve ser iniciada antes de completar o núcleo funcional.
+
+**Decisões de planejamento:**
+1. Preservar Rodadas 1 e 2 como concluídas e manter a Rodada 3 como etapa atual, ainda em fechamento.
+2. Não integrar integralmente `fix/inbox-build-47-kotlin-compile` nem `fix/inbox-kotlin-compile` à `main`. Em 26/11, estavam divergentes da `main` (respectivamente 4/9 e 3/9 commits à frente/atrás). Reaplicar as correções necessárias sobre a `main` atual via Google AI Studio, revisar diff e executar CI.
+3. Registrar que a GitHub Actions #50 (run `45748189511`) passou no job de build, testes unitários e APK Debug; Release foi ignorado por falta de secrets. Preservar #47, #48 e #49 como histórico de falhas/tentativas.
+4. Criar a Rodada 4 para completar funcionalidades centrais e lacunas de domínio, começando por `REQ-009` / `GAP-001` (recorrência de Compromissos e Eventos) e `GAP-002` (extensão da Inbox), seguindo para pendências de Eventos, Agenda e estado.
+5. Reposicionar a evolução da experiência para Rodada 5, usando a documentação atualizada `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/` como base de investigação. A proposta original do Claude permanece referência, não arquitetura aprovada.
+6. Tratar confiabilidade, backup, migrações, assinatura e validação em aparelho como gate contínuo, não como atividade que possa ser considerada resolvida por build verde.
+
+**Arquivos alterados:** `docs/10_ROADMAP.md`, `docs/15_REGISTRO_LACUNAS_E_FALHAS.md`, `docs/HISTORICO_DOCUMENTACAO.md`.
+
+**Limites:** nenhuma alteração de código Android, merge de branch ou aprovação de redesign foi realizada nesta atualização.
