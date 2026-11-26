@@ -75,7 +75,13 @@
 
 ---
 
-## 5. Itens Não Verificados Neste Ambiente (`NÃO VERIFICADO`)
+## 5. Validação previamente concluída — Ponte NEXUS-INBOX (Rodada 3)
+
+A GitHub Actions #70 (run `45792119560`) concluiu com sucesso na `main`, com testes unitários e geração do APK Debug; Release foi ignorado por ausência dos secrets de assinatura. O usuário confirmou a importação real de registros no aparelho pelo fluxo ChatGPT → repositório privado `NEXUS-INBOX` → NEXUS Android.
+
+Essa evidência valida o fluxo principal de importação, mas não comprova individualmente descarte sem gravação, reconsulta sem duplicidade, sincronização periódica em segundo plano, notificações/deep-links, recuperação após reinício ou todos os cenários de segurança do token. Esses itens permanecem no gate contínuo de confiabilidade.
+
+## 6. Itens Não Verificados Neste Ambiente (`NÃO VERIFICADO`)
 
 Por ausência de **JDK, Gradle, Android SDK, emulador/dispositivo físico Android** neste container:
 1. Compilação Kotlin/Compose/KSP (`:app:kspDebugKotlin`, `:app:compileDebugKotlin`, `:app:compileDebugUnitTestKotlin`, `:app:assembleDebug`, `:app:assembleRelease`) — incluindo as evoluções visuais/adaptativas, Rodada 1, Etapa 2, Rodada 3 e **Rodada 4** (`MIGRATION_6_7`, `RecurrenceEngine`, `AgendaEngine`, `NexusRepository`, `BackupModels v8`, `EntityEditors`, `EventsScreen`, `AgendaScreen`, `HomeScreen`, `MainActivity`).
@@ -84,6 +90,6 @@ Por ausência de **JDK, Gradle, Android SDK, emulador/dispositivo físico Androi
 4. Validação em dispositivo Android real e tablet/emulador: atualização in-place `v6→v7` sem perda de dados, séries recorrentes de Compromissos e Eventos (criação, projeção, materialização sob demanda, `"Só esta ocorrência"` vs `"Toda a série"`, ausência de transações fantasma), checklist independente entre ocorrências de tarefas recorrentes, prévia dry-run e mesclagem incremental `v8`, consulta real da `NEXUS-INBOX` com GitHub privado + PAT Keystore, tema Grafite Suave, widgets, SAF, Doze, `BootReceiver`, notificações + deep-links e HTTP real.
 
 
-## 6. Referência ao inventário consolidado
+## 7. Referência ao inventário consolidado
 
 As lacunas funcionais, defeitos, inconsistências documentais e validações pendentes estão consolidados em [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md): na Rodada 4 foram implementados no código `GAP-001` (`REQ-009`) e `GAP-003` (aguardando validação Gradle/dispositivo); permanecem abertos fora do escopo desta rodada `GAP-002` (contrato `v1` da Inbox), `BUG-001`, `INT-01`, `INT-03`, `REQ-012`, `REQ-014` e `REQ-026`.
