@@ -61,7 +61,39 @@
 | Consequência | A Secretária ChatGPT não consegue registrar fielmente compromissos/eventos recorrentes nem criar uma nova série de tarefas via Inbox; referenciar `recurrenceId` não cria a regra. |
 | Próximo passo | Resolver junto de `GAP-001`, definindo versão/extensão do contrato, DTOs, validação, preview, idempotência, conflitos e importação transacional. Não simular recorrência com ocorrências avulsas. |
 
-## 4. Pendências funcionais e técnicas já rastreadas
+## 4. Requisito transversal: checklist independente por ocorrência recorrente
+
+| Campo | Registro |
+|---|---|
+| ID | `GAP-003` |
+| Estado | **CAPTURADA / EM ANÁLISE — comportamento atual não verificado** |
+| Escopo | Recorrência de tarefas, checklist/subtasks, histórico, Agenda, backup/restore/merge e Inbox |
+| Origem | Necessidade de produto explicitada em 26/11/2026 |
+| Dependências | Auditoria de `TaskRecurrenceEntity`, `RecurrenceEngine`, materialização de ocorrências e modelo de subtarefas |
+
+### Necessidade
+
+Uma tarefa recorrente pode reutilizar a mesma estrutura de checklist em cada ocorrência, mas cada ciclo precisa manter seu próprio estado de execução. Marcar os itens da semana anterior não pode fazer com que a ocorrência da semana seguinte já apareça concluída.
+
+### Exemplo de aceite
+
+Uma tarefa semanal de segunda-feira possui três itens de checklist. Na primeira semana, os três são concluídos. Na segunda semana, os mesmos três itens aparecem novamente pendentes. A ocorrência anterior permanece concluída no histórico e não é alterada. Cada ocorrência mantém identidade e estado independentes.
+
+### Auditoria e definição necessárias
+
+1. Verificar como subtasks estão ligadas à tarefa recorrente e como novas ocorrências são materializadas.
+2. Separar conceitualmente o modelo reutilizável do checklist e o estado de execução de cada ocorrência, caso o código atual não faça essa separação.
+3. Definir como alterações no modelo (adicionar, remover, renomear ou reordenar itens) afetam ocorrências futuras, já materializadas e históricas.
+4. Definir edição do modelo da série versus edição de uma ocorrência isolada.
+5. Preservar IDs, histórico, idempotência, conclusão parcial, reabertura e exceções.
+6. Conferir a projeção virtual da Agenda, backup/restauração/merge e entrada estruturada.
+7. Criar testes de regressão demonstrando que concluir uma ocorrência não altera nenhuma outra.
+
+**Regra de rigor:** ainda não foi verificado se o comportamento já existe parcialmente no código. Não registrar como defeito confirmado nem implementar uma segunda estrutura antes de auditar o motor atual. O GAP representa uma necessidade e uma verificação obrigatória de completude.
+
+---
+
+## 5. Pendências funcionais e técnicas já rastreadas
 
 Os itens abaixo já constam dos documentos oficiais e permanecem no inventário para evitar que desapareçam entre rodadas. Consultar o estado atual antes de iniciar cada correção:
 
