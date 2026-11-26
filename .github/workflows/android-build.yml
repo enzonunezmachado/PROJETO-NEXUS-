@@ -2,9 +2,9 @@ name: NEXUS Android Build
 
 on:
   push:
-    branches: [ "main", "integracao-google" ]
+    branches: [ "main", "integracao-google", "fix/inbox-kotlin-compile" ]
   pull_request:
-    branches: [ "main", "integracao-google" ]
+    branches: [ "main", "integracao-google", "fix/inbox-kotlin-compile" ]
   workflow_dispatch:
 
 jobs:
