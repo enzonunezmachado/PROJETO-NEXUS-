@@ -911,7 +911,7 @@ class StructuredInputProcessor(
             )
         }
 
-        val isUpdate = updatedExistingCount > 0 || opAction == StructuredOperationAction.UPDATE
+        val isUpdate = true
         val label = if (resolvedEntities.size == 1) {
             "${resolvedEntities.first().title} (${parentTask.title})"
         } else {

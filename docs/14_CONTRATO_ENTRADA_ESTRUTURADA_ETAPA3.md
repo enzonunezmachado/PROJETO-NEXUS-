@@ -51,10 +51,10 @@ Quando o usuário pedir *"Registra tudo isso no NEXUS"*, o ChatGPT deve gerar um
         "name": "Conferência de Produto 2026",
         "startAt": 1795514400000,
         "endAt": 1795546800000,
-        "location": "São Paulo Expo",
-        "status": "CONFIRMED",
+        "locationName": "São Paulo Expo",
+        "eventStatus": "CONFIRMED",
         "ticketStatus": "FREE",
-        "ticketUnitPriceCents": 0,
+        "ticketPriceCents": 0,
         "ticketQuantity": 1,
         "ticketFeesCents": 0,
         "notes": "Credenciamento às 08h30"
@@ -125,7 +125,7 @@ Todos os DTOs em `StructuredInputModels.kt` espelham **exclusivamente colunas re
 | `entityType` | DTO Kotlin | Campos Obrigatórios / Validação Chave | FKs Verificadas (Rejeita Órfãos) | Chaves Naturais / Conflito Local |
 | --- | --- | --- | --- | --- |
 | `TASK` | `StructuredTaskData` | `title` não vazio; `priority` (`TaskPriority`); `status` (`TaskStatus`); `subtasks` opcional com `title` não vazio | `projectId`, `categoryId`, `eventId`, `goalId`, `recurrenceId` | `id` (`tasks`) e par `(recurrenceId, occurrenceDateIso)` |
-| `CHECKLIST` | `StructuredChecklistData` | `taskId` não vazio; `items` não vazio; cada item com `title` não vazio | `taskId` (`tasks`) | `id` de cada subtarefa na tabela `subtasks` |
+| `CHECKLIST` | `StructuredChecklistData` | `taskId` não vazio; `items` ou `title` não vazio; cada item com `title` não vazio | `taskId` (`tasks`) | `id` de cada subtarefa na tabela `subtasks` |
 | `APPOINTMENT` | `StructuredAppointmentData` | `title` não vazio; `startAt > 0`; `endAt >= startAt` | `categoryId`, `eventId` | `id` (`appointments`) |
 | `EVENT` | `StructuredEventData` | `name` não vazio; `startAt > 0`; `endAt >= startAt`; quantidades/valores `>= 0`; enums `EventLifecycleStatus`, `TicketStatus`, `PaymentMethod` | `categoryId`, `creditCardId` | `id` (`events`) |
 | `PROJECT` | `StructuredProjectData` | `name` não vazio; enums `ProjectStatus`, `TaskPriority` | `goalId` (`personal_goals`) | `id` (`projects`) |

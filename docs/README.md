@@ -1,7 +1,7 @@
 # NEXUS — Documentação Oficial de Produto e Engenharia
 
 > **Entrada principal da documentação do repositório ativo `PROJETO-NEXUS-`.**  
-> **Última revisão documental:** 2026-11-25 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 6`, Backup `CURRENT_FORMAT_VERSION = 7` com restauração completa, mesclagem incremental e prévia dry-run, camada interna de entrada estruturada `contractVersion = 1`, pipeline CI com `apksigner`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa concluídos no código).
+> **Última revisão documental:** 2026-11-26 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 6`, Backup `CURRENT_FORMAT_VERSION = 7`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX` em revisão/fechamento da Rodada 3, `18` suítes / `138` `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
 
 ---
 
@@ -40,7 +40,7 @@ Antes de qualquer leitura técnica ou execução, leia [`00_ORIENTACAO_E_AUTORID
 | **8** | [`08_QUALIDADE_SEGURANCA.md`](./08_QUALIDADE_SEGURANCA.md) | Offline-first, privacidade, integridade transacional Room ↔ Mercado, permissões, tratamento de erros, testes JUnit e CI | Avaliar riscos, testes, segurança e pipeline |
 | **9** | [`09_GUIA_DESENVOLVIMENTO.md`](./09_GUIA_DESENVOLVIMENTO.md) | Convenções Kotlin/Compose, prevenção de OOM no compilador K2, checklist por lote e manutenção documental | Antes e ao final de qualquer alteração de código |
 | **10** | [`10_ROADMAP.md`](./10_ROADMAP.md) | Separação clara de entregas concluídas, planejadas/pendentes, dívidas técnicas e itens fora de escopo | Priorizar próximos lotes |
-| **11** | [`11_DECISOES_ADRS.md`](./11_DECISOES_ADRS.md) | Architecture Decision Records (`ADR-001`..`ADR-017`) com status, alternativas e consequências | Entender o porquê das escolhas arquiteturais |
+| **11** | [`11_DECISOES_ADRS.md`](./11_DECISOES_ADRS.md) | Architecture Decision Records (`ADR-001`..`ADR-018`) com status, alternativas e consequências | Entender o porquê das escolhas arquiteturais |
 | **12** | [`12_RASTREABILIDADE.md`](./12_RASTREABILIDADE.md) | Matriz `Requisito → Funcionalidade → Módulo → Componente → Dados → Fluxo → Teste/ADR` | Rastrear impacto completo de qualquer mudança |
 | **13** | [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) | Ciclo de vida de ideias, revisão de decisões, autorização e continuidade | Antes de classificar ou reavaliar ideias |
 | **14** | [`14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`](./14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md) | Contrato JSON `v1`, entidades suportadas, estados e guia de integração da Entrada Estruturada para Etapa 3 | Antes de implementar ou integrar a Etapa 3 |

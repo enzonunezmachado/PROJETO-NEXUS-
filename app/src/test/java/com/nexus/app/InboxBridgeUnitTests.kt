@@ -438,4 +438,130 @@ class InboxBridgeUnitTests {
         assertEquals(StructuredPreviewOutcome.WILL_CREATE, bgResult.combinedPreview.items.single().outcome)
         assertTrue("Background check must never mutate DB", gateway.tasks.isEmpty())
     }
+
+    @Test
+    fun `official contract template parses strictly and discard leaves DB untouched`() = runBlocking {
+        val gateway = InMemoryGateway()
+        val port = FakeIngestionPort(gateway) { t0 }
+        val configStorage = FakeInboxConfigStorage()
+        val tokenStore = FakeInboxTokenStore()
+        val remote = FakeInboxRemoteDataSource()
+
+        val repo = InboxRepository(
+            nexusRepository = port,
+            configStorage = configStorage,
+            tokenStore = tokenStore,
+            remoteDataSource = remote,
+            clockMillis = { t0 }
+        )
+
+        repo.saveConfig(
+            owner = "enzo",
+            repo = "NEXUS-INBOX",
+            branch = "main",
+            pathPrefix = "",
+            autoCheckEnabled = false,
+            newTokenInput = "pat_read_only_valid"
+        ).getOrThrow()
+
+        val file = InboxRemoteFile(name = "template.json", path = "template.json", sha = "sha-tpl", sizeBytes = 1400)
+        remote.files = listOf(file)
+        remote.contentsByPath[file.path] = """
+            {
+              "contractVersion": 1,
+              "source": "chatgpt-nexus-inbox",
+              "createdAt": $t0,
+              "operations": [
+                {
+                  "operationId": "op-2026-11-26-evt-01",
+                  "entityType": "EVENT",
+                  "action": "UPSERT",
+                  "contractVersion": 1,
+                  "createdAt": $t0,
+                  "data": {
+                    "id": "evt-summit-2026",
+                    "name": "Conferência de Produto 2026",
+                    "startAt": ${t0 + 86_400_000L},
+                    "endAt": ${t0 + 118_800_000L},
+                    "locationName": "São Paulo Expo",
+                    "eventStatus": "CONFIRMED",
+                    "ticketStatus": "FREE",
+                    "ticketPriceCents": 0,
+                    "ticketQuantity": 1,
+                    "ticketFeesCents": 0,
+                    "notes": "Credenciamento às 08h30"
+                  }
+                },
+                {
+                  "operationId": "op-2026-11-26-task-01",
+                  "entityType": "TASK",
+                  "action": "UPSERT",
+                  "contractVersion": 1,
+                  "createdAt": $t0,
+                  "data": {
+                    "id": "task-prep-summit",
+                    "title": "Preparar viagem da Conferência",
+                    "description": "Checklist e reserva de transporte",
+                    "eventId": "evt-summit-2026",
+                    "priority": "HIGH",
+                    "status": "NOT_STARTED",
+                    "dueAt": ${t0 + 43_200_000L},
+                    "hasDueTime": true,
+                    "subtasks": [
+                      { "id": "sub-summit-1", "title": "Confirmar credencial", "isCompleted": false, "sortOrder": 0 },
+                      { "id": "sub-summit-2", "title": "Separar documentos", "isCompleted": false, "sortOrder": 1 }
+                    ]
+                  }
+                },
+                {
+                  "operationId": "op-2026-11-26-chk-01",
+                  "entityType": "CHECKLIST",
+                  "action": "UPSERT",
+                  "contractVersion": 1,
+                  "createdAt": $t0,
+                  "data": {
+                    "taskId": "task-prep-summit",
+                    "items": [
+                      { "id": "sub-summit-3", "title": "Baixar ingresso offline", "isCompleted": false, "sortOrder": 2 }
+                    ]
+                  }
+                },
+                {
+                  "operationId": "op-2026-11-26-tx-01",
+                  "entityType": "TRANSACTION",
+                  "action": "CREATE",
+                  "contractVersion": 1,
+                  "createdAt": $t0,
+                  "data": {
+                    "id": "tx-passagem-summit",
+                    "description": "Passagem aérea conferência",
+                    "type": "EXPENSE",
+                    "amountCents": 68900,
+                    "occurredAt": $t0,
+                    "status": "PENDING",
+                    "paymentMethod": "PIX",
+                    "eventId": "evt-summit-2026",
+                    "taskId": "task-prep-summit"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val check = repo.checkInboxNow(fromBackgroundWorker = false).getOrThrow()
+        assertEquals(0, check.fileParseErrors.size)
+        assertEquals(0, check.combinedPreview.rejectedCount)
+        assertEquals(3, check.combinedPreview.willCreateCount)
+        assertEquals(1, check.combinedPreview.willUpdateCount)
+        assertEquals(StructuredPreviewOutcome.WILL_UPDATE, check.combinedPreview.items[2].outcome)
+
+        // Discarding preview leaves DB and processed keys completely untouched
+        repo.discardPendingPreview()
+        assertNull(repo.pendingCheck.value)
+        assertTrue(gateway.events.isEmpty())
+        assertTrue(gateway.tasks.isEmpty())
+        assertTrue(gateway.subtasks.isEmpty())
+        assertTrue(gateway.transactions.isEmpty())
+        assertTrue(configStorage.processedKeys.isEmpty())
+    }
 }
