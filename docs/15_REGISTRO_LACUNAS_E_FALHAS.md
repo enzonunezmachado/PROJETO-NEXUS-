@@ -66,7 +66,7 @@
 | Campo | Registro |
 |---|---|
 | ID | `GAP-003` |
-| Estado | **CAPTURADA / EM ANÁLISE — comportamento atual não verificado** |
+| Estado | **EM ANÁLISE — auditoria inicial identificou implementação parcial; cobertura ponta a ponta ainda não verificada** |
 | Escopo | Recorrência de tarefas, checklist/subtasks, histórico, Agenda, backup/restore/merge e Inbox |
 | Origem | Necessidade de produto explicitada em 26/11/2026 |
 | Dependências | Auditoria de `TaskRecurrenceEntity`, `RecurrenceEngine`, materialização de ocorrências e modelo de subtarefas |
@@ -78,6 +78,16 @@ Uma tarefa recorrente pode reutilizar a mesma estrutura de checklist em cada oco
 ### Exemplo de aceite
 
 Uma tarefa semanal de segunda-feira possui três itens de checklist. Na primeira semana, os três são concluídos. Na segunda semana, os mesmos três itens aparecem novamente pendentes. A ocorrência anterior permanece concluída no histórico e não é alterada. Cada ocorrência mantém identidade e estado independentes.
+
+### Evidências da primeira auditoria de código (26/11/2026)
+
+- `SubtaskEntity` contém apenas `taskId`, título, estado de conclusão e ordem. Não existe entidade própria de checklist-base ligada diretamente à série; os itens pertencem a uma tarefa específica.
+- `NexusRepository.materializeNextOccurrenceIfNeededInternal()` clona os itens da ocorrência concluída para a próxima ocorrência materializada e define `isCompleted = false`. Isso já implementa parte da independência do estado entre ocorrências nesse caminho.
+- Entretanto, `NexusRepository.openOrMaterializeRecurringOccurrence()`, chamado quando uma ocorrência virtual futura é aberta pela Agenda, cria a nova `TaskEntity` sem clonar as subtarefas da ocorrência/modelo. Portanto, o comportamento pode variar conforme o caminho de materialização.
+- Como o checklist-base não está separado do checklist de uma ocorrência, ainda não há evidência de uma fonte de verdade estável para alterações do modelo da série, ocorrências isoladas e histórico.
+- A suíte `NexusLote6RecurrenceUnitTests` cobre geração de datas, projeção virtual, exceções e materialização, mas a inspeção inicial não encontrou cobertura explícita para clonar checklist ao abrir uma ocorrência virtual nem para independência completa dos estados entre várias ocorrências.
+
+**Conclusão provisória:** GAP-003 não deve ser tratado como totalmente ausente nem como resolvido. Há reset de estado ao materializar a próxima ocorrência após conclusão, mas a abertura/materialização antecipada de uma ocorrência virtual aparenta não transportar o checklist. É necessário confirmar o fluxo de UI e criar testes focados antes de decidir a menor correção arquitetural. Nenhum código foi alterado nesta auditoria.
 
 ### Auditoria e definição necessárias
 
