@@ -30,7 +30,7 @@
 | **Mercado** | **12 ativos**, Lotes `01–09` implementados (cotações, histórico, gráficos, watchlist, alertas, backup v7) | `data/market/*`, `ui/market/*`, `MarketScreen.kt` |
 | **Permissões Manifest** | `INTERNET`, `ACCESS_NETWORK_STATE`, `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`, `SCHEDULE_EXACT_ALARM`; `allowBackup="false"` | `AndroidManifest.xml` |
 | **Testes JUnit no repo** | **17 arquivos** (`131` `@Test`) em `app/src/test/java/com/nexus/app/` (`0` `androidTest`) | `app/src/test/` |
-| **CI GitHub Actions** | `platform-tools` + `build-tools;35.0.0`, validação `keytool` (`-storepass:env`), `gradle :app:testDebugUnitTest :app:assembleDebug` + `:app:assembleRelease` condicional, `apksigner verify --verbose --print-certs` (SHA-256), `$GITHUB_STEP_SUMMARY` & `NEXUS-Signing-Verification-Report` | `.github/workflows/android-build.yml` |
+| **CI GitHub Actions** | `setup-android@v4` (`platform-tools`) + `sdkmanager "platform-tools" "build-tools;35.0.0"` com validação de `adb` e `apksigner`, `keytool` (`-storepass:env`), `gradle :app:testDebugUnitTest :app:assembleDebug` + `:app:assembleRelease` condicional, `apksigner verify --verbose --print-certs` (SHA-256), `$GITHUB_STEP_SUMMARY` & `NEXUS-Signing-Verification-Report` | `.github/workflows/android-build.yml` |
 | **Pasta `app/schemas/` e `gradlew`** | Ausentes no disco (`app/schemas/` gerada pelo KSP em build; CI usa `setup-gradle@v4`) | Raiz / `app/` |
 
 ---

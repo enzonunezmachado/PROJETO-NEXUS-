@@ -21,12 +21,46 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK (platform-tools & build-tools 35.0.0)
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: |
-            platform-tools
-            build-tools;35.0.0
+          packages: 'platform-tools'
+
+      - name: Install and verify Android SDK tools (platform-tools & build-tools 35.0.0)
+        run: |
+          set -euo pipefail
+
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort -V | tail -n1 || true)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager não encontrado no Android SDK ($SDK_ROOT)."
+            exit 1
+          fi
+
+          # Aceita licenças caso build-tools;35.0.0 exija aceite adicional (sem falhar por SIGPIPE)
+          (set +o pipefail; yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true)
+
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "build-tools;35.0.0"
+
+          ADB_BIN="$SDK_ROOT/platform-tools/adb"
+          APKSIGNER_BIN="$SDK_ROOT/build-tools/35.0.0/apksigner"
+
+          if [ ! -x "$ADB_BIN" ]; then
+            echo "::error::Binário obrigatório ausente ou não executável: $ADB_BIN"
+            exit 1
+          fi
+          if [ ! -x "$APKSIGNER_BIN" ]; then
+            echo "::error::Binário obrigatório ausente ou não executável: $APKSIGNER_BIN"
+            exit 1
+          fi
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "SDK tools validados: $ADB_BIN e $APKSIGNER_BIN"
+          "$ADB_BIN" version
+          "$APKSIGNER_BIN" version
 
       - name: Set up Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
@@ -135,7 +169,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          if [ ! -x "$APKSIGNER" ]; then
+            APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1 || true)"
+          fi
           if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
             echo "::error::apksigner não encontrado em ANDROID_HOME/build-tools."
             exit 1

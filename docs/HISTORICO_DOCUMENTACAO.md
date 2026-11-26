@@ -223,4 +223,29 @@ Completar os 3 pilares previstos para a **Etapa 2 de 4** após a Rodada 1:
 ### Próximo passo
 Executar `.github/workflows/android-build.yml` no GitHub Actions (com ou sem os 8 Secrets de assinatura configurados conforme manual entregue) e validar `NEXUS-Signing-Verification-Report`, prévia dry-run/mesclagem em aparelho real e posteriormente iniciar a **Etapa 3** conectando o transporte externo ao `NexusRepository.processStructuredInputJson` / `processStructuredInputEnvelope`.
 
+---
+
+## 2026-11-25 — Correção Cirúrgica do Setup do Android SDK no CI (`#45733193619`)
+
+**Tipo:** correção pontual de pipeline GitHub Actions + sincronização cirúrgica de documentação/artefatos.
+
+### Motivação e evidência
+A execução `#45733193619` (`commit fc7a4d6752cab01d05fcd5bdb1f63130fcdd526f`) do workflow `NEXUS Android Build` falhou na etapa `android-actions/setup-android@v4` porque o parâmetro multilinha `packages: |` enviou `'platform-tools\nbuild-tools;35.0.0'` como um único argumento ao `sdkmanager` (`Warning: Failed to find package 'platform-tools\nbuild-tools;35.0.0'`).
+
+### Mudanças implementadas
+1. **`.github/workflows/android-build.yml`:**
+   - Ajustado `android-actions/setup-android@v4` para `packages: 'platform-tools'`.
+   - Adicionado o passo `Install and verify Android SDK tools (platform-tools & build-tools 35.0.0)` que localiza o `sdkmanager`, garante aceite de licenças sem erro de `SIGPIPE`, invoca `"$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "build-tools;35.0.0"` passando cada pacote como argumento independente, e valida existência executável + versão de `$SDK_ROOT/platform-tools/adb` e `$SDK_ROOT/build-tools/35.0.0/apksigner`.
+   - Atualizada a etapa `Verify APK Signatures and Certificate Fingerprints` para priorizar `$ANDROID_HOME/build-tools/35.0.0/apksigner`.
+2. **Documentação e artefatos sincronizados:**
+   - Atualizados pontualmente `docs/07_ESTADO_ATUAL.md`, `docs/08_QUALIDADE_SEGURANCA.md`, `docs/11_DECISOES_ADRS.md` (`ADR-015`), `docs/HISTORICO_DOCUMENTACAO.md` e os artefatos `NEXUS_CURRENT_STATE.md` e `NEXUS_CONTINUIDADE.md`.
+
+### Limites e itens não alterados
+- **Não executado em runner/ambiente Android:** neste container não há JDK, Gradle, Android SDK nem acesso Git (`NO_GIT_REPO_IN_CONTAINER`); a correção foi validada localmente apenas via `bash -n` nos 3 blocos de script do workflow (`exit 0`). A confirmação definitiva depende de nova execução do GitHub Actions na branch `main`.
+- **Código Android preservado:** nenhuma alteração foi feita em `app/`, `NexusDatabase` (`v6`), `BackupModels` (`v7`), `data/ingestion/`, `applicationId`, `versionCode`/`versionName`, testes JUnit ou `web-mirror-pilot/`.
+
+### Próximo passo
+Fazer push da correção para `main` e executar o workflow `NEXUS Android Build` no GitHub Actions para confirmar a instalação de `platform-tools` + `build-tools;35.0.0`, os testes unitários e o build/assinatura do APK.
+
+
 
