@@ -84,7 +84,7 @@ Os itens abaixo já constam dos documentos oficiais e permanecem no inventário 
 | `REQ-026` | Backup ZIP com banners de Eventos | NÃO IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `10_ROADMAP.md` |
 | Build/dispositivo | Atualização in-place (`v6→v7`), `MIGRATION_6_7`, séries de Compromissos/Eventos, checklist independente entre ocorrências, `19` suítes (`145` `@Test`) e fluxos críticos em aparelho | NÃO VERIFICADO até execução Gradle/CI e validação em dispositivo | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
 
-## 5. Erros encontrados durante a Rodada 3 — histórico e resultado
+## 6. Erros encontrados durante a Rodada 3 — histórico e resultado
 
 | Execução | Problema encontrado | Tratamento / resultado conhecido |
 |---|---|---|
@@ -106,7 +106,7 @@ Não foi localizado PR aberto para essas branches. Decisão operacional: **não 
 
 **Reaplicação local concluída (aguardando sincronização manual e CI na `main`):** na revisão de continuidade da Rodada 3 sobre o código local deste workspace, foram reaplicadas diretamente: (1) remoção de `continue` dentro de lambdas `getOrElse` em `InboxRepository.kt`, (2) substituição de `palette.negative` por `palette.danger` e `NexusEmptyState(message = ...)` por `subtitle = ...` em `NexusInboxScreen.kt`, e (3) `val isUpdate = true` em `StructuredInputProcessor.prepareAndApplyChecklist`. A execução #50 teve job `build` com conclusão `success` apenas na branch isolada; a validação oficial nesta linha principal depende de sincronização manual para `main` e nova execução do CI. A #47 registrou erros de compilação; a #48 registrou um teste falho posteriormente corrigido; a #49 foi tentativa intermediária. Preservar todas como histórico.
 
-## 6. Regras de manutenção deste registro
+## 7. Regras de manutenção deste registro
 
 1. Ao descobrir falha, registrar sintoma, evidência, ambiente, commit/run, causa (somente quando confirmada), correção, estado e validação pendente.
 2. Não apagar falhas corrigidas: movê-las para histórico/estado resolvido, mantendo a evidência.
@@ -115,7 +115,7 @@ Não foi localizado PR aberto para essas branches. Decisão operacional: **não 
 5. Distinguir falha de implementação, limitação deliberada de escopo, dívida técnica, inconsistência documental e validação não executada.
 6. Atualizar o espelho `NEXUS-DOCUMENTACAO/GOOGLE_IA/docs/` e os artefatos internos do AI Studio quando acessíveis; o espelho e os artefatos nunca substituem a origem em `PROJETO-NEXUS-/docs/`.
 
-## 7. Relação com outros documentos
+## 8. Relação com outros documentos
 
 - Requisitos e status: `02_ESPECIFICACAO_PRODUTO.md`
 - Arquitetura e modelo de dados: `03_ARQUITETURA_ENGENHARIA.md`, `04_MODELO_DADOS.md`
@@ -127,7 +127,7 @@ Não foi localizado PR aberto para essas branches. Decisão operacional: **não 
 - Entrada estruturada: `14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`
 - Histórico: `HISTORICO_DOCUMENTACAO.md`
 
-## 8. Validação prática da Ponte ChatGPT → NEXUS (2026-11-26)
+## 9. Validação prática da Ponte ChatGPT → NEXUS (2026-11-26)
 
 | Campo | Registro |
 |---|---|
@@ -141,7 +141,7 @@ Não foi localizado PR aberto para essas branches. Decisão operacional: **não 
 A conclusão da Rodada 3 não encerra a manutenção da ponte. Segurança do token, idempotência, sincronização periódica, notificações e recuperação de falhas continuam no gate contínuo de confiabilidade.
 
 
-## 9. Novas lacunas e requisitos capturados para completude do domínio (2026-11-26)
+## 10. Novas lacunas e requisitos capturados para completude do domínio (2026-11-26)
 
 ### GAP-004 — Checklist opcional em Compromissos e Eventos
 
