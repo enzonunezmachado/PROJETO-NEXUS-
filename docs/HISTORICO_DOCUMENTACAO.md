@@ -462,3 +462,8 @@ Nenhum código, schema Room ou comportamento do aplicativo foi alterado nesta au
 
 ### Limites
 Nenhum código Android, schema Room, token ou contrato Inbox foi alterado. A estrutura inicial do guia não deve ser usada para gerar JSON de produção até ser completada e validada pelo Google AI Studio após a estabilização do domínio.
+
+
+### Complemento — responsabilidade operacional do guia (2026-11-26)
+
+Foi explicitado no guia, roadmap e Plano Mestre que o Google AI Studio gera/atualiza o manual apenas no workspace local. Ele não acessa GitHub, não faz Pull/Push e não executa Actions. O usuário sincroniza manualmente; o ChatGPT verifica o conteúdo no GitHub e a CI. Nenhuma implementação ou sincronização automática foi presumida.
