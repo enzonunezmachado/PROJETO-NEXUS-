@@ -405,3 +405,21 @@ Commit de referência: `4041611a4ef4e111c3633790d0c09babdecb2ae8`.
 - A conclusão da Rodada 3 não comprova individualmente todos os cenários de confiabilidade listados no gate contínuo.
 - Release continua sem assinatura persistente configurada; a Actions #70 gerou APK Debug e não Release.
 - GAP-001, GAP-002 e GAP-003 permanecem abertos para a Rodada 4.
+
+
+---
+
+## 2026-11-26 — Primeira auditoria de código de GAP-003
+
+**Tipo:** evidência técnica inicial para investigação da Rodada 4.
+
+### Evidências
+- `SubtaskEntity` armazena os itens vinculados diretamente a uma tarefa, sem entidade de checklist-base associada à série.
+- `materializeNextOccurrenceIfNeededInternal()` clona subtarefas da ocorrência concluída para a próxima ocorrência e redefine `isCompleted = false`.
+- `openOrMaterializeRecurringOccurrence()`, usado ao abrir uma ocorrência virtual futura, cria a tarefa sem clonar subtarefas.
+- A cobertura existente de recorrência não demonstrou explicitamente o checklist no fluxo de abertura de ocorrência virtual.
+
+### Resultado e limites
+GAP-003 permanece EM ANÁLISE. A implementação atual cobre parcialmente a independência ao gerar a próxima ocorrência após conclusão, mas o caminho de materialização antecipada pode divergir. É necessária investigação adicional e teste direcionado antes de classificar a causa como defeito confirmado ou escolher uma arquitetura de checklist-base.
+
+Nenhum código, schema Room ou comportamento do aplicativo foi alterado nesta auditoria.
