@@ -113,7 +113,8 @@ Os itens abaixo já constam dos documentos oficiais e permanecem no inventário 
 |---|---|---|
 | GitHub Actions #47 — run `45745484984` | Erros Kotlin em `InboxRepository.kt` (controle `break/continue` em lambda), referência inexistente `palette.negative` e argumento incorreto `NexusEmptyState(message)` em vez de `subtitle` | Correções aplicadas em branch de correção; não considerar #47 validado. |
 | GitHub Actions #48 — run `45747309389` | Um teste falhou: `StructuredInputUnitTests > previewEnvelope performs zero DB writes while validating intra-batch links`; a classificação de CHECKLIST como criação/atualização estava incorreta | Corrigido o cálculo semântico em `prepareAndApplyChecklist` para classificar checklist de tarefa existente como atualização. |
-| GitHub Actions #50 — run `45748189511` | Reexecução após correção | **Build job SUCCESS**; testes unitários e APK Debug concluíram com sucesso. Release foi ignorado por ausência de secrets de assinatura Release. Isso valida o workflow dessa execução, não os testes em aparelho, migrações reais ou atualização in-place. |
+| GitHub Actions #49 — run `45747557869` | Tentativa intermediária na branch `fix/inbox-kotlin-compile`; voltou a falhar no mesmo teste `previewEnvelope performs zero DB writes while validating intra-batch links` (`StructuredInputUnitTests.kt:1023`) | Não validou a correção; manter como histórico. |
+| GitHub Actions #50 — run `45748189511` | Reexecução após correção final do checklist | **Build job SUCCESS**; testes unitários e APK Debug concluíram com sucesso. Release foi ignorado por ausência de secrets de assinatura Release. Isso valida o workflow dessa execução, não os testes em aparelho, migrações reais ou atualização in-place. |
 
 ### 5.1 Branches de correção e decisão de integração (26/11/2026)
 
@@ -121,8 +122,8 @@ As branches abaixo foram criadas para isolar as tentativas de correção da pont
 
 | Branch | Situação na comparação com `main` em 26/11/2026 | Evidência |
 |---|---|---|
-| `fix/inbox-build-47-kotlin-compile` | Divergente: 4 commits à frente e 9 atrás | Inclui a correção do teste de CHECKLIST; commit conhecido `30ee1453713fc648d0688fb12615161933e6778b`; GitHub Actions #50 / run `45748189511` passou. |
-| `fix/inbox-kotlin-compile` | Divergente: 3 commits à frente e 9 atrás | Tentativa intermediária; manter como histórico, sem integração integral. |
+| `fix/inbox-build-47-kotlin-compile` | Divergente: 4 commits à frente e 16 atrás (comparação atualizada em 26/11/2026 contra a `main` `18f16438f34c9178274cfb3e82a68a3c80b52409`) | Inclui a correção do teste de CHECKLIST; commit conhecido `30ee1453713fc648d0688fb12615161933e6778b`; GitHub Actions #50 / run `45748189511` passou. |
+| `fix/inbox-kotlin-compile` | Divergente: 3 commits à frente e 16 atrás (comparação atualizada em 26/11/2026 contra a `main` `18f16438f34c9178274cfb3e82a68a3c80b52409`) | Tentativa intermediária; manter como histórico, sem integração integral. |
 
 Não foi localizado PR aberto para essas branches. Decisão operacional: **não fazer merge integral**. Manter as branches e seus commits como evidência; reaplicar as correções necessárias no código atual da `main` com o Google AI Studio, revisar o diff e exigir nova CI verde na `main`. Isso evita trazer histórico divergente de uma branch de teste para a linha principal.
 
