@@ -10,6 +10,7 @@ import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.FinancialStatus
 import com.nexus.app.domain.model.PaymentMethod
 import com.nexus.app.domain.model.ProjectStatus
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.RecurrenceExceptionType
 import com.nexus.app.domain.model.RecurrenceFrequency
 import com.nexus.app.domain.model.ReminderCategory
@@ -91,12 +92,20 @@ data class ProjectEntity(
             parentColumns = ["id"],
             childColumns = ["creditCardId"],
             onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = TaskRecurrenceEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["recurrenceId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
         Index(value = ["categoryId"]),
         Index(value = ["creditCardId"]),
-        Index(value = ["startAt"])
+        Index(value = ["startAt"]),
+        Index(value = ["recurrenceId"]),
+        Index(value = ["recurrenceId", "occurrenceDateIso"], unique = true)
     ]
 )
 data class EventEntity(
@@ -125,6 +134,8 @@ data class EventEntity(
     val paymentMethod: PaymentMethod = PaymentMethod.PIX,
     val creditCardId: String? = null,
     val installmentsCount: Int = 1,
+    val recurrenceId: String? = null,
+    val occurrenceDateIso: String? = null,
     val createdAt: Long,
     val updatedAt: Long
 )
@@ -232,13 +243,21 @@ data class SubtaskEntity(
             parentColumns = ["id"],
             childColumns = ["eventId"],
             onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = TaskRecurrenceEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["recurrenceId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
         Index(value = ["categoryId"]),
         Index(value = ["eventId"]),
         Index(value = ["startAt"]),
-        Index(value = ["endAt"])
+        Index(value = ["endAt"]),
+        Index(value = ["recurrenceId"]),
+        Index(value = ["recurrenceId", "occurrenceDateIso"], unique = true)
     ]
 )
 data class AppointmentEntity(
@@ -252,6 +271,8 @@ data class AppointmentEntity(
     val isAllDay: Boolean = false,
     val location: String = "",
     val link: String = "",
+    val recurrenceId: String? = null,
+    val occurrenceDateIso: String? = null,
     val createdAt: Long,
     val updatedAt: Long
 )
@@ -808,7 +829,8 @@ data class GoalProgressLogEntity(
         Index(value = ["categoryId"]),
         Index(value = ["eventId"]),
         Index(value = ["goalId"]),
-        Index(value = ["isActive"])
+        Index(value = ["isActive"]),
+        Index(value = ["domain"])
     ]
 )
 data class TaskRecurrenceEntity(
@@ -831,6 +853,26 @@ data class TaskRecurrenceEntity(
     val endDateIso: String? = null,
     val maxOccurrences: Int? = null,
     val isActive: Boolean = true,
+    val domain: RecurrenceDomain = RecurrenceDomain.TASK,
+    val isAllDay: Boolean = false,
+    val durationMillis: Long = 3_600_000L,
+    val location: String = "",
+    val link: String = "",
+    val officialLink: String = "",
+    val ticketLink: String = "",
+    val locationName: String = "",
+    val address: String = "",
+    val city: String = "",
+    val state: String = "",
+    val eventStatus: EventLifecycleStatus = EventLifecycleStatus.PLANNED,
+    val ticketStatus: TicketStatus = TicketStatus.FREE,
+    val ticketPriceCents: Long = 0L,
+    val ticketQuantity: Int = 1,
+    val ticketFeesCents: Long = 0L,
+    val paymentMethod: PaymentMethod = PaymentMethod.PIX,
+    val creditCardId: String? = null,
+    val installmentsCount: Int = 1,
+    val templateSubtasksJson: String = "[]",
     val createdAt: Long,
     val updatedAt: Long
 )
@@ -857,7 +899,14 @@ data class RecurrenceExceptionEntity(
     val exceptionType: RecurrenceExceptionType = RecurrenceExceptionType.SKIP,
     val overrideTitle: String? = null,
     val overrideDueAt: Long? = null,
+    val overrideEndAt: Long? = null,
+    val overrideDescription: String? = null,
+    val overrideLocation: String? = null,
+    val overrideLink: String? = null,
+    val overrideIsAllDay: Boolean? = null,
     val taskId: String? = null,
+    val appointmentId: String? = null,
+    val eventId: String? = null,
     val createdAt: Long,
     val updatedAt: Long
 )

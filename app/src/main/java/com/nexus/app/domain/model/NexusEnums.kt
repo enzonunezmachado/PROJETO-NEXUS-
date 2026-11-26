@@ -276,11 +276,23 @@ enum class TaskRecurrenceFrequency(val label: String) {
     WEEKLY("Semanalmente"),
     BIWEEKLY("Quinzenalmente"),
     MONTHLY("Mensalmente"),
+    ANNUAL("Anualmente"),
     CUSTOM_DAYS("Intervalo personalizado");
 
     companion object {
         fun fromStringOrDefault(raw: String?): TaskRecurrenceFrequency =
             entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: WEEKLY
+    }
+}
+
+enum class RecurrenceDomain(val label: String) {
+    TASK("Tarefa"),
+    APPOINTMENT("Compromisso"),
+    EVENT("Evento");
+
+    companion object {
+        fun fromStringOrDefault(raw: String?): RecurrenceDomain =
+            entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } ?: TASK
     }
 }
 

@@ -192,9 +192,16 @@ sealed interface AgendaItem {
         override val category: CategoryEntity?,
         val conflictTitles: List<String> = emptyList(),
         override val date: LocalDate,
-        val event: EventEntity? = null
+        val event: EventEntity? = null,
+        val recurrenceId: String? = null,
+        val occurrenceDateIso: String? = null,
+        val isVirtualRecurrence: Boolean = false
     ) : AgendaItem {
-        override val id: String = "appt_${appointment.id}"
+        override val id: String = if (isVirtualRecurrence && recurrenceId != null && occurrenceDateIso != null) {
+            "appt_rec_${recurrenceId}_${occurrenceDateIso}"
+        } else {
+            "appt_${appointment.id}"
+        }
         override val sortEpochMillis: Long = appointment.startAt
         val hasConflict: Boolean get() = conflictTitles.isNotEmpty()
     }
@@ -217,9 +224,17 @@ sealed interface AgendaItem {
         val totalCostCents: Long,
         override val date: LocalDate,
         val spanStartDate: LocalDate = date,
-        val spanEndDate: LocalDate = date
+        val spanEndDate: LocalDate = date,
+        val recurrenceId: String? = null,
+        val occurrenceDateIso: String? = null,
+        val seriesOccurrenceDateIso: String? = null,
+        val isVirtualRecurrence: Boolean = false
     ) : AgendaItem {
-        override val id: String = "event_${event.id}:${date}"
+        override val id: String = if (isVirtualRecurrence && recurrenceId != null && (seriesOccurrenceDateIso ?: occurrenceDateIso) != null) {
+            "event_rec_${recurrenceId}_${seriesOccurrenceDateIso ?: occurrenceDateIso}:${date}"
+        } else {
+            "event_${event.id}:${date}"
+        }
         override val sortEpochMillis: Long = event.startAt
         val isMultiDay: Boolean get() = spanStartDate != spanEndDate
     }

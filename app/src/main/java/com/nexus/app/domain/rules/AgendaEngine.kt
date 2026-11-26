@@ -84,6 +84,7 @@ data class AgendaOccurrence(
     val sortEpochMillis: Long = startAt,
     val searchableText: String = "",
     val recurrenceId: String? = null,
+    val seriesOccurrenceDateIso: String? = null,
     val isVirtualRecurrence: Boolean = false
 ) {
     val occurrenceDate: LocalDate
@@ -91,7 +92,7 @@ data class AgendaOccurrence(
 
     val stableKey: String
         get() = if (isVirtualRecurrence) {
-            "vrec:$sourceType:$sourceId:$occurrenceDateIso"
+            "vrec:$sourceType:$sourceId:${seriesOccurrenceDateIso ?: occurrenceDateIso}:$occurrenceDateIso"
         } else {
             "$sourceType:$sourceId:$occurrenceDateIso"
         }
@@ -150,6 +151,9 @@ object AgendaEngine {
             transaction.dueAt != null
     }
 
+    fun virtualAppointmentConflictKey(recurrenceId: String, occurrenceDateIso: String): String =
+        RecurrenceEngine.virtualOccurrenceId(recurrenceId, occurrenceDateIso)
+
     fun computeAppointmentConflicts(appointments: List<AppointmentEntity>): Map<String, List<String>> {
         val timed = appointments.filter { !it.isAllDay }
         val result = mutableMapOf<String, MutableList<String>>()
@@ -161,6 +165,53 @@ object AgendaEngine {
                 if (overlaps) {
                     result.getOrPut(a.id) { mutableListOf() }.add(b.title)
                     result.getOrPut(b.id) { mutableListOf() }.add(a.title)
+                }
+            }
+        }
+        return result
+    }
+
+    fun computeAppointmentConflicts(
+        appointments: List<AppointmentEntity>,
+        taskRecurrences: List<TaskRecurrenceEntity>,
+        recurrenceExceptions: List<RecurrenceExceptionEntity>,
+        window: DateRange
+    ): Map<String, List<String>> {
+        if (taskRecurrences.isEmpty()) return computeAppointmentConflicts(appointments)
+        val virtualAppts = RecurrenceEngine.projectVirtualAppointments(
+            window = window,
+            recurrences = taskRecurrences,
+            exceptions = recurrenceExceptions,
+            materializedAppointments = appointments
+        )
+        data class TimedSlot(val key: String, val title: String, val startAt: Long, val endAt: Long)
+        val slots = buildList {
+            appointments.forEach { appt ->
+                if (!appt.isAllDay) {
+                    add(TimedSlot(appt.id, appt.title, appt.startAt, appt.endAt))
+                }
+            }
+            virtualAppts.forEach { v ->
+                if (!v.isAllDay) {
+                    add(
+                        TimedSlot(
+                            key = virtualAppointmentConflictKey(v.recurrence.id, v.occurrenceDateIso),
+                            title = v.effectiveTitle,
+                            startAt = v.startAt,
+                            endAt = v.endAt
+                        )
+                    )
+                }
+            }
+        }
+        val result = mutableMapOf<String, MutableList<String>>()
+        for (i in slots.indices) {
+            for (j in (i + 1) until slots.size) {
+                val a = slots[i]
+                val b = slots[j]
+                if (a.startAt < b.endAt && b.startAt < a.endAt) {
+                    result.getOrPut(a.key) { mutableListOf() }.add(b.title)
+                    result.getOrPut(b.key) { mutableListOf() }.add(a.title)
                 }
             }
         }
@@ -223,14 +274,19 @@ object AgendaEngine {
         val projectMap = sources.projects.associateBy { it.id }
         val eventMap = sources.events.associateBy { it.id }
         val cardMap = sources.creditCards.associateBy { it.id }
-        val conflictMap = computeAppointmentConflicts(sources.appointments)
+        val conflictMap = computeAppointmentConflicts(
+            appointments = sources.appointments,
+            taskRecurrences = sources.taskRecurrences,
+            recurrenceExceptions = sources.recurrenceExceptions,
+            window = window
+        )
         val startOfToday = DateTimeUtils.startOfDayEpoch(today)
         val txByStatement = sources.transactions.groupBy { it.statementId }
         val txByEvent = sources.transactions.groupBy { it.eventId }
 
         val occurrences = mutableListOf<AgendaOccurrence>()
 
-        // 1. Compromissos (suporta 1 ou mais dias)
+        // 1. Compromissos (suporta 1 ou mais dias + ocorrências virtuais recorrentes)
         if (filters.kindFilter == null || filters.kindFilter == AgendaOccurrenceKind.APPOINTMENT) {
             sources.appointments.forEach { appt ->
                 val spanStart = DateTimeUtils.toLocalDate(appt.startAt)
@@ -282,9 +338,83 @@ object AgendaEngine {
                             hasConflict = conflicts.isNotEmpty(),
                             conflictTitles = conflicts,
                             sortEpochMillis = appt.startAt,
-                            searchableText = searchText
+                            searchableText = searchText,
+                            recurrenceId = appt.recurrenceId,
+                            seriesOccurrenceDateIso = appt.occurrenceDateIso ?: spanStart.toString(),
+                            isVirtualRecurrence = false
                         )
                         day = day.plusDays(1)
+                    }
+                }
+            }
+
+            if (sources.taskRecurrences.isNotEmpty()) {
+                val virtualAppointments = RecurrenceEngine.projectVirtualAppointments(
+                    window = window,
+                    recurrences = sources.taskRecurrences,
+                    exceptions = sources.recurrenceExceptions,
+                    materializedAppointments = sources.appointments
+                )
+                virtualAppointments.forEach { projOcc ->
+                    val rec = projOcc.recurrence
+                    val spanStart = DateTimeUtils.toLocalDate(projOcc.startAt)
+                    val spanEnd = maxOf(spanStart, DateTimeUtils.toLocalDate(projOcc.endAt))
+                    val iterStart = maxOf(spanStart, window.startInclusive)
+                    val iterEnd = minOf(spanEnd, window.endInclusive)
+                    if (!iterStart.isAfter(iterEnd)) {
+                        val cat = rec.categoryId?.let { categoryMap[it] }
+                        val conflicts = conflictMap[virtualAppointmentConflictKey(rec.id, projOcc.occurrenceDateIso)].orEmpty()
+                        val linkedEvent = rec.eventId?.let { eventMap[it] }
+                        val allDayOcc = projOcc.isAllDay || spanStart != spanEnd
+                        val timeLabel = if (allDayOcc) {
+                            "Dia inteiro"
+                        } else {
+                            "${DateTimeUtils.formatTime(projOcc.startAt)}–${DateTimeUtils.formatTime(projOcc.endAt)}"
+                        }
+                        val subtitle = buildList {
+                            add(timeLabel)
+                            add("Recorrente (${rec.frequency.label})")
+                            cat?.let { add(it.name) }
+                            if (projOcc.effectiveLocation.isNotBlank()) add(projOcc.effectiveLocation)
+                            linkedEvent?.let { add("Evento: ${it.name}") }
+                        }.joinToString(" · ")
+                        val searchText = listOfNotNull(
+                            projOcc.effectiveTitle,
+                            projOcc.effectiveDescription,
+                            projOcc.effectiveLocation,
+                            cat?.name,
+                            linkedEvent?.name
+                        ).joinToString(" ").lowercase()
+
+                        var day = iterStart
+                        while (!day.isAfter(iterEnd)) {
+                            occurrences += AgendaOccurrence(
+                                sourceType = AgendaSourceType.APPOINTMENT,
+                                sourceId = rec.id,
+                                occurrenceDateIso = day.toString(),
+                                startAt = projOcc.startAt,
+                                endAt = projOcc.endAt,
+                                isAllDay = allDayOcc,
+                                spanStartDateIso = spanStart.toString(),
+                                spanEndDateIso = spanEnd.toString(),
+                                title = projOcc.effectiveTitle,
+                                subtitle = subtitle,
+                                status = if (conflicts.isNotEmpty()) "CONFLICT" else "SCHEDULED",
+                                kind = AgendaOccurrenceKind.APPOINTMENT,
+                                categoryId = rec.categoryId,
+                                colorHex = cat?.colorHex,
+                                isOverdue = false,
+                                isDoneOrSettled = false,
+                                hasConflict = conflicts.isNotEmpty(),
+                                conflictTitles = conflicts,
+                                sortEpochMillis = projOcc.startAt,
+                                searchableText = searchText,
+                                recurrenceId = rec.id,
+                                seriesOccurrenceDateIso = projOcc.occurrenceDateIso,
+                                isVirtualRecurrence = true
+                            )
+                            day = day.plusDays(1)
+                        }
                     }
                 }
             }
@@ -400,7 +530,7 @@ object AgendaEngine {
             }
         }
 
-        // 3. Eventos (expande para todos os dias entre startAt e endAt dentro da janela)
+        // 3. Eventos (expande para todos os dias entre startAt e endAt dentro da janela + ocorrências virtuais recorrentes)
         if (filters.kindFilter == null || filters.kindFilter == AgendaOccurrenceKind.EVENT) {
             sources.events.forEach { ev ->
                 val spanStart = DateTimeUtils.toLocalDate(ev.startAt)
@@ -454,9 +584,80 @@ object AgendaEngine {
                             isDoneOrSettled = ev.eventStatus.name == "ATTENDED" || ev.eventStatus.name == "CANCELLED",
                             amountCents = totalCostCents.takeIf { it > 0L },
                             sortEpochMillis = ev.startAt,
-                            searchableText = searchText
+                            searchableText = searchText,
+                            recurrenceId = ev.recurrenceId,
+                            seriesOccurrenceDateIso = ev.occurrenceDateIso ?: spanStart.toString(),
+                            isVirtualRecurrence = false
                         )
                         day = day.plusDays(1)
+                    }
+                }
+            }
+
+            if (sources.taskRecurrences.isNotEmpty()) {
+                val virtualEvents = RecurrenceEngine.projectVirtualEvents(
+                    window = window,
+                    recurrences = sources.taskRecurrences,
+                    exceptions = sources.recurrenceExceptions,
+                    materializedEvents = sources.events
+                )
+                virtualEvents.forEach { projOcc ->
+                    val rec = projOcc.recurrence
+                    val spanStart = DateTimeUtils.toLocalDate(projOcc.startAt)
+                    val spanEnd = maxOf(spanStart, DateTimeUtils.toLocalDate(projOcc.endAt))
+                    val iterStart = maxOf(spanStart, window.startInclusive)
+                    val iterEnd = minOf(spanEnd, window.endInclusive)
+                    if (!iterStart.isAfter(iterEnd)) {
+                        val cat = rec.categoryId?.let { categoryMap[it] }
+                        val isMultiDay = spanStart != spanEnd
+                        val allDayOccurrence = projOcc.isAllDay || isMultiDay
+                        val timeLabel = when {
+                            isMultiDay -> "${DateTimeUtils.formatDayMonth(spanStart)} – ${DateTimeUtils.formatDayMonth(spanEnd)} · Dia inteiro"
+                            projOcc.isAllDay -> "Dia inteiro"
+                            else -> "${DateTimeUtils.formatTime(projOcc.startAt)}–${DateTimeUtils.formatTime(projOcc.endAt)}"
+                        }
+                        val subtitle = buildList {
+                            add(timeLabel)
+                            add("Recorrente (${rec.frequency.label})")
+                            add("Ingresso: ${rec.ticketStatus.label}")
+                            if (projOcc.effectiveLocationName.isNotBlank()) add(projOcc.effectiveLocationName)
+                        }.joinToString(" · ")
+                        val searchText = listOfNotNull(
+                            projOcc.effectiveTitle,
+                            projOcc.effectiveDescription,
+                            projOcc.effectiveLocationName,
+                            projOcc.effectiveCity,
+                            cat?.name
+                        ).joinToString(" ").lowercase()
+
+                        var day = iterStart
+                        while (!day.isAfter(iterEnd)) {
+                            occurrences += AgendaOccurrence(
+                                sourceType = AgendaSourceType.EVENT,
+                                sourceId = rec.id,
+                                occurrenceDateIso = day.toString(),
+                                startAt = projOcc.startAt,
+                                endAt = projOcc.endAt,
+                                isAllDay = allDayOccurrence,
+                                spanStartDateIso = spanStart.toString(),
+                                spanEndDateIso = spanEnd.toString(),
+                                title = projOcc.effectiveTitle,
+                                subtitle = subtitle,
+                                status = rec.eventStatus.name,
+                                kind = AgendaOccurrenceKind.EVENT,
+                                categoryId = rec.categoryId,
+                                colorHex = cat?.colorHex,
+                                isOverdue = false,
+                                isDoneOrSettled = rec.eventStatus.name == "ATTENDED" || rec.eventStatus.name == "CANCELLED",
+                                amountCents = null,
+                                sortEpochMillis = projOcc.startAt,
+                                searchableText = searchText,
+                                recurrenceId = rec.id,
+                                seriesOccurrenceDateIso = projOcc.occurrenceDateIso,
+                                isVirtualRecurrence = true
+                            )
+                            day = day.plusDays(1)
+                        }
                     }
                 }
             }

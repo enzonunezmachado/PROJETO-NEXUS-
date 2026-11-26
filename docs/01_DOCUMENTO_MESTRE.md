@@ -54,7 +54,7 @@ Os princípios desta seção descrevem compromissos estruturais vigentes, mas n�
 - **Backup, Diagnóstico e Busca Global:** busca unificada em tempo real, temas Claro/Escuro, biblioteca de frases local (TXT/JSON), registro automático de exceções não tratadas (`GlobalErrorHandler` → `error_logs`), contagens ao vivo das 27 tabelas e backup JSON transacional `v7` (retrocompatível com `v1..v6`).
 
 ### Fora do Escopo / Planejado e Pendente
-- **Planejado ainda não implementado:** Eventos com `locationMode` (`IN_PERSON`, `ONLINE`, `TBD`), banner JPEG via `PickVisualMedia` e empacotamento `.zip` (`data.json` + `banners/`); dependência oficial `androidx.core:core-splashscreen`; expansão de recorrência para Compromissos e Eventos; eventual bloco Mercado opcional na `HomeScreen`.
+- **Planejado ainda não implementado:** Eventos com `locationMode` (`IN_PERSON`, `ONLINE`, `TBD`), banner JPEG via `PickVisualMedia` e empacotamento `.zip` (`data.json` + `banners/`); dependência oficial `androidx.core:core-splashscreen`; extensão versionada da ponte `NEXUS-INBOX` para séries recorrentes (`GAP-002`); eventual bloco Mercado opcional na `HomeScreen`. *(Recorrência de Compromissos/Eventos `REQ-009` / `GAP-001` e independência de checklists `GAP-003` já implementadas no código na Rodada 4, aguardando Gradle/CI e dispositivo.)*
 - **Restrições e decisões vigentes:** login, backend próprio e sincronização obrigatória em nuvem não fazem parte da arquitetura offline-first atual; múltiplos usuários e troca do Room/navegação por estado para NavHost não estão planejados. IA local/remota e leitura automática de documentos/extratos não estão aprovadas como funcionalidades; qualquer possibilidade deve passar por pesquisa, análise de compatibilidade e aprovação conforme 13_GOVERNANCA_DOCUMENTAL.md. Integrações financeiras reais exigem avaliação específica de segurança, privacidade, regulamentação e viabilidade.
 
 ---
@@ -63,12 +63,12 @@ Os princípios desta seção descrevem compromissos estruturais vigentes, mas n�
 
 | Dimensão | Valor Real Confirmado no Código |
 | --- | --- |
-| **Pacote / ID** | `com.nexus.app` (`versionCode = 7`, `versionName = "5.2.0"`) |
+| **Pacote / ID** | `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`) |
 | **Toolchain / SDK** | Kotlin `2.1.0`, AGP `8.7.3`, KSP `2.1.0-1.0.29`, Gradle `8.10.2`, Java `17`, `minSdk = 26`, `targetSdk = 35`, `compileSdk = 35` |
 | **UI & Widgets** | Jetpack Compose BOM `2024.12.01`, Material 3, gráficos nativos `Canvas`, Jetpack Glance `1.1.1` |
-| **Persistência Estruturada** | Room `2.6.1` (`nexus_local.db`, `DATABASE_VERSION = 6`, `27` entidades, `27` DAOs, `5` migrações) |
+| **Persistência Estruturada** | Room `2.6.1` (`nexus_local.db`, `DATABASE_VERSION = 7`, `27` entidades, `27` DAOs, `6` migrações) |
 | **Persistência Mercado / Widgets** | `SharedPreferences` (`nexus_market_quotes_cache`, `nexus_market_watchlist`, `nexus_widget_instance_prefs`) + arquivos JSON atômicos (`filesDir/market_alerts/market_alerts.json`, `filesDir/market_history/*.json`) |
-| **Backup** | `NexusBackupPayload` (`CURRENT_FORMAT_VERSION = 7`, JSON retrocompatível `v1..v7`) + CSV financeiro (15 colunas) |
-| **Background & Rede** | `AlarmManager`, `WorkManager` `2.10.0` (`NexusReminderSyncWorker` 15m, `MarketQuoteSyncWorker` 30m), `HttpsURLConnection` (`java.net`) |
-| **Testes no Repositório** | `15` arquivos JUnit 4 em `app/src/test/java/com/nexus/app/` (`0` testes instrumentados `androidTest`) |
+| **Backup** | `NexusBackupPayload` (`CURRENT_FORMAT_VERSION = 8`, JSON retrocompatível `v1..v8`, Modo 1 restauração + Modo 2 mesclagem incremental com prévia dry-run) + CSV financeiro (15 colunas) |
+| **Background & Rede** | `AlarmManager`, `WorkManager` `2.10.0` (`NexusReminderSyncWorker` 15m, `MarketQuoteSyncWorker` 30m, `InboxSyncWorker`), `HttpsURLConnection` (`java.net`) |
+| **Testes no Repositório** | `19` arquivos JUnit 4 (`145` `@Test`) em `app/src/test/java/com/nexus/app/` (`0` testes instrumentados `androidTest`) |
 | **Estrutura do Workspace** | Repositório misto na raiz: módulo Android real em `:app` (`settings.gradle.kts`) coexistindo com arquivos do wrapper Web/Node do AI Studio (`package.json`, `src/`, `vite.config.ts`, `index.html`) — os arquivos Web não pertencem ao APK Android |

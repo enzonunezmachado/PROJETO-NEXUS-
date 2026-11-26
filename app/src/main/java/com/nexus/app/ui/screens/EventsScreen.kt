@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.outlined.Directions
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -66,14 +68,19 @@ import com.nexus.app.data.db.entity.CategoryEntity
 import com.nexus.app.data.db.entity.CreditCardEntity
 import com.nexus.app.data.db.entity.EventEntity
 import com.nexus.app.data.db.entity.ReminderEntity
+import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.EventWithDetails
 import com.nexus.app.domain.model.PaymentMethod
+import com.nexus.app.domain.model.RecurringEditScope
+import com.nexus.app.domain.model.TaskRecurrenceDraft
+import com.nexus.app.domain.model.TaskRecurrenceFrequency
 import com.nexus.app.domain.model.TicketStatus
 import com.nexus.app.domain.rules.BackAction
 import com.nexus.app.domain.rules.BackNavigationState
 import com.nexus.app.domain.rules.BackSubRouteKind
 import com.nexus.app.domain.rules.BackTabKind
+import com.nexus.app.domain.rules.RecurrenceEngine
 import com.nexus.app.domain.rules.ReminderRules
 import com.nexus.app.domain.rules.resolveBackAction
 import com.nexus.app.ui.components.ConfirmDangerDialog
@@ -90,6 +97,7 @@ import java.time.LocalTime
 @Composable
 fun EventsScreen(
     events: List<EventWithDetails>,
+    virtualRecurringEvents: List<EventWithDetails> = emptyList(),
     onOpenEvent: (String) -> Unit,
     onCreateEvent: () -> Unit,
     modifier: Modifier = Modifier
@@ -98,12 +106,19 @@ fun EventsScreen(
     var filterMode by remember { mutableStateOf("UPCOMING") } // UPCOMING, ALL, PENDING_TICKET
     val todayStart = DateTimeUtils.localDateToStartOfDayEpoch(DateTimeUtils.todayLocalDate())
 
-    val filtered = remember(events, filterMode, todayStart) {
-        events.filter { item ->
+    val filtered = remember(events, virtualRecurringEvents, filterMode, todayStart) {
+        val combined = (events + virtualRecurringEvents)
+            .distinctBy { it.event.id }
+            .sortedBy { it.event.startAt }
+        combined.filter { item ->
             val ev = item.event
+            val isVirtual = RecurrenceEngine.parseVirtualOccurrenceId(ev.id) != null
             when (filterMode) {
                 "UPCOMING" -> ev.endAt >= todayStart && ev.eventStatus != EventLifecycleStatus.CANCELLED
-                "PENDING_TICKET" -> !ev.ticketStatus.isPaidOrBought && ev.ticketStatus != TicketStatus.FREE && ev.ticketStatus != TicketStatus.CANCELLED
+                "PENDING_TICKET" -> !isVirtual &&
+                    !ev.ticketStatus.isPaidOrBought &&
+                    ev.ticketStatus != TicketStatus.FREE &&
+                    ev.ticketStatus != TicketStatus.CANCELLED
                 else -> true
             }
         }
@@ -267,7 +282,31 @@ fun EventSummaryCard(
             if (placeText.isNotBlank()) add(placeText)
             item.category?.let { add(it.name) }
         }.joinToString(" · ")
-        Text(text = meta, style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
+        if (ev.recurrenceId != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Repeat,
+                    contentDescription = "Evento recorrente",
+                    tint = palette.accentNeon,
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    text = "Recorrente",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.accentNeon
+                )
+                Text(
+                    text = "· $meta",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = palette.textSecondary
+                )
+            }
+        } else {
+            Text(text = meta, style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
+        }
 
         if (item.estimatedTotalCostCents > 0L || item.linkedTasks.isNotEmpty()) {
             Spacer(modifier = Modifier.height(6.dp))
@@ -310,16 +349,34 @@ private data class EventEditorInitialState(
     val eventStatus: EventLifecycleStatus,
     val ticketStatus: TicketStatus,
     val paymentMethod: PaymentMethod,
-    val creditCardId: String?
+    val creditCardId: String?,
+    val recFrequency: TaskRecurrenceFrequency?,
+    val customIntervalText: String,
+    val weekdaysMask: Int,
+    val recStartDate: LocalDate,
+    val recEndDate: LocalDate?,
+    val maxOccurrencesText: String,
+    val recEndMode: String,
+    val hasActiveRecurrence: Boolean
 )
 
 private fun buildEventEditorInitialState(
     ev: EventEntity?,
+    activeRecurrence: TaskRecurrenceEntity?,
     existingReminder: ReminderEntity?
 ): EventEditorInitialState {
     val today = DateTimeUtils.todayLocalDate()
+    val initialStartDate = ev?.let { DateTimeUtils.toLocalDate(it.startAt) } ?: today
+    val initialRecStartDate = RecurrenceEngine.parseLocalDateOrNull(activeRecurrence?.startDateIso)
+        ?: initialStartDate
+    val initialRecEndDate = RecurrenceEngine.parseLocalDateOrNull(activeRecurrence?.endDateIso)
+    val initialRecEndMode = when {
+        initialRecEndDate != null -> "DATE"
+        activeRecurrence?.maxOccurrences != null && activeRecurrence.maxOccurrences > 0 -> "COUNT"
+        else -> "NONE"
+    }
     return EventEditorInitialState(
-        startDate = ev?.let { DateTimeUtils.toLocalDate(it.startAt) } ?: today,
+        startDate = initialStartDate,
         startTime = ev?.let { DateTimeUtils.epochToLocalTime(it.startAt) } ?: LocalTime.of(19, 0),
         endDate = ev?.let { DateTimeUtils.toLocalDate(it.endAt) } ?: today,
         endTime = ev?.let { DateTimeUtils.epochToLocalTime(it.endAt) } ?: LocalTime.of(21, 0),
@@ -343,7 +400,15 @@ private fun buildEventEditorInitialState(
         eventStatus = ev?.eventStatus ?: EventLifecycleStatus.PLANNED,
         ticketStatus = ev?.ticketStatus ?: TicketStatus.FREE,
         paymentMethod = ev?.paymentMethod ?: PaymentMethod.PIX,
-        creditCardId = ev?.creditCardId
+        creditCardId = ev?.creditCardId,
+        recFrequency = activeRecurrence?.frequency,
+        customIntervalText = (activeRecurrence?.customIntervalDays?.coerceAtLeast(1) ?: 2).toString(),
+        weekdaysMask = activeRecurrence?.weekdaysMask ?: 0,
+        recStartDate = initialRecStartDate,
+        recEndDate = initialRecEndDate,
+        maxOccurrencesText = activeRecurrence?.maxOccurrences?.takeIf { it > 0 }?.toString() ?: "",
+        recEndMode = initialRecEndMode,
+        hasActiveRecurrence = activeRecurrence != null
     )
 }
 
@@ -351,6 +416,7 @@ private fun buildEventEditorInitialState(
 @Composable
 fun EventEditorSheet(
     existingEvent: EventWithDetails?,
+    existingRecurrence: TaskRecurrenceEntity? = null,
     categories: List<CategoryEntity>,
     creditCards: List<CreditCardEntity>,
     existingReminder: ReminderEntity? = null,
@@ -382,9 +448,11 @@ fun EventEditorSheet(
         paymentMethod: PaymentMethod,
         creditCardId: String?,
         installmentsCount: Int,
-        reminderMinutesBefore: Int?
+        reminderMinutesBefore: Int?,
+        recurrenceDraft: TaskRecurrenceDraft?,
+        recurringEditScope: RecurringEditScope
     ) -> Unit,
-    onDelete: (String) -> Unit,
+    onDelete: (String, RecurringEditScope) -> Unit,
     onAddLinkedTask: (String) -> Unit,
     onOpenTask: (String) -> Unit,
     onAddAdditionalExpense: (String) -> Unit,
@@ -396,12 +464,22 @@ fun EventEditorSheet(
     val context = LocalContext.current
     val ev = existingEvent?.event
     val evId: String? = ev?.id
+    val activeRecurrence = existingRecurrence?.takeIf { it.isActive }
+    val activeRecurrenceId: String? = activeRecurrence?.id
+    val activeRecurrenceUpdatedAt: Long? = activeRecurrence?.updatedAt
     val reminderId: String? = existingReminder?.id
     val reminderMinutesKey: Int? = existingReminder?.minutesBefore
     val reminderStatusKey: Any? = existingReminder?.status
 
-    val init = remember(evId, reminderId, reminderMinutesKey, reminderStatusKey) {
-        buildEventEditorInitialState(ev, existingReminder)
+    val init = remember(
+        evId,
+        activeRecurrenceId,
+        activeRecurrenceUpdatedAt,
+        reminderId,
+        reminderMinutesKey,
+        reminderStatusKey
+    ) {
+        buildEventEditorInitialState(ev, activeRecurrence, existingReminder)
     }
 
     var name by remember(evId) { mutableStateOf(init.name) }
@@ -431,6 +509,39 @@ fun EventEditorSheet(
     var creditCardId by remember(evId) { mutableStateOf(init.creditCardId) }
     var installmentsInput by remember(evId) { mutableStateOf(init.installments) }
 
+    var recurrenceFrequency by remember(evId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.recFrequency)
+    }
+    var customIntervalDaysText by remember(evId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.customIntervalText)
+    }
+    var weekdaysMask by remember(evId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.weekdaysMask)
+    }
+    var recurrenceStartDate by remember(evId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.recStartDate)
+    }
+    var recurrenceStartCustomized by remember(evId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.hasActiveRecurrence)
+    }
+    var recurrenceEndMode by remember(evId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.recEndMode)
+    }
+    var recurrenceEndDate by remember(evId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.recEndDate)
+    }
+    var maxOccurrencesText by remember(evId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(init.maxOccurrencesText)
+    }
+    var showMoreDetails by remember(evId, activeRecurrenceId) {
+        mutableStateOf(init.hasActiveRecurrence)
+    }
+    var showRecurrenceFreqDropdown by remember { mutableStateOf(false) }
+    var showRecStartDatePicker by remember { mutableStateOf(false) }
+    var showRecEndDatePicker by remember { mutableStateOf(false) }
+    var pendingScopeSaveAction by remember { mutableStateOf<((RecurringEditScope) -> Unit)?>(null) }
+    var pendingRuleChangeConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
     var pickTarget by remember { mutableStateOf<String?>(null) }
     var showCategoryMenu by remember { mutableStateOf(false) }
     var showLifecycleMenu by remember { mutableStateOf(false) }
@@ -454,7 +565,19 @@ fun EventEditorSheet(
 
     val fullAddressText = listOf(locationName, address, city, state).filter { it.isNotBlank() }.joinToString(", ")
 
-    val hasUnsavedChanges = name != init.name ||
+    val recurrenceRuleChanged = recurrenceFrequency != init.recFrequency ||
+        (recurrenceFrequency == TaskRecurrenceFrequency.CUSTOM_DAYS &&
+            customIntervalDaysText.trim() != init.customIntervalText) ||
+        (recurrenceFrequency == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS &&
+            weekdaysMask != init.weekdaysMask) ||
+        (recurrenceFrequency != null && (
+            recurrenceStartDate != init.recStartDate ||
+                recurrenceEndMode != init.recEndMode ||
+                (recurrenceEndMode == "DATE" && recurrenceEndDate != init.recEndDate) ||
+                (recurrenceEndMode == "COUNT" && maxOccurrencesText.trim() != init.maxOccurrencesText)
+            ))
+
+    val templateFieldsChanged = name != init.name ||
         description != init.description ||
         categoryId != init.categoryId ||
         isAllDay != init.isAllDay ||
@@ -478,6 +601,20 @@ fun EventEditorSheet(
         creditCardId != init.creditCardId ||
         installmentsInput != init.installments ||
         reminderModified
+
+    val hasUnsavedChanges = templateFieldsChanged || recurrenceRuleChanged
+
+    fun dispatchSaveWithScopeHandling(executeSave: (RecurringEditScope) -> Unit) {
+        if (activeRecurrence == null) {
+            executeSave(RecurringEditScope.THIS_OCCURRENCE_ONLY)
+        } else if (recurrenceRuleChanged) {
+            pendingRuleChangeConfirmAction = { executeSave(RecurringEditScope.ENTIRE_SERIES) }
+        } else if (templateFieldsChanged) {
+            pendingScopeSaveAction = executeSave
+        } else {
+            executeSave(RecurringEditScope.THIS_OCCURRENCE_ONLY)
+        }
+    }
 
     val currentIsDirty by rememberUpdatedState(hasUnsavedChanges)
     LaunchedEffect(hasUnsavedChanges) { onDirtyStateChange(hasUnsavedChanges) }
@@ -653,6 +790,45 @@ fun EventEditorSheet(
                     }
                 )
             }
+
+            TaskRecurrenceSectionCard(
+                showMoreDetails = showMoreDetails,
+                onToggleMoreDetails = { showMoreDetails = !showMoreDetails },
+                recurrenceFrequency = recurrenceFrequency,
+                showRecurrenceFreqDropdown = showRecurrenceFreqDropdown,
+                onToggleRecurrenceFreqDropdown = { showRecurrenceFreqDropdown = it },
+                onSelectRecurrenceFrequency = { freq ->
+                    recurrenceFrequency = freq
+                    if (freq != null) {
+                        if (!recurrenceStartCustomized) {
+                            recurrenceStartDate = startDate
+                        }
+                        if (freq == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS && weekdaysMask == 0) {
+                            weekdaysMask = RecurrenceEngine.weekdayBit(startDate.dayOfWeek)
+                        }
+                    }
+                },
+                customIntervalDaysText = customIntervalDaysText,
+                onCustomIntervalChange = { customIntervalDaysText = it },
+                weekdaysMask = weekdaysMask,
+                onWeekdaysMaskChange = { weekdaysMask = it },
+                recurrenceStartDate = recurrenceStartDate,
+                onPickRecurrenceStartDate = { showRecStartDatePicker = true },
+                recurrenceEndMode = recurrenceEndMode,
+                onSelectRecurrenceEndMode = { modeKey ->
+                    recurrenceEndMode = modeKey
+                    if (modeKey == "DATE" && recurrenceEndDate == null) {
+                        recurrenceEndDate = recurrenceStartDate.plusMonths(1)
+                    } else if (modeKey == "COUNT" && maxOccurrencesText.isBlank()) {
+                        maxOccurrencesText = "5"
+                    }
+                },
+                recurrenceEndDate = recurrenceEndDate,
+                onPickRecurrenceEndDate = { showRecEndDatePicker = true },
+                maxOccurrencesText = maxOccurrencesText,
+                onMaxOccurrencesChange = { maxOccurrencesText = it },
+                infoNotice = "Ocorrências futuras aparecem na Agenda sem gerar cobranças financeiras até serem abertas e confirmadas."
+            )
 
             NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -977,33 +1153,46 @@ fun EventEditorSheet(
                         ev?.ticketPurchaseDate ?: DateTimeUtils.nowEpochMillis()
                     } else null
 
-                    onSave(
-                        ev?.id,
-                        name,
-                        description,
-                        categoryId,
-                        startEpoch,
-                        endEpoch,
-                        isAllDay,
-                        officialLink,
-                        ticketLink,
-                        locationName,
-                        address,
-                        city,
-                        state,
-                        notes,
-                        eventStatus,
-                        ticketStatus,
-                        priceCents,
-                        qty,
-                        feesCents,
-                        purchaseEpoch,
-                        dueEpoch,
-                        paymentMethod,
-                        creditCardId,
-                        instCount,
-                        if (reminderModified) (reminderMinutesBefore ?: defaultReminderMinutes) else null
+                    val recDraft = buildTaskRecurrenceDraft(
+                        recurrenceFrequency = recurrenceFrequency,
+                        customIntervalDaysText = customIntervalDaysText,
+                        weekdaysMask = weekdaysMask,
+                        recurrenceStartDate = recurrenceStartDate,
+                        recurrenceEndMode = recurrenceEndMode,
+                        recurrenceEndDate = recurrenceEndDate,
+                        maxOccurrencesText = maxOccurrencesText
                     )
+                    dispatchSaveWithScopeHandling { editScope ->
+                        onSave(
+                            ev?.id,
+                            name,
+                            description,
+                            categoryId,
+                            startEpoch,
+                            endEpoch,
+                            isAllDay,
+                            officialLink,
+                            ticketLink,
+                            locationName,
+                            address,
+                            city,
+                            state,
+                            notes,
+                            eventStatus,
+                            ticketStatus,
+                            priceCents,
+                            qty,
+                            feesCents,
+                            purchaseEpoch,
+                            dueEpoch,
+                            paymentMethod,
+                            creditCardId,
+                            instCount,
+                            if (reminderModified) (reminderMinutesBefore ?: defaultReminderMinutes) else null,
+                            recDraft,
+                            editScope
+                        )
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp),
@@ -1024,6 +1213,9 @@ fun EventEditorSheet(
             onDateSelected = {
                 startDate = it
                 if (endDate < it) endDate = it
+                if (!recurrenceStartCustomized) {
+                    recurrenceStartDate = it
+                }
             },
             onDismiss = { pickTarget = null }
         )
@@ -1049,11 +1241,32 @@ fun EventEditorSheet(
         )
     }
 
-    if (showDeleteConfirm && ev != null) {
-        val linkedTasksCount = existingEvent?.linkedTasks?.size ?: 0
-        val linkedTxCount = existingEvent?.linkedTransactions?.size ?: 0
-        val deleteMessage = buildString {
-            append("O evento \"${ev.name}\" será excluído")
+    if (showRecStartDatePicker) {
+        NexusDatePickerDialog(
+            initialDate = recurrenceStartDate,
+            onDateSelected = { picked ->
+                recurrenceStartDate = picked
+                recurrenceStartCustomized = true
+            },
+            onDismiss = { showRecStartDatePicker = false }
+        )
+    }
+
+    if (showRecEndDatePicker) {
+        NexusDatePickerDialog(
+            initialDate = recurrenceEndDate ?: recurrenceStartDate.plusMonths(1),
+            onDateSelected = { picked ->
+                recurrenceEndDate = if (picked.isBefore(recurrenceStartDate)) recurrenceStartDate else picked
+            },
+            onDismiss = { showRecEndDatePicker = false }
+        )
+    }
+
+    val linkedTasksCount = existingEvent?.linkedTasks?.size ?: 0
+    val linkedTxCount = existingEvent?.linkedTransactions?.size ?: 0
+    val singleDeleteMessage = ev?.let {
+        buildString {
+            append("O evento \"${it.name}\" será excluído")
             val children = buildList {
                 if (linkedTasksCount > 0) add("$linkedTasksCount tarefa(s)")
                 if (linkedAppointmentsCount > 0) add("$linkedAppointmentsCount compromisso(s)")
@@ -1065,16 +1278,31 @@ fun EventEditorSheet(
                 append(" e eventuais registros vinculados serão mantidos sem vínculo.")
             }
         }
-        ConfirmDangerDialog(
-            title = "Excluir evento?",
-            message = deleteMessage,
-            onConfirm = {
-                showDeleteConfirm = false
-                onDelete(ev.id)
-            },
-            onDismiss = { showDeleteConfirm = false }
-        )
-    }
+    }.orEmpty()
+    val recurringDeleteMessage = ev?.let {
+        "\"${it.name}\" faz parte de uma série recorrente. Você pode remover apenas esta ocorrência ou encerrar toda a série (ocorrências já comparecidas ou com ingresso quitado são preservadas sem vínculo)."
+    }.orEmpty()
+
+    RecurringScopeConfirmDialogs(
+        entityTitle = ev?.name,
+        hasActiveRecurrence = activeRecurrence != null,
+        recurrenceFrequency = recurrenceFrequency,
+        deleteTitle = "Excluir evento?",
+        deleteRecurringTitle = "Excluir evento recorrente?",
+        deleteSingleMessage = singleDeleteMessage,
+        deleteRecurringMessage = recurringDeleteMessage,
+        updateRecurringTitle = "Atualizar evento recorrente",
+        showDeleteConfirm = showDeleteConfirm,
+        onDismissDeleteConfirm = { showDeleteConfirm = false },
+        onConfirmDelete = { deleteScope ->
+            showDeleteConfirm = false
+            ev?.let { onDelete(it.id, deleteScope) }
+        },
+        pendingScopeSaveAction = pendingScopeSaveAction,
+        onClearPendingScopeSave = { pendingScopeSaveAction = null },
+        pendingRuleChangeConfirmAction = pendingRuleChangeConfirmAction,
+        onClearPendingRuleChange = { pendingRuleChangeConfirmAction = null }
+    )
 
     if (showDiscardConfirm) {
         ConfirmDiscardChangesDialog(

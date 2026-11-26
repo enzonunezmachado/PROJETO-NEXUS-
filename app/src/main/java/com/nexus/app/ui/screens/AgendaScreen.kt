@@ -115,6 +115,8 @@ fun AgendaScreen(
     onOpenProject: (String) -> Unit,
     onCreateAppointment: () -> Unit,
     onOpenVirtualRecurringTask: (recurrenceId: String, occurrenceDateIso: String) -> Unit = { _, _ -> },
+    onOpenVirtualRecurringAppointment: (recurrenceId: String, occurrenceDateIso: String) -> Unit = { _, _ -> },
+    onOpenVirtualRecurringEvent: (recurrenceId: String, occurrenceDateIso: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val palette = LocalNexusPalette.current
@@ -123,7 +125,16 @@ fun AgendaScreen(
 
     val openOccurrence: (AgendaOccurrence) -> Unit = { occ ->
         when (occ.sourceType) {
-            AgendaSourceType.APPOINTMENT -> onOpenAppointment(occ.sourceId)
+            AgendaSourceType.APPOINTMENT -> {
+                if (occ.isVirtualRecurrence && occ.recurrenceId != null) {
+                    onOpenVirtualRecurringAppointment(
+                        occ.recurrenceId,
+                        occ.seriesOccurrenceDateIso ?: occ.occurrenceDateIso
+                    )
+                } else {
+                    onOpenAppointment(occ.sourceId)
+                }
+            }
             AgendaSourceType.TASK -> {
                 if (occ.isVirtualRecurrence && occ.recurrenceId != null) {
                     onOpenVirtualRecurringTask(occ.recurrenceId, occ.occurrenceDateIso)
@@ -131,7 +142,16 @@ fun AgendaScreen(
                     onOpenTask(occ.sourceId)
                 }
             }
-            AgendaSourceType.EVENT -> onOpenEvent(occ.sourceId)
+            AgendaSourceType.EVENT -> {
+                if (occ.isVirtualRecurrence && occ.recurrenceId != null) {
+                    onOpenVirtualRecurringEvent(
+                        occ.recurrenceId,
+                        occ.seriesOccurrenceDateIso ?: occ.occurrenceDateIso
+                    )
+                } else {
+                    onOpenEvent(occ.sourceId)
+                }
+            }
             AgendaSourceType.TRANSACTION -> onOpenTransaction(occ.sourceId)
             AgendaSourceType.STATEMENT -> onOpenCards()
             AgendaSourceType.PROJECT -> onOpenProject(occ.sourceId)
@@ -1073,10 +1093,10 @@ private fun WeekCardOccurrenceItem(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    if (occurrence.recurrenceId != null) {
+                    if (occurrence.recurrenceId != null || occurrence.isVirtualRecurrence) {
                         Icon(
                             imageVector = Icons.Outlined.Repeat,
-                            contentDescription = "Tarefa recorrente",
+                            contentDescription = "Recorrente",
                             tint = palette.accentNeon,
                             modifier = Modifier.size(11.dp)
                         )
@@ -1126,13 +1146,31 @@ private fun AllDayEventBandCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "Dia inteiro · ${occurrence.subtitle}",
-                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
-                    color = palette.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    if (occurrence.recurrenceId != null || occurrence.isVirtualRecurrence) {
+                        Icon(
+                            imageVector = Icons.Outlined.Repeat,
+                            contentDescription = "Recorrente",
+                            tint = palette.accentNeon,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = "Recorrente ·",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.accentNeon
+                        )
+                    }
+                    Text(
+                        text = "Dia inteiro · ${occurrence.subtitle}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                        color = palette.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
@@ -1214,12 +1252,17 @@ private fun AgendaOccurrenceRow(
                                 .background(palette.danger)
                         )
                     }
-                    if (occurrence.recurrenceId != null) {
+                    if (occurrence.recurrenceId != null || occurrence.isVirtualRecurrence) {
                         Icon(
                             imageVector = Icons.Outlined.Repeat,
-                            contentDescription = "Tarefa recorrente",
+                            contentDescription = "Recorrente",
                             tint = palette.accentNeon,
                             modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Recorrente ·",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.accentNeon
                         )
                     }
                     Text(

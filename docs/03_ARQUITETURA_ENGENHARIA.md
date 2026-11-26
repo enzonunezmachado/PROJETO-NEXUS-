@@ -12,7 +12,7 @@ O NEXUS é um aplicativo Android nativo em **módulo Gradle único (`:app`)**, e
 - **Linguagem / Runtime:** Kotlin `2.1.0`, Java `17`, `kotlinx-coroutines-android:1.9.0`, `kotlinx-serialization-json:1.7.3`.
 - **Android SDK:** `minSdk = 26`, `targetSdk = 35`, `compileSdk = 35`.
 - **UI:** Jetpack Compose (BOM `2024.12.01`), Material 3, `material-icons-extended`, gráficos nativos em `Canvas` (`ui/components/charts/`), temas Claro e Escuro (`NexusTheme`).
-- **Persistência:** Room `2.6.1` (`SQLite`, KSP `2.1.0-1.0.29`, `DATABASE_VERSION = 6`), `SharedPreferences`, arquivos JSON locais em `filesDir`, Android Keystore (`AES/GCM/NoPadding` para PAT da `NEXUS-INBOX`).
+- **Persistência:** Room `2.6.1` (`SQLite`, KSP `2.1.0-1.0.29`, `DATABASE_VERSION = 7`), `SharedPreferences`, arquivos JSON locais em `filesDir`, Android Keystore (`AES/GCM/NoPadding` para PAT da `NEXUS-INBOX`).
 - **Background & Sistema:** `WorkManager` `2.10.0`, `AlarmManager`, `BroadcastReceiver`, Jetpack Glance `1.1.1`.
 - **Rede (Mercado + ponte opcional `NEXUS-INBOX`):** `java.net.HttpURLConnection` / `HttpsURLConnection` nativa somente-leitura `GET` (sem Retrofit/OkHttp).
 - **Observação sobre dependência ociosa:** `androidx.navigation:navigation-compose:2.8.5` está declarada no `app/build.gradle.kts` e `gradle/libs.versions.toml`, porém **não é utilizada** no código.

@@ -9,11 +9,13 @@ import com.nexus.app.data.backup.BackupPreview
 import com.nexus.app.data.backup.BackupValidationResult
 import com.nexus.app.data.backup.MergeSummary
 import com.nexus.app.data.backup.RestoreSummary
+import com.nexus.app.data.db.entity.AppointmentEntity
 import com.nexus.app.data.db.entity.AuditHistoryEntity
 import com.nexus.app.data.db.entity.BriefingHistoryEntity
 import com.nexus.app.data.db.entity.CategoryEntity
 import com.nexus.app.data.db.entity.CreditCardEntity
 import com.nexus.app.data.db.entity.ErrorLogEntity
+import com.nexus.app.data.db.entity.EventEntity
 import com.nexus.app.data.db.entity.FinancialGoalEntity
 import com.nexus.app.data.db.entity.GoalMilestoneEntity
 import com.nexus.app.data.db.entity.LoanEntity
@@ -25,6 +27,7 @@ import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
+import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.data.inbox.InboxConfig
 import com.nexus.app.data.inbox.InboxConnectionTestResult
 import com.nexus.app.data.inbox.InboxPendingCheckResult
@@ -249,6 +252,9 @@ class NexusViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val allEvents: StateFlow<List<EventWithDetails>> = repository.observeEventsWithDetails()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val taskRecurrences: StateFlow<List<TaskRecurrenceEntity>> = repository.observeTaskRecurrences()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val allTransactions: StateFlow<List<TransactionWithDetails>> = repository.observeTransactionsWithDetails()
@@ -731,7 +737,28 @@ class NexusViewModel(
     suspend fun countAppointmentsForEvent(eventId: String): Int =
         repository.countAppointmentsForEvent(eventId)
 
+    suspend fun getTaskRecurrenceById(id: String): TaskRecurrenceEntity? =
+        repository.getTaskRecurrenceById(id)
+
+    suspend fun getAppointmentById(id: String): AppointmentEntity? =
+        repository.getAppointmentById(id)
+
+    suspend fun getEventById(id: String): EventEntity? =
+        repository.getEventById(id)
+
     // --- Compromissos ---
+
+    fun openOrMaterializeRecurringAppointmentOccurrence(
+        recurrenceId: String,
+        occurrenceDateIso: String,
+        onReady: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            repository.openOrMaterializeRecurringAppointmentOccurrence(recurrenceId, occurrenceDateIso)
+                .onSuccess { apptId -> onReady(apptId) }
+                .onFailure { emitMessage(it.message ?: "Erro ao abrir compromisso recorrente") }
+        }
+    }
 
     fun saveAppointment(
         id: String? = null,
@@ -745,6 +772,8 @@ class NexusViewModel(
         location: String = "",
         link: String = "",
         reminderMinutesBefore: Int? = null,
+        recurrenceDraft: TaskRecurrenceDraft? = null,
+        recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY,
         onSaved: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -759,7 +788,9 @@ class NexusViewModel(
                 isAllDay = isAllDay,
                 location = location,
                 link = link,
-                reminderMinutesBefore = reminderMinutesBefore
+                reminderMinutesBefore = reminderMinutesBefore,
+                recurrenceDraft = recurrenceDraft,
+                recurringEditScope = recurringEditScope
             ).onSuccess { savedId ->
                 emitMessage(if (id == null) "Compromisso salvo" else "Compromisso atualizado")
                 onSaved(savedId)
@@ -767,11 +798,17 @@ class NexusViewModel(
         }
     }
 
-    fun deleteAppointment(appointmentId: String, onDeleted: () -> Unit = {}) {
+    fun deleteAppointment(
+        appointmentId: String,
+        scope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY,
+        onDeleted: () -> Unit = {}
+    ) {
         viewModelScope.launch {
-            repository.deleteAppointment(appointmentId)
+            repository.deleteAppointment(appointmentId, scope)
                 .onSuccess {
-                    emitMessage("Compromisso excluído")
+                    emitMessage(
+                        if (scope == RecurringEditScope.ENTIRE_SERIES) "Série recorrente excluída" else "Compromisso excluído"
+                    )
                     onDeleted()
                 }
                 .onFailure { emitMessage(it.message ?: "Erro ao excluir compromisso") }
@@ -779,6 +816,18 @@ class NexusViewModel(
     }
 
     // --- Eventos ---
+
+    fun openOrMaterializeRecurringEventOccurrence(
+        recurrenceId: String,
+        occurrenceDateIso: String,
+        onReady: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            repository.openOrMaterializeRecurringEventOccurrence(recurrenceId, occurrenceDateIso)
+                .onSuccess { eventId -> onReady(eventId) }
+                .onFailure { emitMessage(it.message ?: "Erro ao abrir evento recorrente") }
+        }
+    }
 
     fun saveEvent(
         id: String? = null,
@@ -806,6 +855,8 @@ class NexusViewModel(
         creditCardId: String? = null,
         installmentsCount: Int = 1,
         reminderMinutesBefore: Int? = null,
+        recurrenceDraft: TaskRecurrenceDraft? = null,
+        recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY,
         onSaved: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -834,7 +885,9 @@ class NexusViewModel(
                 paymentMethod = paymentMethod,
                 creditCardId = creditCardId,
                 installmentsCount = installmentsCount,
-                reminderMinutesBefore = reminderMinutesBefore
+                reminderMinutesBefore = reminderMinutesBefore,
+                recurrenceDraft = recurrenceDraft,
+                recurringEditScope = recurringEditScope
             ).onSuccess { savedId ->
                 emitMessage(if (id == null) "Evento salvo" else "Evento atualizado")
                 onSaved(savedId)
@@ -842,11 +895,17 @@ class NexusViewModel(
         }
     }
 
-    fun deleteEvent(eventId: String, onDeleted: () -> Unit = {}) {
+    fun deleteEvent(
+        eventId: String,
+        scope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY,
+        onDeleted: () -> Unit = {}
+    ) {
         viewModelScope.launch {
-            repository.deleteEvent(eventId)
+            repository.deleteEvent(eventId, scope)
                 .onSuccess {
-                    emitMessage("Evento excluído")
+                    emitMessage(
+                        if (scope == RecurringEditScope.ENTIRE_SERIES) "Série recorrente excluída" else "Evento excluído"
+                    )
                     onDeleted()
                 }
                 .onFailure { emitMessage(it.message ?: "Erro ao excluir evento") }

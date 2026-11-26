@@ -84,6 +84,7 @@ import com.nexus.app.domain.model.PersonalGoalWithDetails
 import com.nexus.app.domain.model.ProjectStatus
 import com.nexus.app.domain.model.ProjectWithProgress
 import com.nexus.app.domain.model.QuoteLibraryStatus
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.RecurrenceExceptionType
 import com.nexus.app.domain.model.RecurrenceFrequency
 import com.nexus.app.domain.model.RecurringEditScope
@@ -270,6 +271,16 @@ class NexusRepository(
                 )
             }
         }
+
+    fun observeTaskRecurrences(): Flow<List<TaskRecurrenceEntity>> = taskRecurrenceDao.observeAll()
+
+    suspend fun getTaskRecurrenceById(id: String): TaskRecurrenceEntity? = withContext(Dispatchers.IO) {
+        taskRecurrenceDao.getById(id)
+    }
+
+    suspend fun getEventById(id: String): EventEntity? = withContext(Dispatchers.IO) {
+        eventDao.getById(id)
+    }
 
     fun observeTransactionsWithDetails(): Flow<List<TransactionWithDetails>> =
         combine(
@@ -523,18 +534,56 @@ class NexusRepository(
             val txMap = sources.transactions.associateBy { it.id }
             val stmtMap = sources.statements.associateBy { it.id }
             val cardMap = sources.creditCards.associateBy { it.id }
+            val recMap = sources.taskRecurrences.associateBy { it.id }
+            val exceptionMap = sources.recurrenceExceptions.associateBy { it.recurrenceId to it.occurrenceDateIso }
 
             occurrences.mapNotNull { occ ->
                 when (occ.sourceType) {
                     AgendaSourceType.APPOINTMENT -> {
-                        val appt = apptMap[occ.sourceId] ?: return@mapNotNull null
-                        AgendaItem.AppointmentItem(
-                            appointment = appt,
-                            category = appt.categoryId?.let { categoryMap[it] },
-                            conflictTitles = occ.conflictTitles,
-                            date = occ.occurrenceDate,
-                            event = appt.eventId?.let { eventMap[it] }
-                        )
+                        if (occ.isVirtualRecurrence) {
+                            val rec = occ.recurrenceId?.let { recMap[it] } ?: return@mapNotNull null
+                            val anchorIso = occ.seriesOccurrenceDateIso ?: occ.occurrenceDateIso
+                            val ex = exceptionMap[rec.id to anchorIso]
+                            val isOverride = ex?.exceptionType == RecurrenceExceptionType.OVERRIDE
+                            val virtualAppt = AppointmentEntity(
+                                id = RecurrenceEngine.virtualOccurrenceId(rec.id, anchorIso),
+                                title = occ.title,
+                                description = if (isOverride && ex?.overrideDescription != null) ex.overrideDescription else rec.description,
+                                categoryId = rec.categoryId,
+                                eventId = rec.eventId,
+                                startAt = occ.startAt,
+                                endAt = occ.endAt ?: (occ.startAt + rec.durationMillis.coerceAtLeast(60_000L)),
+                                isAllDay = occ.isAllDay,
+                                location = if (isOverride && ex?.overrideLocation != null) ex.overrideLocation else rec.location,
+                                link = if (isOverride && ex?.overrideLink != null) ex.overrideLink else rec.link,
+                                recurrenceId = rec.id,
+                                occurrenceDateIso = anchorIso,
+                                createdAt = rec.createdAt,
+                                updatedAt = rec.updatedAt
+                            )
+                            AgendaItem.AppointmentItem(
+                                appointment = virtualAppt,
+                                category = rec.categoryId?.let { categoryMap[it] },
+                                conflictTitles = occ.conflictTitles,
+                                date = occ.occurrenceDate,
+                                event = rec.eventId?.let { eventMap[it] },
+                                recurrenceId = rec.id,
+                                occurrenceDateIso = anchorIso,
+                                isVirtualRecurrence = true
+                            )
+                        } else {
+                            val appt = apptMap[occ.sourceId] ?: return@mapNotNull null
+                            AgendaItem.AppointmentItem(
+                                appointment = appt,
+                                category = appt.categoryId?.let { categoryMap[it] },
+                                conflictTitles = occ.conflictTitles,
+                                date = occ.occurrenceDate,
+                                event = appt.eventId?.let { eventMap[it] },
+                                recurrenceId = appt.recurrenceId,
+                                occurrenceDateIso = appt.occurrenceDateIso,
+                                isVirtualRecurrence = false
+                            )
+                        }
                     }
                     AgendaSourceType.TASK -> {
                         val task = taskMap[occ.sourceId] ?: return@mapNotNull null
@@ -548,15 +597,69 @@ class NexusRepository(
                         )
                     }
                     AgendaSourceType.EVENT -> {
-                        val ev = eventMap[occ.sourceId] ?: return@mapNotNull null
-                        AgendaItem.EventItem(
-                            event = ev,
-                            category = ev.categoryId?.let { categoryMap[it] },
-                            totalCostCents = occ.amountCents ?: 0L,
-                            date = occ.occurrenceDate,
-                            spanStartDate = LocalDate.parse(occ.spanStartDateIso),
-                            spanEndDate = LocalDate.parse(occ.spanEndDateIso)
-                        )
+                        if (occ.isVirtualRecurrence) {
+                            val rec = occ.recurrenceId?.let { recMap[it] } ?: return@mapNotNull null
+                            val anchorIso = occ.seriesOccurrenceDateIso ?: occ.occurrenceDateIso
+                            val ex = exceptionMap[rec.id to anchorIso]
+                            val isOverride = ex?.exceptionType == RecurrenceExceptionType.OVERRIDE
+                            val virtualEvent = EventEntity(
+                                id = RecurrenceEngine.virtualOccurrenceId(rec.id, anchorIso),
+                                name = occ.title,
+                                description = if (isOverride && ex?.overrideDescription != null) ex.overrideDescription else rec.description,
+                                categoryId = rec.categoryId,
+                                startAt = occ.startAt,
+                                endAt = occ.endAt ?: (occ.startAt + rec.durationMillis.coerceAtLeast(60_000L)),
+                                isAllDay = occ.isAllDay,
+                                officialLink = if (isOverride && ex?.overrideLink != null) ex.overrideLink else rec.officialLink,
+                                ticketLink = rec.ticketLink,
+                                locationName = if (isOverride && ex?.overrideLocation != null) ex.overrideLocation else rec.locationName,
+                                address = rec.address,
+                                city = rec.city,
+                                state = rec.state,
+                                notes = rec.notes,
+                                eventStatus = rec.eventStatus,
+                                ticketStatus = rec.ticketStatus,
+                                ticketPriceCents = rec.ticketPriceCents,
+                                ticketQuantity = rec.ticketQuantity,
+                                ticketFeesCents = rec.ticketFeesCents,
+                                ticketTotalCents = 0L,
+                                ticketPurchaseDate = null,
+                                ticketDueDate = null,
+                                paymentMethod = rec.paymentMethod,
+                                creditCardId = rec.creditCardId,
+                                installmentsCount = rec.installmentsCount,
+                                recurrenceId = rec.id,
+                                occurrenceDateIso = anchorIso,
+                                createdAt = rec.createdAt,
+                                updatedAt = rec.updatedAt
+                            )
+                            AgendaItem.EventItem(
+                                event = virtualEvent,
+                                category = rec.categoryId?.let { categoryMap[it] },
+                                totalCostCents = 0L,
+                                date = occ.occurrenceDate,
+                                spanStartDate = LocalDate.parse(occ.spanStartDateIso),
+                                spanEndDate = LocalDate.parse(occ.spanEndDateIso),
+                                recurrenceId = rec.id,
+                                occurrenceDateIso = anchorIso,
+                                seriesOccurrenceDateIso = anchorIso,
+                                isVirtualRecurrence = true
+                            )
+                        } else {
+                            val ev = eventMap[occ.sourceId] ?: return@mapNotNull null
+                            AgendaItem.EventItem(
+                                event = ev,
+                                category = ev.categoryId?.let { categoryMap[it] },
+                                totalCostCents = occ.amountCents ?: 0L,
+                                date = occ.occurrenceDate,
+                                spanStartDate = LocalDate.parse(occ.spanStartDateIso),
+                                spanEndDate = LocalDate.parse(occ.spanEndDateIso),
+                                recurrenceId = ev.recurrenceId,
+                                occurrenceDateIso = ev.occurrenceDateIso,
+                                seriesOccurrenceDateIso = occ.seriesOccurrenceDateIso,
+                                isVirtualRecurrence = false
+                            )
+                        }
                     }
                     AgendaSourceType.TRANSACTION -> {
                         val tx = txMap[occ.sourceId]?.let(::effectiveTransactionStatus) ?: return@mapNotNull null
@@ -667,8 +770,28 @@ class NexusRepository(
                 )
                 .take(8)
 
-            val upcomingEvents = events
+            val materializedUpcomingEvents = events
                 .filter { it.event.eventStatus != EventLifecycleStatus.CANCELLED && it.event.endAt >= DateTimeUtils.localDateToStartOfDayEpoch(today) }
+            val startOfTodayEpoch = DateTimeUtils.localDateToStartOfDayEpoch(today)
+            val virtualUpcomingEvents = agendaItems
+                .filterIsInstance<AgendaItem.EventItem>()
+                .filter {
+                    it.isVirtualRecurrence &&
+                        it.event.eventStatus != EventLifecycleStatus.CANCELLED &&
+                        it.event.endAt >= startOfTodayEpoch
+                }
+                .distinctBy { it.event.id }
+                .map { item ->
+                    EventWithDetails(
+                        event = item.event,
+                        category = item.category,
+                        creditCard = null,
+                        linkedTasks = emptyList(),
+                        linkedTransactions = emptyList()
+                    )
+                }
+            val upcomingEvents = (materializedUpcomingEvents + virtualUpcomingEvents)
+                .sortedBy { it.event.startAt }
                 .take(8)
 
             val upcomingPayments = allTransactions
@@ -757,9 +880,12 @@ class NexusRepository(
             personalGoalDao.search(clean),
             observePersonalGoalsWithDetails(),
             categoryDao.observeAll(),
-            appointmentDao.observeAll()
-        ) { matchedGoals, allGoals, categories, allAppointments ->
-            listOf(matchedGoals, allGoals, categories, allAppointments)
+            appointmentDao.observeAll(),
+            combine(taskRecurrenceDao.observeAll(), recurrenceExceptionDao.observeAll(), eventDao.observeAll()) { r, ex, ev ->
+                Triple(r, ex, ev)
+            }
+        ) { matchedGoals, allGoals, categories, allAppointments, (allRecurrences, allExceptions, allRawEvents) ->
+            listOf(matchedGoals, allGoals, categories, allAppointments, allRecurrences, allExceptions, allRawEvents)
         }
 
         return combine(searchFlow, contextFlow, goalsFlow) { searched, ctx, meta ->
@@ -793,23 +919,89 @@ class NexusRepository(
             val categories = meta[2] as List<CategoryEntity>
             @Suppress("UNCHECKED_CAST")
             val allAppointments = meta[3] as List<AppointmentEntity>
+            @Suppress("UNCHECKED_CAST")
+            val allRecurrences = meta[4] as List<TaskRecurrenceEntity>
+            @Suppress("UNCHECKED_CAST")
+            val allExceptions = meta[5] as List<RecurrenceExceptionEntity>
+            @Suppress("UNCHECKED_CAST")
+            val allRawEvents = meta[6] as List<EventEntity>
             val matchedGoalIds = matchedGoals.map { it.id }.toSet()
 
+            val today = DateTimeUtils.todayLocalDate()
+            val searchWindow = DateRange(today, today.plusDays(60))
             val categoryMap = categories.associateBy { it.id }
-            val conflictMap = computeAppointmentConflicts(allAppointments)
+            val rawEventMap = allRawEvents.associateBy { it.id }
+            val conflictMap = AgendaEngine.computeAppointmentConflicts(
+                appointments = allAppointments,
+                taskRecurrences = allRecurrences,
+                recurrenceExceptions = allExceptions,
+                window = searchWindow
+            )
+            val cleanLower = clean.lowercase()
+
+            val virtualApptMatches = RecurrenceEngine.projectVirtualAppointments(
+                window = searchWindow,
+                recurrences = allRecurrences,
+                exceptions = allExceptions,
+                materializedAppointments = allAppointments
+            ).filter { proj ->
+                proj.effectiveTitle.lowercase().contains(cleanLower) ||
+                    proj.effectiveDescription.lowercase().contains(cleanLower) ||
+                    proj.effectiveLocation.lowercase().contains(cleanLower)
+            }.map { proj ->
+                val vAppt = proj.toVirtualAppointmentEntity()
+                AgendaItem.AppointmentItem(
+                    appointment = vAppt,
+                    category = proj.recurrence.categoryId?.let { categoryMap[it] },
+                    conflictTitles = conflictMap[AgendaEngine.virtualAppointmentConflictKey(proj.recurrence.id, proj.occurrenceDateIso)].orEmpty(),
+                    date = DateTimeUtils.epochToLocalDate(proj.startAt),
+                    event = proj.recurrence.eventId?.let { rawEventMap[it] },
+                    recurrenceId = proj.recurrence.id,
+                    occurrenceDateIso = proj.occurrenceDateIso,
+                    isVirtualRecurrence = true
+                )
+            }
+
+            val virtualEventMatches = RecurrenceEngine.projectVirtualEvents(
+                window = searchWindow,
+                recurrences = allRecurrences,
+                exceptions = allExceptions,
+                materializedEvents = allRawEvents
+            ).filter { proj ->
+                proj.effectiveTitle.lowercase().contains(cleanLower) ||
+                    proj.effectiveDescription.lowercase().contains(cleanLower) ||
+                    proj.effectiveLocationName.lowercase().contains(cleanLower) ||
+                    proj.effectiveCity.lowercase().contains(cleanLower)
+            }.map { proj ->
+                EventWithDetails(
+                    event = proj.toVirtualEventEntity(),
+                    category = proj.recurrence.categoryId?.let { categoryMap[it] },
+                    creditCard = null,
+                    linkedTasks = emptyList(),
+                    linkedTransactions = emptyList()
+                )
+            }
+
+            val materializedApptItems = matchedAppointments.map { appt ->
+                AgendaItem.AppointmentItem(
+                    appointment = appt,
+                    category = appt.categoryId?.let { categoryMap[it] },
+                    conflictTitles = conflictMap[appt.id].orEmpty(),
+                    date = DateTimeUtils.epochToLocalDate(appt.startAt),
+                    event = appt.eventId?.let { rawEventMap[it] },
+                    recurrenceId = appt.recurrenceId,
+                    occurrenceDateIso = appt.occurrenceDateIso,
+                    isVirtualRecurrence = false
+                )
+            }
 
             GlobalSearchResults(
                 tasks = allTasks.filter { it.task.id in matchedTaskIds },
                 projects = allProjects.filter { it.project.id in matchedProjIds },
-                events = allEvents.filter { it.event.id in matchedEventIds },
-                appointments = matchedAppointments.map { appt ->
-                    AgendaItem.AppointmentItem(
-                        appointment = appt,
-                        category = appt.categoryId?.let { categoryMap[it] },
-                        conflictTitles = conflictMap[appt.id].orEmpty(),
-                        date = DateTimeUtils.epochToLocalDate(appt.startAt)
-                    )
-                },
+                events = (allEvents.filter { it.event.id in matchedEventIds } + virtualEventMatches)
+                    .sortedBy { it.event.startAt },
+                appointments = (materializedApptItems + virtualApptMatches)
+                    .sortedBy { it.appointment.startAt },
                 transactions = allTx.filter { it.transaction.id in matchedTxIds },
                 creditCards = matchedCards,
                 personalGoals = allGoals.filter { it.goal.id in matchedGoalIds }
@@ -929,11 +1121,30 @@ class NexusRepository(
             }
             val overdueTasks = tasks.filter { isTaskOverdue(it.task, now, today) }
 
-            val todayEvents = events.filter { ew ->
+            val materializedTodayEvents = events.filter { ew ->
                 ew.event.eventStatus != EventLifecycleStatus.CANCELLED &&
                     !DateTimeUtils.epochToLocalDate(ew.event.startAt).isAfter(today) &&
                     !DateTimeUtils.epochToLocalDate(ew.event.endAt).isBefore(today)
             }
+            val virtualTodayEvents = agenda
+                .filterIsInstance<AgendaItem.EventItem>()
+                .filter {
+                    it.isVirtualRecurrence &&
+                        it.event.eventStatus != EventLifecycleStatus.CANCELLED &&
+                        !it.spanStartDate.isAfter(today) &&
+                        !it.spanEndDate.isBefore(today)
+                }
+                .distinctBy { it.event.id }
+                .map { item ->
+                    EventWithDetails(
+                        event = item.event,
+                        category = item.category,
+                        creditCard = null,
+                        linkedTasks = emptyList(),
+                        linkedTransactions = emptyList()
+                    )
+                }
+            val todayEvents = (materializedTodayEvents + virtualTodayEvents).sortedBy { it.event.startAt }
 
             val billsDueToday = transactions.filter { tw ->
                 val tx = tw.transaction
@@ -1010,11 +1221,30 @@ class NexusRepository(
                     DateTimeUtils.epochToLocalDate(details.task.dueAt) == tomorrow
             }
 
-            val tomorrowEvents = events.filter { ew ->
+            val materializedTomorrowEvents = events.filter { ew ->
                 ew.event.eventStatus != EventLifecycleStatus.CANCELLED &&
                     !DateTimeUtils.epochToLocalDate(ew.event.startAt).isAfter(tomorrow) &&
                     !DateTimeUtils.epochToLocalDate(ew.event.endAt).isBefore(tomorrow)
             }
+            val virtualTomorrowEvents = agenda
+                .filterIsInstance<AgendaItem.EventItem>()
+                .filter {
+                    it.isVirtualRecurrence &&
+                        it.event.eventStatus != EventLifecycleStatus.CANCELLED &&
+                        !it.spanStartDate.isAfter(tomorrow) &&
+                        !it.spanEndDate.isBefore(tomorrow)
+                }
+                .distinctBy { it.event.id }
+                .map { item ->
+                    EventWithDetails(
+                        event = item.event,
+                        category = item.category,
+                        creditCard = null,
+                        linkedTasks = emptyList(),
+                        linkedTransactions = emptyList()
+                    )
+                }
+            val tomorrowEvents = (materializedTomorrowEvents + virtualTomorrowEvents).sortedBy { it.event.startAt }
 
             val tomorrowBills = transactions.filter { tw ->
                 val tx = tw.transaction
@@ -1214,6 +1444,13 @@ class NexusRepository(
                 }
                 val startDate = RecurrenceEngine.parseLocalDateOrNull(startDateIso)
                     ?: DateTimeUtils.todayLocalDate()
+                val initialTemplateTitles = if (subtaskDrafts != null) {
+                    subtaskDrafts.mapNotNull { (_, subTitle, _) -> subTitle.trim().takeIf(String::isNotBlank) }
+                } else if (existing != null) {
+                    subtaskDao.getByTaskId(existing.id).sortedBy { it.sortOrder }.map { it.title }
+                } else {
+                    emptyList()
+                }
                 val newRec = TaskRecurrenceEntity(
                     id = newRecId,
                     title = cleanTitle,
@@ -1234,6 +1471,8 @@ class NexusRepository(
                     endDateIso = recurrenceDraft.endDateIso?.takeIf { it.isNotBlank() },
                     maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
                     isActive = true,
+                    domain = RecurrenceDomain.TASK,
+                    templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(initialTemplateTitles),
                     createdAt = now,
                     updatedAt = now
                 )
@@ -1265,7 +1504,7 @@ class NexusRepository(
                         ?: existing.dueAt?.let { DateTimeUtils.epochToLocalDate(it).toString() }
                     finalRecurrenceId = existing.recurrenceId
                     finalOccurrenceDateIso = occIso
-                    if (occIso != null && (cleanTitle != existingRecurrence.title || dueAt != existing.dueAt)) {
+                    if (occIso != null && (cleanTitle != existingRecurrence.title || dueAt != existing.dueAt || description.trim() != existingRecurrence.description)) {
                         val existingEx = recurrenceExceptionDao.getByRecurrenceAndDate(existingRecurrence.id, occIso)
                         exceptionToUpsert = RecurrenceExceptionEntity(
                             id = existingEx?.id ?: UUID.randomUUID().toString(),
@@ -1274,6 +1513,7 @@ class NexusRepository(
                             exceptionType = RecurrenceExceptionType.OVERRIDE,
                             overrideTitle = cleanTitle,
                             overrideDueAt = dueAt,
+                            overrideDescription = description.trim(),
                             taskId = taskId,
                             createdAt = existingEx?.createdAt ?: now,
                             updatedAt = now
@@ -1291,6 +1531,11 @@ class NexusRepository(
                         finalOccurrenceDateIso = null
                     } else {
                         val resolvedReminderPref = reminderMinutesBefore ?: existingRecurrence.reminderMinutesBefore
+                        val resolvedTemplateTitles = if (subtaskDrafts != null) {
+                            subtaskDrafts.mapNotNull { (_, subTitle, _) -> subTitle.trim().takeIf(String::isNotBlank) }
+                        } else {
+                            RecurrenceEngine.deserializeChecklistTemplate(existingRecurrence.templateSubtasksJson)
+                        }
                         val updatedRec = existingRecurrence.copy(
                             title = cleanTitle,
                             description = description.trim(),
@@ -1309,6 +1554,7 @@ class NexusRepository(
                             startDateIso = recurrenceDraft.startDateIso.ifBlank { existingRecurrence.startDateIso },
                             endDateIso = recurrenceDraft.endDateIso?.takeIf { it.isNotBlank() },
                             maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
+                            templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(resolvedTemplateTitles),
                             updatedAt = now
                         )
                         seriesTemplateToUpsert = updatedRec
@@ -1378,7 +1624,7 @@ class NexusRepository(
             exceptionToUpsert?.let { recurrenceExceptionDao.upsert(it) }
 
             if (subtaskDrafts != null) {
-                val existingSubtasks = subtaskDao.getAllOnce().filter { it.taskId == taskId }.associateBy { it.id }
+                val existingSubtasks = subtaskDao.getByTaskId(taskId).associateBy { it.id }
                 val newEntities = subtaskDrafts.mapIndexedNotNull { index, (subId, subTitle, isDone) ->
                     val cleanSub = subTitle.trim()
                     if (cleanSub.isEmpty()) return@mapIndexedNotNull null
@@ -1577,6 +1823,10 @@ class NexusRepository(
             ?.takeIf { it.exceptionType == RecurrenceExceptionType.OVERRIDE && !it.overrideTitle.isNullOrBlank() }
             ?.overrideTitle
             ?: recurrence.title
+        val effectiveDescription = exception
+            ?.takeIf { it.exceptionType == RecurrenceExceptionType.OVERRIDE && it.overrideDescription != null }
+            ?.overrideDescription
+            ?: recurrence.description
         val effectiveDueAt = exception
             ?.takeIf { it.exceptionType == RecurrenceExceptionType.OVERRIDE && it.overrideDueAt != null }
             ?.overrideDueAt
@@ -1588,7 +1838,7 @@ class NexusRepository(
         val candidate = TaskEntity(
             id = UUID.randomUUID().toString(),
             title = effectiveTitle,
-            description = recurrence.description,
+            description = effectiveDescription,
             projectId = recurrence.projectId,
             categoryId = recurrence.categoryId,
             eventId = recurrence.eventId,
@@ -1604,10 +1854,27 @@ class NexusRepository(
             createdAt = now,
             updatedAt = now
         )
+        val templateTitles = RecurrenceEngine.deserializeChecklistTemplate(recurrence.templateSubtasksJson)
         val rowId = database.withTransaction {
             val insertedId = taskDao.insertIgnore(candidate)
-            if (insertedId != -1L && exception != null) {
-                recurrenceExceptionDao.upsert(exception.copy(taskId = candidate.id, updatedAt = now))
+            if (insertedId != -1L) {
+                if (templateTitles.isNotEmpty()) {
+                    val clonedSubs = templateTitles.mapIndexed { index, subTitle ->
+                        SubtaskEntity(
+                            id = UUID.randomUUID().toString(),
+                            taskId = candidate.id,
+                            title = subTitle,
+                            isCompleted = false,
+                            sortOrder = index,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                    }
+                    subtaskDao.insertAll(clonedSubs)
+                }
+                if (exception != null) {
+                    recurrenceExceptionDao.upsert(exception.copy(taskId = candidate.id, updatedAt = now))
+                }
             }
             insertedId
         }
@@ -1631,7 +1898,7 @@ class NexusRepository(
         if (requireCompletedStatus && completedOrSkippedTask.status != TaskStatus.COMPLETED) return null
         val recId = completedOrSkippedTask.recurrenceId ?: return null
         val recurrence = taskRecurrenceDao.getById(recId) ?: return null
-        if (!recurrence.isActive) return null
+        if (!recurrence.isActive || recurrence.domain != RecurrenceDomain.TASK) return null
 
         val exceptions = recurrenceExceptionDao.getByRecurrenceId(recId)
         val existingTasks = taskDao.getByRecurrenceId(recId)
@@ -1658,11 +1925,12 @@ class NexusRepository(
             dueTimeMinutesOfDay = recurrence.dueTimeMinutesOfDay
         )
         val nextTitle = overrideEx?.overrideTitle?.takeIf { it.isNotBlank() } ?: recurrence.title
+        val nextDescription = overrideEx?.overrideDescription ?: recurrence.description
 
         val nextTask = TaskEntity(
             id = UUID.randomUUID().toString(),
             title = nextTitle,
-            description = recurrence.description,
+            description = nextDescription,
             projectId = recurrence.projectId,
             categoryId = recurrence.categoryId,
             eventId = recurrence.eventId,
@@ -1682,17 +1950,15 @@ class NexusRepository(
         val rowId = taskDao.insertIgnore(nextTask)
         if (rowId == -1L) return null
 
-        val templateSubs = subtaskDao.getAllOnce()
-            .filter { it.taskId == completedOrSkippedTask.id }
-            .sortedBy { it.sortOrder }
-        if (templateSubs.isNotEmpty()) {
-            val clonedSubs = templateSubs.map { sub ->
+        val templateTitles = RecurrenceEngine.deserializeChecklistTemplate(recurrence.templateSubtasksJson)
+        if (templateTitles.isNotEmpty()) {
+            val clonedSubs = templateTitles.mapIndexed { index, subTitle ->
                 SubtaskEntity(
                     id = UUID.randomUUID().toString(),
                     taskId = nextTask.id,
-                    title = sub.title,
+                    title = subTitle,
                     isCompleted = false,
-                    sortOrder = sub.sortOrder,
+                    sortOrder = index,
                     createdAt = now,
                     updatedAt = now
                 )
@@ -1718,30 +1984,281 @@ class NexusRepository(
         isAllDay: Boolean = false,
         location: String = "",
         link: String = "",
-        reminderMinutesBefore: Int? = null
+        reminderMinutesBefore: Int? = null,
+        recurrenceDraft: TaskRecurrenceDraft? = null,
+        recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY
     ): Result<String> = safeDbCall("Agenda") {
         val cleanTitle = title.trim()
         require(cleanTitle.isNotEmpty()) { "O título do compromisso é obrigatório." }
+        val cleanDescription = description.trim()
+        val cleanLocation = location.trim()
+        val cleanLink = link.trim()
         val normalizedEnd = if (endAt >= startAt) endAt else startAt + 3_600_000L
+        val durationMillis = (normalizedEnd - startAt).coerceAtLeast(60_000L)
+        val dueMinutesOfDay = if (isAllDay) {
+            null
+        } else {
+            RecurrenceEngine.minutesOfDayFromTime(DateTimeUtils.epochToLocalTime(startAt))
+        }
         val now = DateTimeUtils.nowEpochMillis()
-        val existing = id?.let { appointmentDao.getById(it) }
+
+        val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(id)
+        val existing = when {
+            virtualPair != null -> appointmentDao.getByRecurrenceAndDate(virtualPair.first, virtualPair.second)
+            id != null -> appointmentDao.getById(id)
+            else -> null
+        }
         val appointmentId = existing?.id ?: UUID.randomUUID().toString()
+        val existingRecurrenceId = existing?.recurrenceId ?: virtualPair?.first
+        val existingOccurrenceIso = existing?.occurrenceDateIso ?: virtualPair?.second
+        val existingRecurrence = existingRecurrenceId?.let { taskRecurrenceDao.getById(it) }
+
+        var finalRecurrenceId: String? = existingRecurrenceId
+        var finalOccurrenceDateIso: String? = existingOccurrenceIso
+        var finalStartAt: Long = startAt
+        var finalEndAt: Long = normalizedEnd
+        var seriesTemplateToUpsert: TaskRecurrenceEntity? = null
+        var exceptionToUpsert: RecurrenceExceptionEntity? = null
+        var exceptionToDeleteKey: Pair<String, String>? = null
+        var apptsToDeleteIds: List<String> = emptyList()
+        var recurrenceToDeleteId: String? = null
+        var unlinkRecurrenceId: String? = null
+        var propagateSeriesAppointments: List<AppointmentEntity> = emptyList()
+        var recurrenceReminderMinutes: Int? = reminderMinutesBefore
+
+        if (existingRecurrence == null) {
+            if (recurrenceDraft != null) {
+                val newRecId = UUID.randomUUID().toString()
+                val startDateIso = recurrenceDraft.startDateIso.ifBlank {
+                    DateTimeUtils.toLocalDate(startAt).toString()
+                }
+                val startDate = RecurrenceEngine.parseLocalDateOrNull(startDateIso)
+                    ?: DateTimeUtils.toLocalDate(startAt)
+                val newRec = TaskRecurrenceEntity(
+                    id = newRecId,
+                    title = cleanTitle,
+                    description = cleanDescription,
+                    categoryId = categoryId,
+                    eventId = eventId,
+                    priority = TaskPriority.NORMAL,
+                    notes = "",
+                    hasDueTime = !isAllDay,
+                    dueTimeMinutesOfDay = dueMinutesOfDay,
+                    reminderMinutesBefore = reminderMinutesBefore,
+                    frequency = recurrenceDraft.frequency,
+                    customIntervalDays = recurrenceDraft.customIntervalDays.coerceAtLeast(1),
+                    weekdaysMask = recurrenceDraft.weekdaysMask,
+                    startDateIso = startDate.toString(),
+                    endDateIso = recurrenceDraft.endDateIso?.takeIf { it.isNotBlank() },
+                    maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
+                    isActive = true,
+                    domain = RecurrenceDomain.APPOINTMENT,
+                    isAllDay = isAllDay,
+                    durationMillis = durationMillis,
+                    location = cleanLocation,
+                    link = cleanLink,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                val firstScheduledDate = RecurrenceEngine.generateScheduledDates(
+                    recurrence = newRec,
+                    upToDateInclusive = startDate.plusDays(400),
+                    hardCap = 1
+                ).firstOrNull() ?: startDate
+                val userStartDate = DateTimeUtils.toLocalDate(startAt)
+                finalOccurrenceDateIso = firstScheduledDate.toString()
+                if (userStartDate == firstScheduledDate) {
+                    finalStartAt = startAt
+                    finalEndAt = normalizedEnd
+                } else {
+                    finalStartAt = RecurrenceEngine.computeScheduleStartEpoch(
+                        date = firstScheduledDate,
+                        isAllDay = isAllDay,
+                        dueTimeMinutesOfDay = dueMinutesOfDay
+                    )
+                    finalEndAt = if (isAllDay) {
+                        val spanEndDate = DateTimeUtils.toLocalDate(finalStartAt + durationMillis - 60_000L)
+                            .coerceAtLeast(firstScheduledDate)
+                        DateTimeUtils.localDateToEndOfDayEpoch(spanEndDate)
+                    } else {
+                        finalStartAt + durationMillis
+                    }
+                }
+                finalRecurrenceId = newRecId
+                seriesTemplateToUpsert = newRec
+                recurrenceReminderMinutes = newRec.reminderMinutesBefore
+            } else {
+                finalRecurrenceId = null
+                finalOccurrenceDateIso = null
+            }
+        } else {
+            recurrenceReminderMinutes = existingRecurrence.reminderMinutesBefore
+            when (recurringEditScope) {
+                RecurringEditScope.THIS_OCCURRENCE_ONLY -> {
+                    val occIso = existingOccurrenceIso ?: DateTimeUtils.toLocalDate(startAt).toString()
+                    finalRecurrenceId = existingRecurrence.id
+                    finalOccurrenceDateIso = occIso
+                    val changedVsSeriesOrExisting = cleanTitle != existingRecurrence.title ||
+                        cleanDescription != existingRecurrence.description ||
+                        cleanLocation != existingRecurrence.location ||
+                        cleanLink != existingRecurrence.link ||
+                        isAllDay != existingRecurrence.isAllDay ||
+                        (existing != null && (startAt != existing.startAt || normalizedEnd != existing.endAt)) ||
+                        virtualPair != null
+                    if (changedVsSeriesOrExisting) {
+                        val existingEx = recurrenceExceptionDao.getByRecurrenceAndDate(existingRecurrence.id, occIso)
+                        exceptionToUpsert = RecurrenceExceptionEntity(
+                            id = existingEx?.id ?: UUID.randomUUID().toString(),
+                            recurrenceId = existingRecurrence.id,
+                            occurrenceDateIso = occIso,
+                            exceptionType = RecurrenceExceptionType.OVERRIDE,
+                            overrideTitle = cleanTitle,
+                            overrideDueAt = startAt,
+                            overrideEndAt = normalizedEnd,
+                            overrideDescription = cleanDescription,
+                            overrideLocation = cleanLocation,
+                            overrideLink = cleanLink,
+                            overrideIsAllDay = isAllDay,
+                            appointmentId = appointmentId,
+                            createdAt = existingEx?.createdAt ?: now,
+                            updatedAt = now
+                        )
+                    }
+                }
+
+                RecurringEditScope.ENTIRE_SERIES -> {
+                    if (recurrenceDraft == null) {
+                        val otherAppts = appointmentDao.getByRecurrenceId(existingRecurrence.id)
+                            .filter { it.id != appointmentId }
+                        apptsToDeleteIds = otherAppts.map { it.id }
+                        unlinkRecurrenceId = existingRecurrence.id
+                        recurrenceToDeleteId = existingRecurrence.id
+                        finalRecurrenceId = null
+                        finalOccurrenceDateIso = null
+                    } else {
+                        val resolvedReminderPref = reminderMinutesBefore ?: existingRecurrence.reminderMinutesBefore
+                        val updatedRec = existingRecurrence.copy(
+                            title = cleanTitle,
+                            description = cleanDescription,
+                            categoryId = categoryId,
+                            eventId = eventId,
+                            hasDueTime = !isAllDay,
+                            dueTimeMinutesOfDay = dueMinutesOfDay,
+                            reminderMinutesBefore = resolvedReminderPref,
+                            frequency = recurrenceDraft.frequency,
+                            customIntervalDays = recurrenceDraft.customIntervalDays.coerceAtLeast(1),
+                            weekdaysMask = recurrenceDraft.weekdaysMask,
+                            startDateIso = recurrenceDraft.startDateIso.ifBlank { existingRecurrence.startDateIso },
+                            endDateIso = recurrenceDraft.endDateIso?.takeIf { it.isNotBlank() },
+                            maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
+                            isAllDay = isAllDay,
+                            durationMillis = durationMillis,
+                            location = cleanLocation,
+                            link = cleanLink,
+                            updatedAt = now
+                        )
+                        seriesTemplateToUpsert = updatedRec
+                        recurrenceReminderMinutes = resolvedReminderPref
+                        finalRecurrenceId = updatedRec.id
+                        finalOccurrenceDateIso = existingOccurrenceIso ?: DateTimeUtils.toLocalDate(startAt).toString()
+                        if (existingOccurrenceIso != null) {
+                            exceptionToDeleteKey = updatedRec.id to existingOccurrenceIso
+                        }
+                        val allExByDate = recurrenceExceptionDao.getByRecurrenceId(existingRecurrence.id)
+                            .associateBy { it.occurrenceDateIso }
+                        propagateSeriesAppointments = appointmentDao.getByRecurrenceId(existingRecurrence.id)
+                            .filter { it.id != appointmentId }
+                            .mapNotNull { linked ->
+                                val linkedIso = linked.occurrenceDateIso
+                                    ?: DateTimeUtils.toLocalDate(linked.startAt).toString()
+                                val linkedEx = allExByDate[linkedIso]
+                                if (linkedEx?.exceptionType == RecurrenceExceptionType.OVERRIDE) {
+                                    return@mapNotNull null
+                                }
+                                val linkedDate = RecurrenceEngine.parseLocalDateOrNull(linkedIso)
+                                    ?: DateTimeUtils.toLocalDate(linked.startAt)
+                                val nextLinkedStart = RecurrenceEngine.computeScheduleStartEpoch(
+                                    date = linkedDate,
+                                    isAllDay = isAllDay,
+                                    dueTimeMinutesOfDay = dueMinutesOfDay
+                                )
+                                val nextLinkedEnd = if (isAllDay) {
+                                    val spanEndDate = DateTimeUtils.toLocalDate(nextLinkedStart + durationMillis - 60_000L)
+                                        .coerceAtLeast(linkedDate)
+                                    DateTimeUtils.localDateToEndOfDayEpoch(spanEndDate)
+                                } else {
+                                    nextLinkedStart + durationMillis
+                                }
+                                linked.copy(
+                                    title = cleanTitle,
+                                    description = cleanDescription,
+                                    categoryId = categoryId,
+                                    eventId = eventId,
+                                    startAt = nextLinkedStart,
+                                    endAt = nextLinkedEnd,
+                                    isAllDay = isAllDay,
+                                    location = cleanLocation,
+                                    link = cleanLink,
+                                    updatedAt = now
+                                )
+                            }
+                    }
+                }
+            }
+        }
+
         val appointment = AppointmentEntity(
             id = appointmentId,
             title = cleanTitle,
-            description = description.trim(),
+            description = cleanDescription,
             categoryId = categoryId,
             eventId = eventId,
-            startAt = startAt,
-            endAt = normalizedEnd,
+            startAt = finalStartAt,
+            endAt = finalEndAt,
             isAllDay = isAllDay,
-            location = location.trim(),
-            link = link.trim(),
+            location = cleanLocation,
+            link = cleanLink,
+            recurrenceId = finalRecurrenceId,
+            occurrenceDateIso = finalOccurrenceDateIso,
             createdAt = existing?.createdAt ?: now,
             updatedAt = now
         )
-        appointmentDao.upsert(appointment)
-        syncAppointmentReminder(appointment, reminderMinutesBefore)
+
+        apptsToDeleteIds.forEach { delId ->
+            cancelAndDeleteRemindersForSource(ReminderSourceType.APPOINTMENT, delId)
+        }
+        if (virtualPair != null) {
+            cancelAndDeleteRemindersForSource(
+                ReminderSourceType.APPOINTMENT,
+                RecurrenceEngine.virtualOccurrenceId(virtualPair.first, virtualPair.second)
+            )
+        }
+        if (recurrenceToDeleteId != null) {
+            cancelAndDeleteVirtualRemindersForRecurrence(ReminderSourceType.APPOINTMENT, recurrenceToDeleteId)
+        }
+
+        database.withTransaction {
+            if (unlinkRecurrenceId != null) {
+                apptsToDeleteIds.forEach { delId ->
+                    appointmentDao.deleteById(delId)
+                }
+                recurrenceExceptionDao.deleteByRecurrenceId(unlinkRecurrenceId)
+                appointmentDao.unlinkRecurrence(unlinkRecurrenceId, now)
+                recurrenceToDeleteId?.let { taskRecurrenceDao.deleteById(it) }
+            }
+            seriesTemplateToUpsert?.let { taskRecurrenceDao.upsert(it) }
+            appointmentDao.upsert(appointment)
+            propagateSeriesAppointments.forEach { appointmentDao.update(it) }
+            exceptionToDeleteKey?.let { (recId, occIso) ->
+                recurrenceExceptionDao.getByRecurrenceAndDate(recId, occIso)
+                    ?.takeIf { it.exceptionType == RecurrenceExceptionType.OVERRIDE }
+                    ?.let { recurrenceExceptionDao.deleteById(it.id) }
+            }
+            exceptionToUpsert?.let { recurrenceExceptionDao.upsert(it) }
+        }
+        syncAppointmentReminder(appointment, reminderMinutesBefore ?: recurrenceReminderMinutes)
+        propagateSeriesAppointments.forEach { syncAppointmentReminder(it, overrideMinutesBefore = recurrenceReminderMinutes) }
+        syncRecurringScheduleRemindersInternal()
         notifyWidgetsChanged()
         appointmentId
     }
@@ -1750,12 +2267,174 @@ class NexusRepository(
         appointmentDao.getById(id)
     }
 
-    suspend fun deleteAppointment(appointmentId: String): Result<Unit> =
-        safeDbCall("Agenda") {
-            cancelAndDeleteRemindersForSource(ReminderSourceType.APPOINTMENT, appointmentId)
-            appointmentDao.deleteById(appointmentId)
+    suspend fun openOrMaterializeRecurringAppointmentOccurrence(
+        recurrenceId: String,
+        occurrenceDateIso: String
+    ): Result<String> = safeDbCall("Compromissos Recorrentes") {
+        val existing = appointmentDao.getByRecurrenceAndDate(recurrenceId, occurrenceDateIso)
+        if (existing != null) return@safeDbCall existing.id
+
+        val recurrence = taskRecurrenceDao.getById(recurrenceId)
+            ?: throw IllegalStateException("Série recorrente não encontrada.")
+        val occDate = RecurrenceEngine.parseLocalDateOrNull(occurrenceDateIso)
+            ?: throw IllegalArgumentException("Data de ocorrência inválida: $occurrenceDateIso")
+        val now = DateTimeUtils.nowEpochMillis()
+        val exception = recurrenceExceptionDao.getByRecurrenceAndDate(recurrenceId, occurrenceDateIso)
+        val isOverride = exception?.exceptionType == RecurrenceExceptionType.OVERRIDE
+        val effectiveAllDay = if (isOverride && exception?.overrideIsAllDay != null) {
+            exception.overrideIsAllDay
+        } else {
+            recurrence.isAllDay
+        }
+        val baseDuration = recurrence.durationMillis.coerceAtLeast(60_000L)
+        val startAt = if (isOverride && exception?.overrideDueAt != null) {
+            exception.overrideDueAt
+        } else {
+            RecurrenceEngine.computeScheduleStartEpoch(
+                date = occDate,
+                isAllDay = effectiveAllDay,
+                dueTimeMinutesOfDay = recurrence.dueTimeMinutesOfDay
+            )
+        }
+        val endAt = if (isOverride && exception?.overrideEndAt != null) {
+            exception.overrideEndAt.coerceAtLeast(startAt + 60_000L)
+        } else if (effectiveAllDay) {
+            val spanEndDate = DateTimeUtils.toLocalDate(startAt + baseDuration - 60_000L)
+                .coerceAtLeast(DateTimeUtils.toLocalDate(startAt))
+            DateTimeUtils.localDateToEndOfDayEpoch(spanEndDate)
+        } else {
+            startAt + baseDuration
+        }
+        val effectiveTitle = if (isOverride && !exception?.overrideTitle.isNullOrBlank()) {
+            exception!!.overrideTitle!!
+        } else {
+            recurrence.title
+        }
+        val effectiveDescription = if (isOverride && exception?.overrideDescription != null) {
+            exception.overrideDescription
+        } else {
+            recurrence.description
+        }
+        val effectiveLocation = if (isOverride && exception?.overrideLocation != null) {
+            exception.overrideLocation
+        } else {
+            recurrence.location
+        }
+        val effectiveLink = if (isOverride && exception?.overrideLink != null) {
+            exception.overrideLink
+        } else {
+            recurrence.link
+        }
+
+        val candidate = AppointmentEntity(
+            id = UUID.randomUUID().toString(),
+            title = effectiveTitle,
+            description = effectiveDescription,
+            categoryId = recurrence.categoryId,
+            eventId = recurrence.eventId,
+            startAt = startAt,
+            endAt = endAt,
+            isAllDay = effectiveAllDay,
+            location = effectiveLocation,
+            link = effectiveLink,
+            recurrenceId = recurrence.id,
+            occurrenceDateIso = occurrenceDateIso,
+            createdAt = now,
+            updatedAt = now
+        )
+        val rowId = database.withTransaction {
+            val insertedId = appointmentDao.insertIgnore(candidate)
+            if (insertedId != -1L && exception != null) {
+                recurrenceExceptionDao.upsert(exception.copy(appointmentId = candidate.id, updatedAt = now))
+            }
+            insertedId
+        }
+        val persisted = if (rowId != -1L) {
+            candidate
+        } else {
+            appointmentDao.getByRecurrenceAndDate(recurrenceId, occurrenceDateIso) ?: candidate
+        }
+        if (rowId != -1L) {
+            val virtualId = RecurrenceEngine.virtualOccurrenceId(recurrenceId, occurrenceDateIso)
+            val virtualReminder = reminderDao.getBySourceAndCategory(
+                ReminderSourceType.APPOINTMENT,
+                virtualId,
+                ReminderCategory.SCHEDULE
+            )
+            val effectiveRemMinutes = virtualReminder?.minutesBefore?.takeIf { it >= 0 }
+                ?: recurrence.reminderMinutesBefore
+            cancelAndDeleteRemindersForSource(ReminderSourceType.APPOINTMENT, virtualId)
+            if (virtualReminder?.status != ReminderStatus.DISMISSED) {
+                syncAppointmentReminder(persisted, overrideMinutesBefore = effectiveRemMinutes)
+            }
             notifyWidgetsChanged()
         }
+        persisted.id
+    }
+
+    suspend fun deleteAppointment(
+        appointmentId: String,
+        scope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY
+    ): Result<Unit> = safeDbCall("Agenda") {
+        val now = DateTimeUtils.nowEpochMillis()
+        val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(appointmentId)
+        val existing = if (virtualPair != null) {
+            appointmentDao.getByRecurrenceAndDate(virtualPair.first, virtualPair.second)
+        } else {
+            appointmentDao.getById(appointmentId)
+        }
+        val recId = existing?.recurrenceId ?: virtualPair?.first
+
+        if (recId != null) {
+            if (scope == RecurringEditScope.ENTIRE_SERIES) {
+                val seriesAppts = appointmentDao.getByRecurrenceId(recId)
+                seriesAppts.forEach { appt ->
+                    cancelAndDeleteRemindersForSource(ReminderSourceType.APPOINTMENT, appt.id)
+                }
+                cancelAndDeleteVirtualRemindersForRecurrence(ReminderSourceType.APPOINTMENT, recId)
+                database.withTransaction {
+                    appointmentDao.deleteByRecurrenceId(recId)
+                    recurrenceExceptionDao.deleteByRecurrenceId(recId)
+                    taskRecurrenceDao.deleteById(recId)
+                }
+            } else {
+                val occIso = existing?.occurrenceDateIso
+                    ?: virtualPair?.second
+                    ?: existing?.let { DateTimeUtils.toLocalDate(it.startAt).toString() }
+                if (existing != null) {
+                    cancelAndDeleteRemindersForSource(ReminderSourceType.APPOINTMENT, existing.id)
+                }
+                if (occIso != null) {
+                    cancelAndDeleteRemindersForSource(
+                        ReminderSourceType.APPOINTMENT,
+                        RecurrenceEngine.virtualOccurrenceId(recId, occIso)
+                    )
+                }
+                database.withTransaction {
+                    if (occIso != null) {
+                        val existingEx = recurrenceExceptionDao.getByRecurrenceAndDate(recId, occIso)
+                        recurrenceExceptionDao.upsert(
+                            RecurrenceExceptionEntity(
+                                id = existingEx?.id ?: UUID.randomUUID().toString(),
+                                recurrenceId = recId,
+                                occurrenceDateIso = occIso,
+                                exceptionType = RecurrenceExceptionType.SKIP,
+                                appointmentId = null,
+                                createdAt = existingEx?.createdAt ?: now,
+                                updatedAt = now
+                            )
+                        )
+                    }
+                    existing?.let { appointmentDao.deleteById(it.id) }
+                }
+            }
+        } else if (existing != null) {
+            cancelAndDeleteRemindersForSource(ReminderSourceType.APPOINTMENT, existing.id)
+            appointmentDao.deleteById(existing.id)
+        }
+        syncRecurringScheduleRemindersInternal()
+        notifyWidgetsChanged()
+    }
 
     // --- Eventos e Integracao Financeira ---
 
@@ -1784,11 +2463,28 @@ class NexusRepository(
         paymentMethod: PaymentMethod = PaymentMethod.PIX,
         creditCardId: String? = null,
         installmentsCount: Int = 1,
-        reminderMinutesBefore: Int? = null
+        reminderMinutesBefore: Int? = null,
+        recurrenceDraft: TaskRecurrenceDraft? = null,
+        recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY
     ): Result<String> = safeDbCall("Eventos") {
         val cleanName = name.trim()
         require(cleanName.isNotEmpty()) { "O nome do evento é obrigatório." }
+        val cleanDescription = description.trim()
+        val cleanOfficialLink = officialLink.trim()
+        val cleanTicketLink = ticketLink.trim()
+        val cleanLocationName = locationName.trim()
+        val cleanAddress = address.trim()
+        val cleanCity = city.trim()
+        val cleanState = state.trim()
+        val cleanNotes = notes.trim()
         val normalizedEnd = if (endAt >= startAt) endAt else startAt + 7_200_000L
+        val durationMillis = (normalizedEnd - startAt).coerceAtLeast(60_000L)
+        val dueMinutesOfDay = if (isAllDay) {
+            null
+        } else {
+            RecurrenceEngine.minutesOfDayFromTime(DateTimeUtils.epochToLocalTime(startAt))
+        }
+
         val safeQty = ticketQuantity.coerceAtLeast(1)
         val safeInstallments = if (paymentMethod == PaymentMethod.CREDIT_CARD) {
             installmentsCount.coerceIn(1, 120)
@@ -1801,25 +2497,280 @@ class NexusRepository(
             (ticketPriceCents.coerceAtLeast(0L) * safeQty) + ticketFeesCents.coerceAtLeast(0L)
         }
         val now = DateTimeUtils.nowEpochMillis()
-        val existing = id?.let { eventDao.getById(it) }
+
+        val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(id)
+        val existing = when {
+            virtualPair != null -> eventDao.getByRecurrenceAndDate(virtualPair.first, virtualPair.second)
+            id != null -> eventDao.getById(id)
+            else -> null
+        }
         val eventId = existing?.id ?: UUID.randomUUID().toString()
         val resolvedCardId = if (paymentMethod == PaymentMethod.CREDIT_CARD) creditCardId else null
+        val existingRecurrenceId = existing?.recurrenceId ?: virtualPair?.first
+        val existingOccurrenceIso = existing?.occurrenceDateIso ?: virtualPair?.second
+        val existingRecurrence = existingRecurrenceId?.let { taskRecurrenceDao.getById(it) }
+
+        val templateTicketStatus = if (
+            ticketStatus == TicketStatus.FREE ||
+            ticketStatus == TicketStatus.NOT_BOUGHT ||
+            ticketStatus == TicketStatus.CANCELLED
+        ) {
+            ticketStatus
+        } else {
+            TicketStatus.NOT_BOUGHT
+        }
+
+        var finalRecurrenceId: String? = existingRecurrenceId
+        var finalOccurrenceDateIso: String? = existingOccurrenceIso
+        var finalStartAt: Long = startAt
+        var finalEndAt: Long = normalizedEnd
+        var seriesTemplateToUpsert: TaskRecurrenceEntity? = null
+        var exceptionToUpsert: RecurrenceExceptionEntity? = null
+        var exceptionToDeleteKey: Pair<String, String>? = null
+        var eventsToDeleteIds: List<String> = emptyList()
+        var recurrenceToDeleteId: String? = null
+        var unlinkRecurrenceId: String? = null
+        var propagateSeriesEvents: List<EventEntity> = emptyList()
+        var recurrenceReminderMinutes: Int? = reminderMinutesBefore
+
+        if (existingRecurrence == null) {
+            if (recurrenceDraft != null) {
+                val newRecId = UUID.randomUUID().toString()
+                val startDateIso = recurrenceDraft.startDateIso.ifBlank {
+                    DateTimeUtils.toLocalDate(startAt).toString()
+                }
+                val startDate = RecurrenceEngine.parseLocalDateOrNull(startDateIso)
+                    ?: DateTimeUtils.toLocalDate(startAt)
+                val newRec = TaskRecurrenceEntity(
+                    id = newRecId,
+                    title = cleanName,
+                    description = cleanDescription,
+                    categoryId = categoryId,
+                    priority = TaskPriority.NORMAL,
+                    notes = cleanNotes,
+                    hasDueTime = !isAllDay,
+                    dueTimeMinutesOfDay = dueMinutesOfDay,
+                    reminderMinutesBefore = reminderMinutesBefore,
+                    frequency = recurrenceDraft.frequency,
+                    customIntervalDays = recurrenceDraft.customIntervalDays.coerceAtLeast(1),
+                    weekdaysMask = recurrenceDraft.weekdaysMask,
+                    startDateIso = startDate.toString(),
+                    endDateIso = recurrenceDraft.endDateIso?.takeIf { it.isNotBlank() },
+                    maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
+                    isActive = true,
+                    domain = RecurrenceDomain.EVENT,
+                    isAllDay = isAllDay,
+                    durationMillis = durationMillis,
+                    officialLink = cleanOfficialLink,
+                    ticketLink = cleanTicketLink,
+                    locationName = cleanLocationName,
+                    address = cleanAddress,
+                    city = cleanCity,
+                    state = cleanState,
+                    eventStatus = if (eventStatus == EventLifecycleStatus.ATTENDED) {
+                        EventLifecycleStatus.PLANNED
+                    } else {
+                        eventStatus
+                    },
+                    ticketStatus = templateTicketStatus,
+                    ticketPriceCents = if (ticketStatus == TicketStatus.FREE) 0L else ticketPriceCents.coerceAtLeast(0L),
+                    ticketQuantity = safeQty,
+                    ticketFeesCents = if (ticketStatus == TicketStatus.FREE) 0L else ticketFeesCents.coerceAtLeast(0L),
+                    paymentMethod = paymentMethod,
+                    creditCardId = resolvedCardId,
+                    installmentsCount = safeInstallments,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                val firstScheduledDate = RecurrenceEngine.generateScheduledDates(
+                    recurrence = newRec,
+                    upToDateInclusive = startDate.plusDays(400),
+                    hardCap = 1
+                ).firstOrNull() ?: startDate
+                val userStartDate = DateTimeUtils.toLocalDate(startAt)
+                finalOccurrenceDateIso = firstScheduledDate.toString()
+                if (userStartDate == firstScheduledDate) {
+                    finalStartAt = startAt
+                    finalEndAt = normalizedEnd
+                } else {
+                    finalStartAt = RecurrenceEngine.computeScheduleStartEpoch(
+                        date = firstScheduledDate,
+                        isAllDay = isAllDay,
+                        dueTimeMinutesOfDay = dueMinutesOfDay
+                    )
+                    finalEndAt = if (isAllDay) {
+                        val spanEndDate = DateTimeUtils.toLocalDate(finalStartAt + durationMillis - 60_000L)
+                            .coerceAtLeast(firstScheduledDate)
+                        DateTimeUtils.localDateToEndOfDayEpoch(spanEndDate)
+                    } else {
+                        finalStartAt + durationMillis
+                    }
+                }
+                finalRecurrenceId = newRecId
+                seriesTemplateToUpsert = newRec
+                recurrenceReminderMinutes = newRec.reminderMinutesBefore
+            } else {
+                finalRecurrenceId = null
+                finalOccurrenceDateIso = null
+            }
+        } else {
+            recurrenceReminderMinutes = existingRecurrence.reminderMinutesBefore
+            when (recurringEditScope) {
+                RecurringEditScope.THIS_OCCURRENCE_ONLY -> {
+                    val occIso = existingOccurrenceIso ?: DateTimeUtils.toLocalDate(startAt).toString()
+                    finalRecurrenceId = existingRecurrence.id
+                    finalOccurrenceDateIso = occIso
+                    val changedVsSeriesOrExisting = cleanName != existingRecurrence.title ||
+                        cleanDescription != existingRecurrence.description ||
+                        cleanLocationName != existingRecurrence.locationName ||
+                        cleanOfficialLink != existingRecurrence.officialLink ||
+                        isAllDay != existingRecurrence.isAllDay ||
+                        (existing != null && (startAt != existing.startAt || normalizedEnd != existing.endAt)) ||
+                        virtualPair != null
+                    if (changedVsSeriesOrExisting) {
+                        val existingEx = recurrenceExceptionDao.getByRecurrenceAndDate(existingRecurrence.id, occIso)
+                        exceptionToUpsert = RecurrenceExceptionEntity(
+                            id = existingEx?.id ?: UUID.randomUUID().toString(),
+                            recurrenceId = existingRecurrence.id,
+                            occurrenceDateIso = occIso,
+                            exceptionType = RecurrenceExceptionType.OVERRIDE,
+                            overrideTitle = cleanName,
+                            overrideDueAt = startAt,
+                            overrideEndAt = normalizedEnd,
+                            overrideDescription = cleanDescription,
+                            overrideLocation = cleanLocationName,
+                            overrideLink = cleanOfficialLink,
+                            overrideIsAllDay = isAllDay,
+                            eventId = eventId,
+                            createdAt = existingEx?.createdAt ?: now,
+                            updatedAt = now
+                        )
+                    }
+                }
+
+                RecurringEditScope.ENTIRE_SERIES -> {
+                    if (recurrenceDraft == null) {
+                        val siblingEvents = eventDao.getByRecurrenceId(existingRecurrence.id)
+                            .filter { it.id != eventId }
+                        eventsToDeleteIds = siblingEvents.filter { sib ->
+                            sib.eventStatus != EventLifecycleStatus.ATTENDED &&
+                                transactionDao.getTicketObligationsByEvent(sib.id).none { it.status == FinancialStatus.SETTLED }
+                        }.map { it.id }
+                        unlinkRecurrenceId = existingRecurrence.id
+                        recurrenceToDeleteId = existingRecurrence.id
+                        finalRecurrenceId = null
+                        finalOccurrenceDateIso = null
+                    } else {
+                        val resolvedReminderPref = reminderMinutesBefore ?: existingRecurrence.reminderMinutesBefore
+                        val updatedRec = existingRecurrence.copy(
+                            title = cleanName,
+                            description = cleanDescription,
+                            categoryId = categoryId,
+                            notes = cleanNotes,
+                            hasDueTime = !isAllDay,
+                            dueTimeMinutesOfDay = dueMinutesOfDay,
+                            reminderMinutesBefore = resolvedReminderPref,
+                            frequency = recurrenceDraft.frequency,
+                            customIntervalDays = recurrenceDraft.customIntervalDays.coerceAtLeast(1),
+                            weekdaysMask = recurrenceDraft.weekdaysMask,
+                            startDateIso = recurrenceDraft.startDateIso.ifBlank { existingRecurrence.startDateIso },
+                            endDateIso = recurrenceDraft.endDateIso?.takeIf { it.isNotBlank() },
+                            maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
+                            isAllDay = isAllDay,
+                            durationMillis = durationMillis,
+                            officialLink = cleanOfficialLink,
+                            ticketLink = cleanTicketLink,
+                            locationName = cleanLocationName,
+                            address = cleanAddress,
+                            city = cleanCity,
+                            state = cleanState,
+                            eventStatus = if (eventStatus == EventLifecycleStatus.ATTENDED) {
+                                existingRecurrence.eventStatus
+                            } else {
+                                eventStatus
+                            },
+                            ticketStatus = templateTicketStatus,
+                            ticketPriceCents = if (ticketStatus == TicketStatus.FREE) 0L else ticketPriceCents.coerceAtLeast(0L),
+                            ticketQuantity = safeQty,
+                            ticketFeesCents = if (ticketStatus == TicketStatus.FREE) 0L else ticketFeesCents.coerceAtLeast(0L),
+                            paymentMethod = paymentMethod,
+                            creditCardId = resolvedCardId,
+                            installmentsCount = safeInstallments,
+                            updatedAt = now
+                        )
+                        seriesTemplateToUpsert = updatedRec
+                        recurrenceReminderMinutes = resolvedReminderPref
+                        finalRecurrenceId = updatedRec.id
+                        finalOccurrenceDateIso = existingOccurrenceIso ?: DateTimeUtils.toLocalDate(startAt).toString()
+                        if (existingOccurrenceIso != null) {
+                            exceptionToDeleteKey = updatedRec.id to existingOccurrenceIso
+                        }
+                        val allExByDate = recurrenceExceptionDao.getByRecurrenceId(existingRecurrence.id)
+                            .associateBy { it.occurrenceDateIso }
+                        propagateSeriesEvents = eventDao.getByRecurrenceId(existingRecurrence.id)
+                            .filter {
+                                it.id != eventId &&
+                                    it.eventStatus != EventLifecycleStatus.ATTENDED &&
+                                    it.eventStatus != EventLifecycleStatus.CANCELLED
+                            }
+                            .mapNotNull { linked ->
+                                val linkedIso = linked.occurrenceDateIso
+                                    ?: DateTimeUtils.toLocalDate(linked.startAt).toString()
+                                if (allExByDate[linkedIso]?.exceptionType == RecurrenceExceptionType.OVERRIDE) {
+                                    return@mapNotNull null
+                                }
+                                val linkedDate = RecurrenceEngine.parseLocalDateOrNull(linkedIso)
+                                    ?: DateTimeUtils.toLocalDate(linked.startAt)
+                                val nextLinkedStart = RecurrenceEngine.computeScheduleStartEpoch(
+                                    date = linkedDate,
+                                    isAllDay = isAllDay,
+                                    dueTimeMinutesOfDay = dueMinutesOfDay
+                                )
+                                val nextLinkedEnd = if (isAllDay) {
+                                    val spanEndDate = DateTimeUtils.toLocalDate(nextLinkedStart + durationMillis - 60_000L)
+                                        .coerceAtLeast(linkedDate)
+                                    DateTimeUtils.localDateToEndOfDayEpoch(spanEndDate)
+                                } else {
+                                    nextLinkedStart + durationMillis
+                                }
+                                // Preserva status financeiro e transações existentes da ocorrência irmã
+                                linked.copy(
+                                    name = cleanName,
+                                    description = cleanDescription,
+                                    categoryId = categoryId,
+                                    startAt = nextLinkedStart,
+                                    endAt = nextLinkedEnd,
+                                    isAllDay = isAllDay,
+                                    officialLink = cleanOfficialLink,
+                                    ticketLink = cleanTicketLink,
+                                    locationName = cleanLocationName,
+                                    address = cleanAddress,
+                                    city = cleanCity,
+                                    state = cleanState,
+                                    notes = cleanNotes,
+                                    updatedAt = now
+                                )
+                            }
+                    }
+                }
+            }
+        }
 
         val savedEvent = EventEntity(
             id = eventId,
             name = cleanName,
-            description = description.trim(),
+            description = cleanDescription,
             categoryId = categoryId,
-            startAt = startAt,
-            endAt = normalizedEnd,
+            startAt = finalStartAt,
+            endAt = finalEndAt,
             isAllDay = isAllDay,
-            officialLink = officialLink.trim(),
-            ticketLink = ticketLink.trim(),
-            locationName = locationName.trim(),
-            address = address.trim(),
-            city = city.trim(),
-            state = state.trim(),
-            notes = notes.trim(),
+            officialLink = cleanOfficialLink,
+            ticketLink = cleanTicketLink,
+            locationName = cleanLocationName,
+            address = cleanAddress,
+            city = cleanCity,
+            state = cleanState,
+            notes = cleanNotes,
             eventStatus = eventStatus,
             ticketStatus = ticketStatus,
             ticketPriceCents = if (ticketStatus == TicketStatus.FREE) 0L else ticketPriceCents.coerceAtLeast(0L),
@@ -1831,6 +2782,8 @@ class NexusRepository(
             paymentMethod = paymentMethod,
             creditCardId = resolvedCardId,
             installmentsCount = safeInstallments,
+            recurrenceId = finalRecurrenceId,
+            occurrenceDateIso = finalOccurrenceDateIso,
             createdAt = existing?.createdAt ?: now,
             updatedAt = now
         )
@@ -1838,8 +2791,40 @@ class NexusRepository(
         var affectedTicketTransactions: List<TransactionEntity> = emptyList()
         var removedTicketTransactionIds: List<String> = emptyList()
 
+        eventsToDeleteIds.forEach { delId ->
+            cancelAndDeleteRemindersForSource(ReminderSourceType.EVENT, delId)
+            transactionDao.getTicketObligationsByEvent(delId).forEach { tx ->
+                cancelAndDeleteRemindersForSource(ReminderSourceType.TRANSACTION, tx.id)
+            }
+        }
+        if (virtualPair != null) {
+            cancelAndDeleteRemindersForSource(
+                ReminderSourceType.EVENT,
+                RecurrenceEngine.virtualOccurrenceId(virtualPair.first, virtualPair.second)
+            )
+        }
+        if (recurrenceToDeleteId != null) {
+            cancelAndDeleteVirtualRemindersForRecurrence(ReminderSourceType.EVENT, recurrenceToDeleteId)
+        }
+
         database.withTransaction {
+            if (unlinkRecurrenceId != null) {
+                eventsToDeleteIds.forEach { delId ->
+                    deleteSingleEventInternal(delId, now)
+                }
+                recurrenceExceptionDao.deleteByRecurrenceId(unlinkRecurrenceId)
+                eventDao.unlinkRecurrence(unlinkRecurrenceId, now)
+                recurrenceToDeleteId?.let { taskRecurrenceDao.deleteById(it) }
+            }
+            seriesTemplateToUpsert?.let { taskRecurrenceDao.upsert(it) }
             eventDao.upsert(savedEvent)
+            propagateSeriesEvents.forEach { eventDao.update(it) }
+            exceptionToDeleteKey?.let { (recId, occIso) ->
+                recurrenceExceptionDao.getByRecurrenceAndDate(recId, occIso)
+                    ?.takeIf { it.exceptionType == RecurrenceExceptionType.OVERRIDE }
+                    ?.let { recurrenceExceptionDao.deleteById(it.id) }
+            }
+            exceptionToUpsert?.let { recurrenceExceptionDao.upsert(it) }
 
             val existingObligations = transactionDao.getTicketObligationsByEvent(eventId)
             val existingPurchaseId = existingObligations.firstNotNullOfOrNull { it.installmentPurchaseId }
@@ -1859,14 +2844,12 @@ class NexusRepository(
                     }
                 }
             } else if (safeInstallments > 1 && paymentMethod == PaymentMethod.CREDIT_CARD) {
-                // Ingresso parcelado no cartao: cria/atualiza InstallmentPurchase + N transacoes sem duplicar
-                val firstDueEpoch = ticketDueDate ?: ticketPurchaseDate ?: startAt
+                val firstDueEpoch = ticketDueDate ?: ticketPurchaseDate ?: finalStartAt
                 val firstDueDate = DateTimeUtils.epochToLocalDate(firstDueEpoch)
                 val purchaseId = existingPurchaseId ?: UUID.randomUUID().toString()
                 val baseInstallment = computedTotal / safeInstallments
                 val remainder = computedTotal % safeInstallments
 
-                // Remove obrigacao unica anterior nao parcelada
                 val unlinkedOld = existingObligations.filter { it.installmentPurchaseId == null }
                 removedTicketTransactionIds = removedTicketTransactionIds + unlinkedOld.map { it.id }
                 unlinkedOld.forEach { transactionDao.deleteById(it.id) }
@@ -1945,7 +2928,6 @@ class NexusRepository(
                     "$cleanName · ${safeInstallments}x · ${DateTimeUtils.formatBrl(computedTotal)}"
                 )
             } else {
-                // Obrigacao unica de ingresso
                 if (existingPurchaseId != null) {
                     val purchaseTxs = existingObligations.filter { it.installmentPurchaseId == existingPurchaseId }
                     removedTicketTransactionIds = removedTicketTransactionIds + purchaseTxs.drop(1).map { it.id }
@@ -1953,7 +2935,7 @@ class NexusRepository(
                     installmentPurchaseDao.deleteById(existingPurchaseId)
                 }
                 val keeper = existingObligations.firstOrNull()
-                val dueEpoch = ticketDueDate ?: startAt
+                val dueEpoch = ticketDueDate ?: finalStartAt
                 val occurredEpoch = ticketPurchaseDate ?: now
                 val targetFinancialStatus = if (ticketStatus.isPaidOrBought) {
                     FinancialStatus.SETTLED
@@ -1998,43 +2980,257 @@ class NexusRepository(
             }
         }
 
-        // Lembrete nao-financeiro do evento continua ativo mesmo se ingresso estiver pago
-        syncEventReminder(savedEvent, reminderMinutesBefore)
+        syncEventReminder(savedEvent, reminderMinutesBefore ?: recurrenceReminderMinutes)
+        propagateSeriesEvents.forEach { syncEventReminder(it, overrideMinutesBefore = recurrenceReminderMinutes) }
         removedTicketTransactionIds.forEach { txId ->
             cancelAndDeleteRemindersForSource(ReminderSourceType.TRANSACTION, txId)
         }
         affectedTicketTransactions.forEach { tx ->
             syncTransactionReminder(tx, overrideMinutesBefore = null)
         }
+        syncRecurringScheduleRemindersInternal()
         notifyWidgetsChanged()
         eventId
+    }
+
+    suspend fun openOrMaterializeRecurringEventOccurrence(
+        recurrenceId: String,
+        occurrenceDateIso: String
+    ): Result<String> = safeDbCall("Eventos Recorrentes") {
+        val existing = eventDao.getByRecurrenceAndDate(recurrenceId, occurrenceDateIso)
+        if (existing != null) return@safeDbCall existing.id
+
+        val recurrence = taskRecurrenceDao.getById(recurrenceId)
+            ?: throw IllegalStateException("Série recorrente não encontrada.")
+        val occDate = RecurrenceEngine.parseLocalDateOrNull(occurrenceDateIso)
+            ?: throw IllegalArgumentException("Data de ocorrência inválida: $occurrenceDateIso")
+        val now = DateTimeUtils.nowEpochMillis()
+        val exception = recurrenceExceptionDao.getByRecurrenceAndDate(recurrenceId, occurrenceDateIso)
+        val isOverride = exception?.exceptionType == RecurrenceExceptionType.OVERRIDE
+        val effectiveAllDay = if (isOverride && exception?.overrideIsAllDay != null) {
+            exception.overrideIsAllDay
+        } else {
+            recurrence.isAllDay
+        }
+        val baseDuration = recurrence.durationMillis.coerceAtLeast(60_000L)
+        val startAt = if (isOverride && exception?.overrideDueAt != null) {
+            exception.overrideDueAt
+        } else {
+            RecurrenceEngine.computeScheduleStartEpoch(
+                date = occDate,
+                isAllDay = effectiveAllDay,
+                dueTimeMinutesOfDay = recurrence.dueTimeMinutesOfDay
+            )
+        }
+        val endAt = if (isOverride && exception?.overrideEndAt != null) {
+            exception.overrideEndAt.coerceAtLeast(startAt + 60_000L)
+        } else if (effectiveAllDay) {
+            val spanEndDate = DateTimeUtils.toLocalDate(startAt + baseDuration - 60_000L)
+                .coerceAtLeast(DateTimeUtils.toLocalDate(startAt))
+            DateTimeUtils.localDateToEndOfDayEpoch(spanEndDate)
+        } else {
+            startAt + baseDuration
+        }
+        val effectiveName = if (isOverride && !exception?.overrideTitle.isNullOrBlank()) {
+            exception!!.overrideTitle!!
+        } else {
+            recurrence.title
+        }
+        val effectiveDescription = if (isOverride && exception?.overrideDescription != null) {
+            exception.overrideDescription
+        } else {
+            recurrence.description
+        }
+        val effectiveLocationName = if (isOverride && exception?.overrideLocation != null) {
+            exception.overrideLocation
+        } else {
+            recurrence.locationName
+        }
+        val effectiveOfficialLink = if (isOverride && exception?.overrideLink != null) {
+            exception.overrideLink
+        } else {
+            recurrence.officialLink
+        }
+        val safeTicketStatus = when (recurrence.ticketStatus) {
+            TicketStatus.FREE -> TicketStatus.FREE
+            TicketStatus.CANCELLED -> TicketStatus.CANCELLED
+            else -> TicketStatus.NOT_BOUGHT
+        }
+
+        // Materialização sob demanda nunca cria transações ou obrigações financeiras fantasmas
+        val candidate = EventEntity(
+            id = UUID.randomUUID().toString(),
+            name = effectiveName,
+            description = effectiveDescription,
+            categoryId = recurrence.categoryId,
+            startAt = startAt,
+            endAt = endAt,
+            isAllDay = effectiveAllDay,
+            officialLink = effectiveOfficialLink,
+            ticketLink = recurrence.ticketLink,
+            locationName = effectiveLocationName,
+            address = recurrence.address,
+            city = recurrence.city,
+            state = recurrence.state,
+            notes = recurrence.notes,
+            eventStatus = if (recurrence.eventStatus == EventLifecycleStatus.ATTENDED) {
+                EventLifecycleStatus.PLANNED
+            } else {
+                recurrence.eventStatus
+            },
+            ticketStatus = safeTicketStatus,
+            ticketPriceCents = if (safeTicketStatus == TicketStatus.FREE) 0L else recurrence.ticketPriceCents,
+            ticketQuantity = recurrence.ticketQuantity.coerceAtLeast(1),
+            ticketFeesCents = if (safeTicketStatus == TicketStatus.FREE) 0L else recurrence.ticketFeesCents,
+            ticketTotalCents = 0L,
+            ticketPurchaseDate = null,
+            ticketDueDate = null,
+            paymentMethod = recurrence.paymentMethod,
+            creditCardId = recurrence.creditCardId,
+            installmentsCount = recurrence.installmentsCount.coerceIn(1, 120),
+            recurrenceId = recurrence.id,
+            occurrenceDateIso = occurrenceDateIso,
+            createdAt = now,
+            updatedAt = now
+        )
+
+        val rowId = database.withTransaction {
+            val insertedId = eventDao.insertIgnore(candidate)
+            if (insertedId != -1L && exception != null) {
+                recurrenceExceptionDao.upsert(exception.copy(eventId = candidate.id, updatedAt = now))
+            }
+            insertedId
+        }
+        val persisted = if (rowId != -1L) {
+            candidate
+        } else {
+            eventDao.getByRecurrenceAndDate(recurrenceId, occurrenceDateIso) ?: candidate
+        }
+        if (rowId != -1L) {
+            val virtualId = RecurrenceEngine.virtualOccurrenceId(recurrenceId, occurrenceDateIso)
+            val virtualReminder = reminderDao.getBySourceAndCategory(
+                ReminderSourceType.EVENT,
+                virtualId,
+                ReminderCategory.SCHEDULE
+            )
+            val effectiveRemMinutes = virtualReminder?.minutesBefore?.takeIf { it >= 0 }
+                ?: recurrence.reminderMinutesBefore
+            cancelAndDeleteRemindersForSource(ReminderSourceType.EVENT, virtualId)
+            if (virtualReminder?.status != ReminderStatus.DISMISSED) {
+                syncEventReminder(persisted, overrideMinutesBefore = effectiveRemMinutes)
+            }
+            notifyWidgetsChanged()
+        }
+        persisted.id
     }
 
     suspend fun countAppointmentsForEvent(eventId: String): Int = withContext(Dispatchers.IO) {
         appointmentDao.countByEvent(eventId)
     }
 
-    suspend fun deleteEvent(eventId: String): Result<Unit> = safeDbCall("Eventos") {
+    suspend fun deleteEvent(
+        eventId: String,
+        scope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY
+    ): Result<Unit> = safeDbCall("Eventos") {
         val now = DateTimeUtils.nowEpochMillis()
+        val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(eventId)
+        val existing = if (virtualPair != null) {
+            eventDao.getByRecurrenceAndDate(virtualPair.first, virtualPair.second)
+        } else {
+            eventDao.getById(eventId)
+        }
+        val recId = existing?.recurrenceId ?: virtualPair?.first
+
+        if (recId != null) {
+            if (scope == RecurringEditScope.ENTIRE_SERIES) {
+                val seriesEvents = eventDao.getByRecurrenceId(recId)
+                val deletableIds = mutableListOf<String>()
+                for (ev in seriesEvents) {
+                    val evTicketTxs = transactionDao.getTicketObligationsByEvent(ev.id)
+                    val hasSettled = evTicketTxs.any { it.status == FinancialStatus.SETTLED }
+                    if (ev.eventStatus != EventLifecycleStatus.ATTENDED && !hasSettled) {
+                        deletableIds += ev.id
+                        cancelAndDeleteRemindersForSource(ReminderSourceType.EVENT, ev.id)
+                        evTicketTxs.forEach { tx ->
+                            cancelAndDeleteRemindersForSource(ReminderSourceType.TRANSACTION, tx.id)
+                        }
+                    }
+                }
+                cancelAndDeleteVirtualRemindersForRecurrence(ReminderSourceType.EVENT, recId)
+                database.withTransaction {
+                    deletableIds.forEach { delId ->
+                        deleteSingleEventInternal(delId, now)
+                    }
+                    recurrenceExceptionDao.deleteByRecurrenceId(recId)
+                    eventDao.unlinkRecurrence(recId, now)
+                    taskRecurrenceDao.deleteById(recId)
+                }
+            } else {
+                val occIso = existing?.occurrenceDateIso
+                    ?: virtualPair?.second
+                    ?: existing?.let { DateTimeUtils.toLocalDate(it.startAt).toString() }
+                if (existing != null) {
+                    val ticketTxs = transactionDao.getTicketObligationsByEvent(existing.id)
+                    cancelAndDeleteRemindersForSource(ReminderSourceType.EVENT, existing.id)
+                    ticketTxs.filter { it.status != FinancialStatus.SETTLED }.forEach { tx ->
+                        cancelAndDeleteRemindersForSource(ReminderSourceType.TRANSACTION, tx.id)
+                    }
+                }
+                if (occIso != null) {
+                    cancelAndDeleteRemindersForSource(
+                        ReminderSourceType.EVENT,
+                        RecurrenceEngine.virtualOccurrenceId(recId, occIso)
+                    )
+                }
+                database.withTransaction {
+                    if (occIso != null) {
+                        val existingEx = recurrenceExceptionDao.getByRecurrenceAndDate(recId, occIso)
+                        recurrenceExceptionDao.upsert(
+                            RecurrenceExceptionEntity(
+                                id = existingEx?.id ?: UUID.randomUUID().toString(),
+                                recurrenceId = recId,
+                                occurrenceDateIso = occIso,
+                                exceptionType = RecurrenceExceptionType.SKIP,
+                                eventId = null,
+                                createdAt = existingEx?.createdAt ?: now,
+                                updatedAt = now
+                            )
+                        )
+                    }
+                    existing?.let { deleteSingleEventInternal(it.id, now) }
+                }
+            }
+        } else if (existing != null) {
+            val ticketTxs = transactionDao.getTicketObligationsByEvent(existing.id)
+            cancelAndDeleteRemindersForSource(ReminderSourceType.EVENT, existing.id)
+            ticketTxs.filter { it.status != FinancialStatus.SETTLED }.forEach { tx ->
+                cancelAndDeleteRemindersForSource(ReminderSourceType.TRANSACTION, tx.id)
+            }
+            database.withTransaction {
+                deleteSingleEventInternal(existing.id, now)
+            }
+        }
+        syncRecurringScheduleRemindersInternal()
+        notifyWidgetsChanged()
+    }
+
+    private suspend fun deleteSingleEventInternal(eventId: String, now: Long) {
         val ticketTxs = transactionDao.getTicketObligationsByEvent(eventId)
         val purchaseId = ticketTxs.firstNotNullOfOrNull { it.installmentPurchaseId }
-
-        cancelAndDeleteRemindersForSource(ReminderSourceType.EVENT, eventId)
-        ticketTxs.forEach { tx ->
-            cancelAndDeleteRemindersForSource(ReminderSourceType.TRANSACTION, tx.id)
+        taskDao.unlinkEvent(eventId, now)
+        appointmentDao.unlinkEvent(eventId, now)
+        // Protege transações liquidadas (SETTLED), removendo apenas obrigações de ingresso em aberto
+        ticketTxs.filter { it.status != FinancialStatus.SETTLED }.forEach { tx ->
+            transactionDao.deleteById(tx.id)
         }
-
-        database.withTransaction {
-            taskDao.unlinkEvent(eventId, now)
-            appointmentDao.unlinkEvent(eventId, now)
-            transactionDao.deleteTicketObligationForEvent(eventId)
-            if (purchaseId != null) {
+        if (purchaseId != null) {
+            val remainingPurchaseTxs = transactionDao.getByInstallmentPurchaseId(purchaseId)
+            if (remainingPurchaseTxs.isEmpty()) {
                 installmentPurchaseDao.deleteById(purchaseId)
             }
-            transactionDao.unlinkEvent(eventId, now)
-            eventDao.deleteById(eventId)
         }
-        notifyWidgetsChanged()
+        transactionDao.unlinkEvent(eventId, now)
+        eventDao.deleteById(eventId)
     }
 
     // --- Financeiro: Transacoes (Receitas, Despesas e Custos de Evento) ---
@@ -3103,8 +4299,19 @@ class NexusRepository(
 
     suspend fun sendTestNotification(): Result<Boolean> = safeDbCall("Notificações") {
         val today = DateTimeUtils.todayLocalDate()
+        val now = DateTimeUtils.nowEpochMillis()
         val tasksPending = taskDao.getAllOnce().count { !it.status.isTerminal }
-        val apptsToday = appointmentDao.getAllOnce().count { AgendaEngine.isAppointmentOnDate(it, today) }
+        val apptsToday = AgendaEngine.expand(
+            window = DateRange(today, today),
+            sources = AgendaSources(
+                appointments = appointmentDao.getAllOnce(),
+                taskRecurrences = taskRecurrenceDao.getAllOnce(),
+                recurrenceExceptions = recurrenceExceptionDao.getAllOnce()
+            ),
+            filters = AgendaFilters(kindFilter = AgendaOccurrenceKind.APPOINTMENT),
+            today = today,
+            nowEpoch = now
+        ).size
         val summary = "Canal local ativo · $tasksPending tarefas pendentes · $apptsToday compromissos hoje."
         notificationScheduler?.showTestNotification(summary) ?: false
     }
@@ -3112,6 +4319,7 @@ class NexusRepository(
     suspend fun syncPeriodicOfflineSafety() {
         withContext(Dispatchers.IO) {
             generateAllUpcomingRecurringOccurrences()
+            syncRecurringScheduleRemindersInternal()
             val now = DateTimeUtils.nowEpochMillis()
             val settings = getOrCreateRoutineSettings(now)
             if (!settings.notificationsEnabled) return@withContext
@@ -3173,6 +4381,9 @@ class NexusRepository(
             defaultMessage = "Feche pendências de hoje e prepare a agenda de amanhã.",
             now = now
         )
+
+        // Sincroniza janela rolante (14 dias) de lembretes virtuais de compromissos e eventos recorrentes
+        syncRecurringScheduleRemindersInternal()
 
         // Reagenda lembretes ativos existentes respeitando modo silencio e canais
         val active = reminderDao.getByStatus(ReminderStatus.ACTIVE)
@@ -3704,6 +4915,170 @@ class NexusRepository(
         }
     }
 
+    private suspend fun cancelAndDeleteVirtualRemindersForRecurrence(
+        sourceType: ReminderSourceType,
+        recurrenceId: String
+    ) {
+        val matching = reminderDao.getAllOnce().filter { reminder ->
+            reminder.sourceType == sourceType &&
+                RecurrenceEngine.parseVirtualOccurrenceId(reminder.sourceId)?.first == recurrenceId
+        }
+        matching.forEach { reminder ->
+            notificationScheduler?.cancelAlarm(reminder.id)
+            notificationScheduler?.cancelDisplayedNotification(reminder.id)
+            reminderDao.deleteById(reminder.id)
+        }
+    }
+
+    private suspend fun syncRecurringScheduleRemindersInternal() {
+        val now = DateTimeUtils.nowEpochMillis()
+        val settings = getOrCreateRoutineSettings(now)
+        val today = DateTimeUtils.todayLocalDate()
+        val reminderWindow = DateRange(today, today.plusDays(14))
+
+        val activeRecurrences = taskRecurrenceDao.getActiveOnce()
+        val allExceptions = recurrenceExceptionDao.getAllOnce()
+        val allAppointments = appointmentDao.getAllOnce()
+        val allEvents = eventDao.getAllOnce()
+
+        val desiredKeys = hashSetOf<Pair<ReminderSourceType, String>>()
+
+        val virtualAppts = RecurrenceEngine.projectVirtualAppointments(
+            window = reminderWindow,
+            recurrences = activeRecurrences,
+            exceptions = allExceptions,
+            materializedAppointments = allAppointments
+        )
+        virtualAppts.forEach { proj ->
+            val remPref = proj.recurrence.reminderMinutesBefore
+            if (remPref != null && remPref < 0) return@forEach
+            val vSourceId = RecurrenceEngine.virtualOccurrenceId(proj.recurrence.id, proj.occurrenceDateIso)
+            val minutes = remPref ?: settings.defaultAppointmentReminderMinutes
+            val rawTrigger = NexusNotificationScheduler.computeReminderTriggerEpoch(
+                dueEpoch = proj.startAt,
+                hasSpecificTime = !proj.isAllDay,
+                minutesBefore = minutes
+            )
+            val triggerAt = NexusNotificationScheduler.adjustForQuietHours(rawTrigger, settings)
+            if (triggerAt <= now) return@forEach
+
+            desiredKeys += ReminderSourceType.APPOINTMENT to vSourceId
+            val existing = reminderDao.getBySourceAndCategory(
+                ReminderSourceType.APPOINTMENT,
+                vSourceId,
+                ReminderCategory.SCHEDULE
+            )
+            if (existing != null &&
+                (ReminderRules.isEffectivelyCancelled(existing) ||
+                    existing.status == ReminderStatus.DISMISSED ||
+                    (existing.snoozedUntil != null && existing.snoozedUntil > now && existing.originalDueAt == proj.startAt))
+            ) {
+                return@forEach
+            }
+            val nextMsg = buildString {
+                append(
+                    if (proj.isAllDay) {
+                        "Dia inteiro"
+                    } else {
+                        "${DateTimeUtils.formatTime(proj.startAt)} - ${DateTimeUtils.formatTime(proj.endAt)}"
+                    }
+                )
+                if (proj.effectiveLocation.isNotBlank()) append(" · ${proj.effectiveLocation}")
+            }
+            val entity = ReminderEntity(
+                id = existing?.id ?: UUID.randomUUID().toString(),
+                sourceType = ReminderSourceType.APPOINTMENT,
+                sourceId = vSourceId,
+                category = ReminderCategory.SCHEDULE,
+                title = proj.effectiveTitle,
+                message = nextMsg,
+                triggerAt = triggerAt,
+                originalDueAt = proj.startAt,
+                minutesBefore = minutes,
+                channelId = NexusNotificationChannels.CHANNEL_SCHEDULE,
+                status = ReminderStatus.ACTIVE,
+                createdAt = existing?.createdAt ?: now,
+                updatedAt = now
+            )
+            val shouldSchedule = settings.notificationsEnabled && settings.scheduleChannelEnabled
+            val exact = if (shouldSchedule) notificationScheduler?.scheduleAlarm(entity) ?: false else false
+            reminderDao.upsert(entity.copy(isExactScheduled = exact))
+        }
+
+        val virtualEvents = RecurrenceEngine.projectVirtualEvents(
+            window = reminderWindow,
+            recurrences = activeRecurrences,
+            exceptions = allExceptions,
+            materializedEvents = allEvents
+        )
+        virtualEvents.forEach { proj ->
+            if (proj.recurrence.eventStatus == EventLifecycleStatus.CANCELLED ||
+                proj.recurrence.eventStatus == EventLifecycleStatus.ATTENDED
+            ) {
+                return@forEach
+            }
+            val remPref = proj.recurrence.reminderMinutesBefore
+            if (remPref != null && remPref < 0) return@forEach
+            val vSourceId = RecurrenceEngine.virtualOccurrenceId(proj.recurrence.id, proj.occurrenceDateIso)
+            val minutes = remPref ?: settings.defaultEventReminderMinutes
+            val rawTrigger = NexusNotificationScheduler.computeReminderTriggerEpoch(
+                dueEpoch = proj.startAt,
+                hasSpecificTime = !proj.isAllDay,
+                minutesBefore = minutes
+            )
+            val triggerAt = NexusNotificationScheduler.adjustForQuietHours(rawTrigger, settings)
+            if (triggerAt <= now) return@forEach
+
+            desiredKeys += ReminderSourceType.EVENT to vSourceId
+            val existing = reminderDao.getBySourceAndCategory(
+                ReminderSourceType.EVENT,
+                vSourceId,
+                ReminderCategory.SCHEDULE
+            )
+            if (existing != null &&
+                (ReminderRules.isEffectivelyCancelled(existing) ||
+                    existing.status == ReminderStatus.DISMISSED ||
+                    (existing.snoozedUntil != null && existing.snoozedUntil > now && existing.originalDueAt == proj.startAt))
+            ) {
+                return@forEach
+            }
+            val nextMsg = buildString {
+                append(DateTimeUtils.formatDateTime(proj.startAt))
+                if (proj.effectiveLocationName.isNotBlank()) append(" · ${proj.effectiveLocationName}")
+            }
+            val entity = ReminderEntity(
+                id = existing?.id ?: UUID.randomUUID().toString(),
+                sourceType = ReminderSourceType.EVENT,
+                sourceId = vSourceId,
+                category = ReminderCategory.SCHEDULE,
+                title = "Evento: ${proj.effectiveTitle}",
+                message = nextMsg,
+                triggerAt = triggerAt,
+                originalDueAt = proj.startAt,
+                minutesBefore = minutes,
+                channelId = NexusNotificationChannels.CHANNEL_EVENTS,
+                status = ReminderStatus.ACTIVE,
+                createdAt = existing?.createdAt ?: now,
+                updatedAt = now
+            )
+            val shouldSchedule = settings.notificationsEnabled && settings.eventsChannelEnabled
+            val exact = if (shouldSchedule) notificationScheduler?.scheduleAlarm(entity) ?: false else false
+            reminderDao.upsert(entity.copy(isExactScheduled = exact))
+        }
+
+        // Remove lembretes virtuais ativos que ficaram obsoletos após edição/exclusão/materialização
+        val activeVirtualReminders = reminderDao.getByStatus(ReminderStatus.ACTIVE).filter { r ->
+            RecurrenceEngine.parseVirtualOccurrenceId(r.sourceId) != null
+        }
+        activeVirtualReminders.forEach { reminder ->
+            if ((reminder.sourceType to reminder.sourceId) !in desiredKeys) {
+                notificationScheduler?.cancelAlarm(reminder.id)
+                notificationScheduler?.cancelDisplayedNotification(reminder.id)
+                reminderDao.deleteById(reminder.id)
+            }
+        }
+    }
+
     private suspend fun syncEventTicketStatusFromTransactionsInternal(eventId: String, now: Long) {
         val ev = eventDao.getById(eventId) ?: return
         if (ev.ticketStatus == TicketStatus.FREE || ev.ticketStatus == TicketStatus.CANCELLED) return
@@ -3736,12 +5111,39 @@ class NexusRepository(
             }
 
             ReminderSourceType.APPOINTMENT -> {
-                appointmentDao.getById(reminder.sourceId) != null
+                val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(reminder.sourceId)
+                if (virtualPair != null) {
+                    val (recId, occIso) = virtualPair
+                    val rec = taskRecurrenceDao.getById(recId) ?: return false
+                    if (!rec.isActive || rec.domain != RecurrenceDomain.APPOINTMENT) return false
+                    if (appointmentDao.getByRecurrenceAndDate(recId, occIso) != null) return false
+                    val ex = recurrenceExceptionDao.getByRecurrenceAndDate(recId, occIso)
+                    if (ex?.exceptionType == RecurrenceExceptionType.SKIP) return false
+                    val occDate = RecurrenceEngine.parseLocalDateOrNull(occIso) ?: return false
+                    occDate in RecurrenceEngine.generateScheduledDates(rec, occDate)
+                } else {
+                    appointmentDao.getById(reminder.sourceId) != null
+                }
             }
 
             ReminderSourceType.EVENT -> {
-                val ev = eventDao.getById(reminder.sourceId) ?: return false
-                ev.eventStatus != EventLifecycleStatus.CANCELLED && ev.eventStatus != EventLifecycleStatus.ATTENDED
+                val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(reminder.sourceId)
+                if (virtualPair != null) {
+                    val (recId, occIso) = virtualPair
+                    val rec = taskRecurrenceDao.getById(recId) ?: return false
+                    if (!rec.isActive || rec.domain != RecurrenceDomain.EVENT) return false
+                    if (rec.eventStatus == EventLifecycleStatus.CANCELLED || rec.eventStatus == EventLifecycleStatus.ATTENDED) {
+                        return false
+                    }
+                    if (eventDao.getByRecurrenceAndDate(recId, occIso) != null) return false
+                    val ex = recurrenceExceptionDao.getByRecurrenceAndDate(recId, occIso)
+                    if (ex?.exceptionType == RecurrenceExceptionType.SKIP) return false
+                    val occDate = RecurrenceEngine.parseLocalDateOrNull(occIso) ?: return false
+                    occDate in RecurrenceEngine.generateScheduledDates(rec, occDate)
+                } else {
+                    val ev = eventDao.getById(reminder.sourceId) ?: return false
+                    ev.eventStatus != EventLifecycleStatus.CANCELLED && ev.eventStatus != EventLifecycleStatus.ATTENDED
+                }
             }
 
             ReminderSourceType.TRANSACTION -> {
@@ -3767,9 +5169,21 @@ class NexusRepository(
         val today = DateTimeUtils.todayLocalDate()
         val tasks = taskDao.getAllOnce()
         val appts = appointmentDao.getAllOnce()
+        val recurrences = taskRecurrenceDao.getAllOnce()
+        val exceptions = recurrenceExceptionDao.getAllOnce()
         val txs = transactionDao.getAllOnce().map(::effectiveTransactionStatus)
 
-        val todayApptsCount = appts.count { AgendaEngine.isAppointmentOnDate(it, today) }
+        val todayApptsCount = AgendaEngine.expand(
+            window = DateRange(today, today),
+            sources = AgendaSources(
+                appointments = appts,
+                taskRecurrences = recurrences,
+                recurrenceExceptions = exceptions
+            ),
+            filters = AgendaFilters(kindFilter = AgendaOccurrenceKind.APPOINTMENT),
+            today = today,
+            nowEpoch = now
+        ).size
         val todayTasksCount = tasks.count {
             !it.status.isTerminal && it.dueAt != null && DateTimeUtils.epochToLocalDate(it.dueAt) == today
         }
@@ -3964,13 +5378,17 @@ class NexusRepository(
         val statements = statementDao.getAllOnce()
         val cards = creditCardDao.getAllOnce()
         val goals = financialGoalDao.getAllOnce()
+        val recurrences = taskRecurrenceDao.getAllOnce()
+        val exceptions = recurrenceExceptionDao.getAllOnce()
 
         AllWidgetSnapshots(
             myDay = buildMyDayWidgetSnapshot(
                 appointments = appointments,
                 tasks = tasks,
                 today = today,
-                nowEpoch = now
+                nowEpoch = now,
+                taskRecurrences = recurrences,
+                recurrenceExceptions = exceptions
             ),
             myTasks = buildMyTasksWidgetSnapshot(
                 tasks = tasks,
@@ -3996,7 +5414,9 @@ class NexusRepository(
                 cards = cards,
                 goals = goals,
                 today = today,
-                nowEpoch = now
+                nowEpoch = now,
+                taskRecurrences = recurrences,
+                recurrenceExceptions = exceptions
             ),
             loadedAtEpoch = now
         )
@@ -4689,54 +6109,93 @@ class NexusRepository(
             appointments: List<AppointmentEntity>,
             tasks: List<TaskEntity>,
             today: LocalDate = DateTimeUtils.todayLocalDate(),
-            nowEpoch: Long = DateTimeUtils.nowEpochMillis()
+            nowEpoch: Long = DateTimeUtils.nowEpochMillis(),
+            taskRecurrences: List<TaskRecurrenceEntity> = emptyList(),
+            recurrenceExceptions: List<RecurrenceExceptionEntity> = emptyList()
         ): MyDayWidgetSnapshot {
             val todayOccurrences = AgendaEngine.expand(
                 window = DateRange(today, today),
-                sources = AgendaSources(appointments = appointments, tasks = tasks),
+                sources = AgendaSources(
+                    appointments = appointments,
+                    tasks = tasks,
+                    taskRecurrences = taskRecurrences,
+                    recurrenceExceptions = recurrenceExceptions
+                ),
                 filters = AgendaFilters(),
                 today = today,
                 nowEpoch = nowEpoch
             )
             val appointmentMap = appointments.associateBy { it.id }
             val taskMap = tasks.associateBy { it.id }
+            val recMap = taskRecurrences.associateBy { it.id }
+            val exMap = recurrenceExceptions.associateBy { it.recurrenceId to it.occurrenceDateIso }
 
             val todayAppointments = todayOccurrences
                 .filter { it.sourceType == AgendaSourceType.APPOINTMENT }
                 .mapNotNull { occ ->
-                    val appt = appointmentMap[occ.sourceId] ?: return@mapNotNull null
-                    val timeLabel = if (appt.isAllDay) {
-                        "Dia inteiro"
+                    if (occ.isVirtualRecurrence) {
+                        val rec = occ.recurrenceId?.let { recMap[it] } ?: return@mapNotNull null
+                        val anchorIso = occ.seriesOccurrenceDateIso ?: occ.occurrenceDateIso
+                        val ex = exMap[rec.id to anchorIso]
+                        val isOverride = ex?.exceptionType == RecurrenceExceptionType.OVERRIDE
+                        val loc = if (isOverride && ex?.overrideLocation != null) ex.overrideLocation else rec.location
+                        val endEpoch = occ.endAt ?: (occ.startAt + rec.durationMillis.coerceAtLeast(60_000L))
+                        val timeLabel = if (occ.isAllDay) {
+                            "Dia inteiro"
+                        } else {
+                            "${DateTimeUtils.formatTime(occ.startAt)} - ${DateTimeUtils.formatTime(endEpoch)}"
+                        }
+                        MyDayAppointmentRow(
+                            id = RecurrenceEngine.virtualOccurrenceId(rec.id, anchorIso),
+                            title = occ.title,
+                            timeLabel = timeLabel,
+                            location = loc,
+                            hasConflict = occ.hasConflict
+                        )
                     } else {
-                        "${DateTimeUtils.formatTime(appt.startAt)} - ${DateTimeUtils.formatTime(appt.endAt)}"
+                        val appt = appointmentMap[occ.sourceId] ?: return@mapNotNull null
+                        val timeLabel = if (appt.isAllDay) {
+                            "Dia inteiro"
+                        } else {
+                            "${DateTimeUtils.formatTime(appt.startAt)} - ${DateTimeUtils.formatTime(appt.endAt)}"
+                        }
+                        MyDayAppointmentRow(
+                            id = appt.id,
+                            title = appt.title,
+                            timeLabel = timeLabel,
+                            location = appt.location,
+                            hasConflict = occ.hasConflict
+                        )
                     }
-                    MyDayAppointmentRow(
-                        id = appt.id,
-                        title = appt.title,
-                        timeLabel = timeLabel,
-                        location = appt.location,
-                        hasConflict = occ.hasConflict
-                    )
                 }
 
             val tasksDueToday = todayOccurrences
                 .filter { it.sourceType == AgendaSourceType.TASK }
-                .mapNotNull { occ -> taskMap[occ.sourceId] }
-                .filter { !it.status.isTerminal }
-                .sortedWith(
-                    compareByDescending<TaskEntity> { it.priority.sortRank }
-                        .thenBy { it.dueAt ?: Long.MAX_VALUE }
-                )
-                .map { task ->
-                    MyDayTaskRow(
-                        id = task.id,
-                        title = task.title,
-                        priority = task.priority,
-                        status = task.status,
-                        timeLabel = if (task.hasDueTime && task.dueAt != null) DateTimeUtils.formatTime(task.dueAt) else "Hoje",
-                        isOverdue = isTaskOverdue(task, nowEpoch, today)
-                    )
+                .mapNotNull { occ ->
+                    if (occ.isVirtualRecurrence) {
+                        val rec = occ.recurrenceId?.let { recMap[it] } ?: return@mapNotNull null
+                        MyDayTaskRow(
+                            id = RecurrenceEngine.virtualOccurrenceId(rec.id, occ.occurrenceDateIso),
+                            title = occ.title,
+                            priority = rec.priority,
+                            status = TaskStatus.NOT_STARTED,
+                            timeLabel = if (rec.hasDueTime) DateTimeUtils.formatTime(occ.startAt) else "Hoje",
+                            isOverdue = occ.isOverdue
+                        )
+                    } else {
+                        val task = taskMap[occ.sourceId] ?: return@mapNotNull null
+                        if (task.status.isTerminal) return@mapNotNull null
+                        MyDayTaskRow(
+                            id = task.id,
+                            title = task.title,
+                            priority = task.priority,
+                            status = task.status,
+                            timeLabel = if (task.hasDueTime && task.dueAt != null) DateTimeUtils.formatTime(task.dueAt) else "Hoje",
+                            isOverdue = isTaskOverdue(task, nowEpoch, today)
+                        )
+                    }
                 }
+                .sortedWith(compareByDescending<MyDayTaskRow> { it.priority.sortRank })
 
             val completedToday = tasks.count {
                 it.status == TaskStatus.COMPLETED &&
@@ -4885,13 +6344,16 @@ class NexusRepository(
             cards: List<CreditCardEntity>,
             goals: List<FinancialGoalEntity>,
             today: LocalDate = DateTimeUtils.todayLocalDate(),
-            nowEpoch: Long = DateTimeUtils.nowEpochMillis()
+            nowEpoch: Long = DateTimeUtils.nowEpochMillis(),
+            taskRecurrences: List<TaskRecurrenceEntity> = emptyList(),
+            recurrenceExceptions: List<RecurrenceExceptionEntity> = emptyList()
         ): NexusSummaryWidgetSnapshot {
             val startOfToday = DateTimeUtils.localDateToStartOfDayEpoch(today)
             val projectMap = projects.associateBy { it.id }
             val catMap = categories.associateBy { it.id }
             val cardMap = cards.associateBy { it.id }
-            val conflictMap = computeAppointmentConflicts(appointments)
+            val recMap = taskRecurrences.associateBy { it.id }
+            val exMap = recurrenceExceptions.associateBy { it.recurrenceId to it.occurrenceDateIso }
 
             val pendingTasks = tasks.filter { !it.status.isTerminal }
             val overdueTasksCount = pendingTasks.count { isTaskOverdue(it, nowEpoch, today) }
@@ -4916,7 +6378,9 @@ class NexusRepository(
                     tasks = tasks,
                     projects = projects,
                     categories = categories,
-                    events = events
+                    events = events,
+                    taskRecurrences = taskRecurrences,
+                    recurrenceExceptions = recurrenceExceptions
                 ),
                 filters = AgendaFilters(),
                 today = today,
@@ -4925,31 +6389,84 @@ class NexusRepository(
             val appointmentMap = appointments.associateBy { it.id }
             val todayAppointmentOccurrences = todayOccurrences.filter { it.sourceType == AgendaSourceType.APPOINTMENT }
             val nextApptOccurrence = todayAppointmentOccurrences.firstOrNull { occ ->
-                val appt = appointmentMap[occ.sourceId]
-                appt != null && !appt.isAllDay && appt.endAt >= nowEpoch
+                val endEpoch = occ.endAt ?: occ.startAt
+                !occ.isAllDay && endEpoch >= nowEpoch
             } ?: todayAppointmentOccurrences.firstOrNull()
             val nextAppointment = nextApptOccurrence?.let { occ ->
-                val appt = appointmentMap[occ.sourceId] ?: return@let null
-                AgendaItem.AppointmentItem(
-                    appointment = appt,
-                    category = appt.categoryId?.let { catMap[it] },
-                    conflictTitles = occ.conflictTitles,
-                    date = today
-                )
+                if (occ.isVirtualRecurrence) {
+                    val rec = occ.recurrenceId?.let { recMap[it] } ?: return@let null
+                    val anchorIso = occ.seriesOccurrenceDateIso ?: occ.occurrenceDateIso
+                    val ex = exMap[rec.id to anchorIso]
+                    val isOverride = ex?.exceptionType == RecurrenceExceptionType.OVERRIDE
+                    val virtualAppt = AppointmentEntity(
+                        id = RecurrenceEngine.virtualOccurrenceId(rec.id, anchorIso),
+                        title = occ.title,
+                        description = if (isOverride && ex?.overrideDescription != null) ex.overrideDescription else rec.description,
+                        categoryId = rec.categoryId,
+                        eventId = rec.eventId,
+                        startAt = occ.startAt,
+                        endAt = occ.endAt ?: (occ.startAt + rec.durationMillis.coerceAtLeast(60_000L)),
+                        isAllDay = occ.isAllDay,
+                        location = if (isOverride && ex?.overrideLocation != null) ex.overrideLocation else rec.location,
+                        link = if (isOverride && ex?.overrideLink != null) ex.overrideLink else rec.link,
+                        recurrenceId = rec.id,
+                        occurrenceDateIso = anchorIso,
+                        createdAt = rec.createdAt,
+                        updatedAt = rec.updatedAt
+                    )
+                    AgendaItem.AppointmentItem(
+                        appointment = virtualAppt,
+                        category = rec.categoryId?.let { catMap[it] },
+                        conflictTitles = occ.conflictTitles,
+                        date = today,
+                        recurrenceId = rec.id,
+                        occurrenceDateIso = anchorIso,
+                        isVirtualRecurrence = true
+                    )
+                } else {
+                    val appt = appointmentMap[occ.sourceId] ?: return@let null
+                    AgendaItem.AppointmentItem(
+                        appointment = appt,
+                        category = appt.categoryId?.let { catMap[it] },
+                        conflictTitles = occ.conflictTitles,
+                        date = today,
+                        recurrenceId = appt.recurrenceId,
+                        occurrenceDateIso = appt.occurrenceDateIso,
+                        isVirtualRecurrence = false
+                    )
+                }
             }
 
-            val upcomingEvents = events
+            val materializedUpcomingEvents = events
                 .filter { it.eventStatus != EventLifecycleStatus.CANCELLED && it.endAt >= startOfToday }
-                .sortedBy { it.startAt }
-            val nextEvent = upcomingEvents.firstOrNull()?.let { ev ->
-                EventWithDetails(
-                    event = ev,
-                    category = ev.categoryId?.let { catMap[it] },
-                    creditCard = ev.creditCardId?.let { cardMap[it] },
-                    linkedTasks = emptyList(),
-                    linkedTransactions = emptyList()
-                )
-            }
+                .map { ev ->
+                    EventWithDetails(
+                        event = ev,
+                        category = ev.categoryId?.let { catMap[it] },
+                        creditCard = ev.creditCardId?.let { cardMap[it] },
+                        linkedTasks = emptyList(),
+                        linkedTransactions = emptyList()
+                    )
+                }
+            val virtualUpcomingEvents = RecurrenceEngine.projectVirtualEvents(
+                window = DateRange(today, today.plusDays(90)),
+                recurrences = taskRecurrences,
+                exceptions = recurrenceExceptions,
+                materializedEvents = events
+            )
+                .filter { it.recurrence.eventStatus != EventLifecycleStatus.CANCELLED && it.endAt >= startOfToday }
+                .map { proj ->
+                    EventWithDetails(
+                        event = proj.toVirtualEventEntity(),
+                        category = proj.recurrence.categoryId?.let { catMap[it] },
+                        creditCard = null,
+                        linkedTasks = emptyList(),
+                        linkedTransactions = emptyList()
+                    )
+                }
+            val upcomingEvents = (materializedUpcomingEvents + virtualUpcomingEvents)
+                .sortedBy { it.event.startAt }
+            val nextEvent = upcomingEvents.firstOrNull()
 
             val financeSnap = buildFinanceWidgetSnapshot(
                 declaredBalanceCents = 0L,

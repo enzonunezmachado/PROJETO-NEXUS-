@@ -39,8 +39,8 @@
 | `REQ-005` | Gráfico de anel de tarefas (`TaskRingChart`), gráficos financeiros (`BarGroupChart`, `DonutChart`), alertas reais (`AlertBannerCard`), metas/projetos e próximos itens no Dashboard | Módulo 1 — Dashboard | `IMPLEMENTADA` (seletor de mês do bloco de tarefas fixo no mês atual na Home; sem bloco `MARKET` configurável na Home) |
 | `REQ-006` | CRUD completo de Tarefas + prioridades + 6 status + Kanban sobre a mesma tabela + checklist de subtarefas | Módulo 2 — Tarefas | `IMPLEMENTADA` (`INT-03`: alternar subtarefa persistida em `TaskEditorSheet` grava direto no Room antes de "Salvar") |
 | `REQ-007` | Vínculo Tarefa → Gasto (`transactions.taskId`, `"Registrar gasto"`, badge `"Gasto: R$ X"`, exibição `"Tarefa: <título>"` no Financeiro) | Módulo 2 / 6 | `IMPLEMENTADA` (exige salvar tarefa antes quando nova/suja) |
-| `REQ-008` | Recorrência de Tarefas (`task_recurrences`, `recurrence_exceptions`, `SKIP`/`OVERRIDE`, `"Só esta"` vs `"Toda a série"`, geração idempotente ao concluir) | Módulo 2 — Tarefas | `IMPLEMENTADA` (`Lote 06 Recorrência`) |
-| `REQ-009` | Recorrência para Compromissos e Eventos com expansão na Agenda | Módulo 3 / 4 / 5 | `NÃO IMPLEMENTADA` |
+| `REQ-008` | Recorrência de Tarefas (`recurrences`, `recurrence_exceptions`, `SKIP`/`OVERRIDE`, `"Só esta"` vs `"Toda a série"`, `templateSubtasksJson`, geração idempotente ao concluir) | Módulo 2 — Tarefas | `IMPLEMENTADA` (`Lote 06 Recorrência` + `Rodada 4 GAP-003`) |
+| `REQ-009` | Recorrência para Compromissos e Eventos com expansão virtual na Agenda/Eventos, materialização sob demanda e proteção financeira | Módulo 3 / 4 / 5 | `IMPLEMENTADA` (`Rodada 4 GAP-001` no código; aguardando Gradle/dispositivo) |
 | `REQ-010` | Gestão de Projetos com prazo, status, progresso automático por tarefas, custos e vínculo a Objetivo (`goalId`) | Módulo 3 — Projetos | `IMPLEMENTADA` |
 | `REQ-011` | Agenda unificada pura (`AgendaEngine`), 4 visões (`Dia`, `Semana`, `Mês`, `Lista`), filtros por tipo/categoria/busca/`showPaid`, eventos multi-dia e conflito de horários | Módulo 4 — Agenda | `IMPLEMENTADA` (motor legado `observeUnifiedAgenda` ainda coexiste para Dashboard/Briefings) |
 | `REQ-012` | Compromissos vinculados a Eventos (`appointments.eventId`) | Módulo 4 / 5 | `PARCIALMENTE IMPLEMENTADA` (coluna/FK/editor e contador em `EventEditorSheet` existem; falta listagem completa e criação direta na ficha do Evento) |
@@ -84,8 +84,9 @@
   - `dueAt` (exibido como `"Quando"`) define presença na Agenda; tarefas sem data ficam fora da Agenda.
   - Status (`NOT_STARTED`, `IN_PROGRESS`, `WAITING`, `BLOCKED`, `COMPLETED`, `CANCELLED`) é separado da condição de atraso (`TaskRules.deadlineCondition` / `AgendaEngine.isTaskOverdue`).
   - Kanban lê os mesmos registros da tabela `tasks` agrupados pelos 6 `TaskStatus`.
-  - **Recorrência (`TaskRecurrenceFrequency`):** `DAILY`, `SPECIFIC_WEEKDAYS` (`weekdaysMask`), `WEEKLY`, `BIWEEKLY`, `MONTHLY` (âncora de dia preservada pelo `LocalDate.plusMonths`), `CUSTOM_DAYS`, com término nunca / `endDateIso` / `maxOccurrences`.
+  - **Recorrência (`TaskRecurrenceFrequency`):** `DAILY`, `SPECIFIC_WEEKDAYS` (`weekdaysMask`), `WEEKLY`, `BIWEEKLY`, `MONTHLY` (âncora de dia preservada pelo `LocalDate.plusMonths`), `ANNUAL` (com ajuste para 28/02 em anos não bissextos), `CUSTOM_DAYS`, com término nunca / `endDateIso` / `maxOccurrences`.
   - Ao concluir uma tarefa recorrente (`completeTask`), a linha atual fica `COMPLETED` no histórico e `RecurrenceEngine.nextOccurrenceDateAfter` calcula a próxima ocorrência materializada idempotentemente via `UNIQUE(recurrenceId, occurrenceDateIso)`.
+  - **Independência de checklist (`GAP-003`):** o modelo reutilizável da série fica em `TaskRecurrenceEntity.templateSubtasksJson` e gera subtarefas pendentes (`isCompleted = false`) a cada nova ocorrência, sem copiar marcações da ocorrência anterior. Alternar checkboxes grava apenas na instância atual; alterações estruturais na checklist em `TaskEditorSheet` perguntam `"Só esta ocorrência"` vs `"Toda a série"`.
   - Edição de série pergunta `"Só esta ocorrência"` (cria `RecurrenceExceptionEntity` tipo `OVERRIDE` ou `SKIP`) vs `"Toda a série"`.
   - **Inconsistência registrada (`INT-03`):** hoje `onToggleSubtask` em `TaskEditorSheet` grava diretamente no Room quando a subtarefa já existia no banco, em vez de aguardar `"Salvar"`.
 
@@ -104,7 +105,7 @@
   - Compromissos com sobreposição de horário (não `isAllDay`) recebem sinalização de conflito (`computeAppointmentConflicts`).
   - Eventos/compromissos de múltiplos dias expandem para todos os dias de `startAt..endAt`.
   - Compras de cartão ligadas a fatura (`statementId != null`) **não** aparecem individualmente na Agenda; apenas a **fatura** em aberto com `totalCents > 0` aparece no seu vencimento (`dueAt`).
-  - Recorrências de tarefas são projetadas virtualmente na janela pedida (`AgendaEngine`) sem duplicar linhas materializadas.
+  - Recorrências de tarefas, compromissos e eventos são projetadas virtualmente na janela pedida (`AgendaEngine` e lista de Eventos) sem duplicar linhas materializadas; ocorrências de compromissos/eventos são materializadas sob demanda via id determinístico `"rec::<recurrenceId>::<occurrenceDateIso>"` sem gerar obrigações financeiras automáticas (`TransactionEntity`).
 
 ### Módulo 5 — Eventos (`EventsScreen`)
 - **Objetivo:** controlar participação, datas, endereço, tarefas vinculadas e impacto financeiro completo de eventos.

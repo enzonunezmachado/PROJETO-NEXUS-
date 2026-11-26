@@ -40,7 +40,7 @@
 - **Status:** Aceita e Permanente (`NexusDatabase.kt`, `NexusMigrations.kt`).
 - **Contexto:** usuários instalam atualizações em cima de dados financeiros e pessoais existentes.
 - **Decisão:** proibir `fallbackToDestructiveMigration()`; exigir `Migration` explícita e aditiva a cada incremento de `DATABASE_VERSION`, mantendo `exportSchema = true`.
-- **Consequências:** preserva instalações existentes (`v1→v6`); exige disciplina redobrada ao evoluir tabelas e atualizar `BackupModels`/`BackupManager` juntos.
+- **Consequências:** preserva instalações existentes (`v1→v7`); exige disciplina redobrada ao evoluir tabelas e atualizar `BackupModels`/`BackupManager` juntos.
 
 ---
 
@@ -75,7 +75,7 @@
 - **Status:** Aceita e Ativa (`Lote 06 Recorrência`: `RecurrenceEngine.kt`, `AgendaEngine.kt`, `NexusEntities.kt`).
 - **Contexto:** pré-gerar centenas de linhas futuras no SQLite polui tabelas e listas de tarefas; manter apenas regra sem linha aberta dificultaria histórico individual e subtarefas/gastos por execução.
 - **Decisão:** guardar a regra em `recurrences` (`TaskRecurrenceEntity`), manter aberta no máximo a ocorrência corrente na tabela `tasks` (com `UNIQUE(recurrenceId, occurrenceDateIso)`), gerar a próxima ocorrência de forma idempotente somente ao concluir (`completeTask`) e projetar ocorrências futuras apenas em memória na `AgendaEngine` dentro da janela solicitada, respeitando `recurrence_exceptions` (`SKIP`/`OVERRIDE`).
-- **Consequências:** zero inchaço no SQLite, histórico concluído preservado com subtarefas/gastos vinculados; adiamento de uma instância não altera a cadência futura. *(Expansão para Compromissos e Eventos segue adiada para lote futuro.)*
+- **Consequências:** zero inchaço no SQLite, histórico concluído preservado com subtarefas/gastos vinculados; adiamento de uma instância não altera a cadência futura. *(Expandida na Rodada 4 para Compromissos/Eventos e template independente de checklist — ver [`ADR-019`](#adr-019--recorrência-multi-domínio-compromissosevento-materialização-sob-demanda-e-independência-de-checklist-room-v7--backup-v8).)*
 
 ---
 
@@ -182,5 +182,19 @@
   3. **Prévia dry-run obrigatória e confirmação explícita:** `InboxRepository.checkInboxNow` consulta arquivos `.json` novos ou alterados (`path::sha`), executa `previewInboxEnvelope` (`PreviewOverlayGateway`) sem gravar nada no Room, e só persiste via `NexusRepository.applyInboxEnvelope` após ação explícita do usuário (`"Confirmar importação"`). `InboxSyncWorker` (opcional, `>= 15 min`, `NetworkType.CONNECTED`, bateria não baixa) apenas notifica com deep-link (`EXTRA_OPEN_INBOX`), nunca auto-importando.
   4. **Extensão retrocompatível do contrato `v1` e histórico filtrado:** adicionar `CHECKLIST` (`subtasks`), `subtasks` inline em `TASK`, `action` (`CREATE`/`UPDATE`/`UPSERT` preservando `createdAt`) e estado `UPDATED`, gravando o log consolidado em `audit_history` (`INBOX_IMPORT_LOG`) somente com categorias que sofreram alteração real no banco.
 - **Alternativas:** criar servidor backend próprio com webhook/OAuth ou auto-importar arquivos em segundo plano sem prévia.
-- **Consequências:** mantém o NEXUS 100% operacional offline-first e sem infraestrutura própria de servidor, protege contra gravações indesejadas e reaproveita integralmente `Backup v7` (`audit_history` preservada) e `DATABASE_VERSION = 6`.
+- **Consequências:** mantém o NEXUS 100% operacional offline-first e sem infraestrutura própria de servidor, protege contra gravações indesejadas e reaproveita integralmente `Backup v7+` (`audit_history` preservada) sem criar servidor externo.
+
+---
+
+### `ADR-019` — Recorrência Multi-Domínio (Compromissos/Eventos), Materialização Sob Demanda e Independência de Checklist (`Room v7` / `Backup v8`)
+- **Status:** Aceita e Ativa (`Rodada 4`: `NexusEntities.kt`, `NexusMigrations.kt`, `RecurrenceEngine.kt`, `AgendaEngine.kt`, `NexusRepository.kt`, `BackupModels.kt`, `BackupMergeEngine.kt`, `EntityEditors.kt`, `EventsScreen.kt`, `AgendaScreen.kt`, `MainActivity.kt`).
+- **Contexto:** `REQ-009` / `GAP-001` demandavam séries recorrentes reais de Compromissos e Eventos (incluindo frequência anual e exceções por ocorrência) sem pré-gerar centenas de linhas no SQLite nem gerar obrigações financeiras automáticas; adicionalmente, `GAP-003` exigia que o checklist de tarefas recorrentes fosse reutilizado entre ciclos sem propagar marcações (`isCompleted`) de ocorrências anteriores.
+- **Decisão:**
+  1. **Generalização da tabela `recurrences` e `recurrence_exceptions` (`DATABASE_VERSION = 7` / `MIGRATION_6_7`):** adicionar `domain: RecurrenceDomain` (`TASK`, `APPOINTMENT`, `EVENT`), `TaskRecurrenceFrequency.ANNUAL`, campos de snapshot de Compromisso/Evento e `templateSubtasksJson` em `TaskRecurrenceEntity`, além de `recurrenceId` + `occurrenceDateIso` com índice `UNIQUE(recurrenceId, occurrenceDateIso)` em `appointments` e `events` e campos de override específicos em `RecurrenceExceptionEntity`.
+  2. **Projeção virtual e materialização idempotente sob demanda:** Compromissos e Eventos recorrentes são projetados virtualmente na janela de exibição (`AgendaEngine`, `EventsScreen` e `HomeScreen`) com IDs determinísticos `"rec::<recurrenceId>::<occurrenceDateIso>"` (`RecurrenceEngine.parseVirtualOccurrenceId`), detectando inclusive conflitos virtual↔materializado, e só são materializados no Room quando o usuário abre/edita/marca `"Só esta ocorrência"`.
+  3. **Integridade financeira em Eventos recorrentes:** projeções virtuais e materializações sob demanda nunca criam `TransactionEntity`; edições e exclusões no escopo `"Toda a série"` (`RecurringEditScope.ENTIRE_SERIES`) preservam e desvinculam ocorrências já marcadas como `EventLifecycleStatus.ATTENDED` ou com ingresso `TicketStatus.PAID` / transação `FinancialStatus.SETTLED`.
+  4. **Independência de checklist (`GAP-003`):** `templateSubtasksJson` armazena exclusivamente os títulos ordenados do checklist-modelo da série (com backfill automático na `MIGRATION_6_7` e em restaurações/mesclagens de backups `<= v7`). Alternar checkboxes grava apenas na ocorrência aberta; alterações estruturais da checklist em `TaskEditorSheet` perguntam explicitamente `"Só esta ocorrência"` vs `"Toda a série"`.
+  5. **Backup JSON `v8`:** mantém as `27` tabelas Room adicionando o suporte ao ciclo opcional `recurrences.eventId ↔ events.recurrenceId` no `BackupManager` e `BackupMergeEngine`.
+- **Alternativas:** criar tabelas separadas de recorrência por entidade ou pré-materializar um horizonte fixo de ocorrências futuras no SQLite.
+- **Consequências:** reaproveita o motor único `RecurrenceEngine` com migração estritamente aditiva (`MIGRATION_6_7`), evita inchaço e lançamentos financeiros fantasmas e mantém o contrato `v1` da ponte `NEXUS-INBOX` isolado até futura extensão (`GAP-002`).
 

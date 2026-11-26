@@ -7,6 +7,7 @@ import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.FinancialStatus
 import com.nexus.app.domain.model.PaymentMethod
 import com.nexus.app.domain.model.ProjectStatus
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.RecurrenceExceptionType
 import com.nexus.app.domain.model.RecurrenceFrequency
 import com.nexus.app.domain.model.ReminderCategory
@@ -161,4 +162,11 @@ class NexusTypeConverters {
     @TypeConverter
     fun toRecurrenceExceptionType(raw: String?): RecurrenceExceptionType =
         RecurrenceExceptionType.fromStringOrDefault(raw)
+
+    @TypeConverter
+    fun fromRecurrenceDomain(value: RecurrenceDomain): String = value.name
+
+    @TypeConverter
+    fun toRecurrenceDomain(raw: String?): RecurrenceDomain =
+        RecurrenceDomain.fromStringOrDefault(raw)
 }

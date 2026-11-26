@@ -48,6 +48,7 @@ import com.nexus.app.domain.model.MarketQuoteCalculations
 import com.nexus.app.domain.model.NexusDateFormat
 import com.nexus.app.domain.model.PaymentMethod
 import com.nexus.app.domain.model.ProjectStatus
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.RecurrenceExceptionType
 import com.nexus.app.domain.model.RecurrenceFrequency
 import com.nexus.app.domain.model.ReminderCategory
@@ -59,6 +60,7 @@ import com.nexus.app.domain.model.TaskRecurrenceFrequency
 import com.nexus.app.domain.model.TaskStatus
 import com.nexus.app.domain.model.TicketStatus
 import com.nexus.app.domain.model.TransactionType
+import com.nexus.app.domain.rules.RecurrenceEngine
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -158,6 +160,8 @@ class BackupManager internal constructor(
                     paymentMethod = it.paymentMethod.name,
                     creditCardId = it.creditCardId,
                     installmentsCount = it.installmentsCount,
+                    recurrenceId = it.recurrenceId,
+                    occurrenceDateIso = it.occurrenceDateIso,
                     createdAt = it.createdAt,
                     updatedAt = it.updatedAt
                 )
@@ -206,6 +210,8 @@ class BackupManager internal constructor(
                     isAllDay = it.isAllDay,
                     location = it.location,
                     link = it.link,
+                    recurrenceId = it.recurrenceId,
+                    occurrenceDateIso = it.occurrenceDateIso,
                     createdAt = it.createdAt,
                     updatedAt = it.updatedAt
                 )
@@ -521,6 +527,26 @@ class BackupManager internal constructor(
                     endDateIso = it.endDateIso,
                     maxOccurrences = it.maxOccurrences,
                     isActive = it.isActive,
+                    domain = it.domain.name,
+                    isAllDay = it.isAllDay,
+                    durationMillis = it.durationMillis,
+                    location = it.location,
+                    link = it.link,
+                    officialLink = it.officialLink,
+                    ticketLink = it.ticketLink,
+                    locationName = it.locationName,
+                    address = it.address,
+                    city = it.city,
+                    state = it.state,
+                    eventStatus = it.eventStatus.name,
+                    ticketStatus = it.ticketStatus.name,
+                    ticketPriceCents = it.ticketPriceCents,
+                    ticketQuantity = it.ticketQuantity,
+                    ticketFeesCents = it.ticketFeesCents,
+                    paymentMethod = it.paymentMethod.name,
+                    creditCardId = it.creditCardId,
+                    installmentsCount = it.installmentsCount,
+                    templateSubtasksJson = it.templateSubtasksJson,
                     createdAt = it.createdAt,
                     updatedAt = it.updatedAt
                 )
@@ -533,7 +559,14 @@ class BackupManager internal constructor(
                     exceptionType = it.exceptionType.name,
                     overrideTitle = it.overrideTitle,
                     overrideDueAt = it.overrideDueAt,
+                    overrideEndAt = it.overrideEndAt,
+                    overrideDescription = it.overrideDescription,
+                    overrideLocation = it.overrideLocation,
+                    overrideLink = it.overrideLink,
+                    overrideIsAllDay = it.overrideIsAllDay,
                     taskId = it.taskId,
+                    appointmentId = it.appointmentId,
+                    eventId = it.eventId,
                     createdAt = it.createdAt,
                     updatedAt = it.updatedAt
                 )
@@ -813,8 +846,8 @@ class BackupManager internal constructor(
             }.distinctBy { it.id }
         val validCardIds = cardEntities.map { it.id }.toSet()
 
-        val eventEntities = payload.events
-            .filter { it.name.isNotBlank() }
+        val nonRecurringEventEntities = payload.events
+            .filter { it.name.isNotBlank() && it.recurrenceId.isNullOrBlank() }
             .map { dto ->
                 val start = if (dto.startAt > 0L) dto.startAt else now
                 val end = if (dto.endAt >= start) dto.endAt else start + 3_600_000L
@@ -844,13 +877,15 @@ class BackupManager internal constructor(
                     paymentMethod = PaymentMethod.fromStringOrDefault(dto.paymentMethod),
                     creditCardId = dto.creditCardId?.takeIf { it in validCardIds },
                     installmentsCount = dto.installmentsCount.coerceAtLeast(1),
+                    recurrenceId = null,
+                    occurrenceDateIso = null,
                     createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                     updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
                 )
             }.distinctBy { it.id }
-        val validEventIds = eventEntities.map { it.id }.toSet()
+        val validParentEventIds = nonRecurringEventEntities.map { it.id }.toSet()
 
-        val taskRecurrenceEntities = payload.recurrences
+        val rawTaskRecurrenceEntities = payload.recurrences
             .filter { it.title.isNotBlank() }
             .map { dto ->
                 TaskRecurrenceEntity(
@@ -859,7 +894,7 @@ class BackupManager internal constructor(
                     description = dto.description,
                     projectId = dto.projectId?.takeIf { it in validProjectIds },
                     categoryId = dto.categoryId?.takeIf { it in validCategoryIds },
-                    eventId = dto.eventId?.takeIf { it in validEventIds },
+                    eventId = dto.eventId?.takeIf { it in validParentEventIds },
                     goalId = dto.goalId?.takeIf { it in validPersonalGoalIds },
                     priority = TaskPriority.fromStringOrDefault(dto.priority),
                     notes = dto.notes,
@@ -873,11 +908,79 @@ class BackupManager internal constructor(
                     endDateIso = dto.endDateIso?.takeIf { it.isNotBlank() },
                     maxOccurrences = dto.maxOccurrences?.takeIf { it > 0 },
                     isActive = dto.isActive,
+                    domain = RecurrenceDomain.fromStringOrDefault(dto.domain),
+                    isAllDay = dto.isAllDay,
+                    durationMillis = dto.durationMillis.coerceAtLeast(60_000L),
+                    location = dto.location,
+                    link = dto.link,
+                    officialLink = dto.officialLink,
+                    ticketLink = dto.ticketLink,
+                    locationName = dto.locationName,
+                    address = dto.address,
+                    city = dto.city,
+                    state = dto.state,
+                    eventStatus = EventLifecycleStatus.fromStringOrDefault(dto.eventStatus),
+                    ticketStatus = TicketStatus.fromStringOrDefault(dto.ticketStatus),
+                    ticketPriceCents = dto.ticketPriceCents,
+                    ticketQuantity = dto.ticketQuantity.coerceAtLeast(1),
+                    ticketFeesCents = dto.ticketFeesCents,
+                    paymentMethod = PaymentMethod.fromStringOrDefault(dto.paymentMethod),
+                    creditCardId = dto.creditCardId?.takeIf { it in validCardIds },
+                    installmentsCount = dto.installmentsCount.coerceAtLeast(1),
+                    templateSubtasksJson = dto.templateSubtasksJson.ifBlank { "[]" },
                     createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                     updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
                 )
             }.distinctBy { it.id }
-        val validRecurrenceIds = taskRecurrenceEntities.map { it.id }.toSet()
+        val validRecurrenceIds = rawTaskRecurrenceEntities.map { it.id }.toSet()
+
+        val seenEventRecurrenceKeys = mutableSetOf<Pair<String, String>>()
+        val recurringEventEntities = payload.events
+            .filter { it.name.isNotBlank() && !it.recurrenceId.isNullOrBlank() }
+            .map { dto ->
+                val rawRecId = dto.recurrenceId?.takeIf { it in validRecurrenceIds }
+                val rawOccIso = dto.occurrenceDateIso?.takeIf { it.isNotBlank() }
+                val keepRecLink = if (rawRecId != null && rawOccIso != null) {
+                    seenEventRecurrenceKeys.add(rawRecId to rawOccIso)
+                } else {
+                    rawRecId != null
+                }
+                val start = if (dto.startAt > 0L) dto.startAt else now
+                val end = if (dto.endAt >= start) dto.endAt else start + 3_600_000L
+                EventEntity(
+                    id = dto.id.ifBlank { UUID.randomUUID().toString() },
+                    name = dto.name.trim(),
+                    description = dto.description,
+                    categoryId = dto.categoryId?.takeIf { it in validCategoryIds },
+                    startAt = start,
+                    endAt = end,
+                    isAllDay = dto.isAllDay,
+                    officialLink = dto.officialLink,
+                    ticketLink = dto.ticketLink,
+                    locationName = dto.locationName,
+                    address = dto.address,
+                    city = dto.city,
+                    state = dto.state,
+                    notes = dto.notes,
+                    eventStatus = EventLifecycleStatus.fromStringOrDefault(dto.eventStatus),
+                    ticketStatus = TicketStatus.fromStringOrDefault(dto.ticketStatus),
+                    ticketPriceCents = dto.ticketPriceCents,
+                    ticketQuantity = dto.ticketQuantity.coerceAtLeast(1),
+                    ticketFeesCents = dto.ticketFeesCents,
+                    ticketTotalCents = dto.ticketTotalCents,
+                    ticketPurchaseDate = dto.ticketPurchaseDate,
+                    ticketDueDate = dto.ticketDueDate,
+                    paymentMethod = PaymentMethod.fromStringOrDefault(dto.paymentMethod),
+                    creditCardId = dto.creditCardId?.takeIf { it in validCardIds },
+                    installmentsCount = dto.installmentsCount.coerceAtLeast(1),
+                    recurrenceId = if (keepRecLink) rawRecId else null,
+                    occurrenceDateIso = if (keepRecLink) rawOccIso else null,
+                    createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                    updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+                )
+            }.distinctBy { it.id }
+        val eventEntities = (nonRecurringEventEntities + recurringEventEntities).distinctBy { it.id }
+        val validEventIds = eventEntities.map { it.id }.toSet()
 
         val seenTaskRecurrenceKeys = mutableSetOf<Pair<String, String>>()
         val taskEntities = payload.tasks
@@ -926,9 +1029,40 @@ class BackupManager internal constructor(
                 )
             }.distinctBy { it.id }
 
+        val subtasksByTaskId = subtaskEntities.groupBy { it.taskId }
+        val taskRecurrenceEntities = rawTaskRecurrenceEntities.map { rec ->
+            if (rec.domain == RecurrenceDomain.TASK &&
+                (rec.templateSubtasksJson.isBlank() || rec.templateSubtasksJson.trim() == "[]")
+            ) {
+                val latestTask = taskEntities
+                    .filter { it.recurrenceId == rec.id }
+                    .maxWithOrNull(compareBy<TaskEntity> { it.occurrenceDateIso ?: "" }.thenBy { it.updatedAt })
+                val templateTitles = latestTask
+                    ?.let { subtasksByTaskId[it.id] }
+                    .orEmpty()
+                    .sortedBy { it.sortOrder }
+                    .map { it.title }
+                if (templateTitles.isNotEmpty()) {
+                    rec.copy(templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(templateTitles))
+                } else {
+                    rec
+                }
+            } else {
+                rec
+            }
+        }
+
+        val seenAppointmentRecurrenceKeys = mutableSetOf<Pair<String, String>>()
         val appointmentEntities = payload.appointments
             .filter { it.title.isNotBlank() }
             .map { dto ->
+                val rawRecId = dto.recurrenceId?.takeIf { it in validRecurrenceIds }
+                val rawOccIso = dto.occurrenceDateIso?.takeIf { it.isNotBlank() }
+                val keepRecLink = if (rawRecId != null && rawOccIso != null) {
+                    seenAppointmentRecurrenceKeys.add(rawRecId to rawOccIso)
+                } else {
+                    rawRecId != null
+                }
                 val start = if (dto.startAt > 0L) dto.startAt else now
                 val end = if (dto.endAt >= start) dto.endAt else start + 3_600_000L
                 AppointmentEntity(
@@ -942,10 +1076,13 @@ class BackupManager internal constructor(
                     isAllDay = dto.isAllDay,
                     location = dto.location,
                     link = dto.link,
+                    recurrenceId = if (keepRecLink) rawRecId else null,
+                    occurrenceDateIso = if (keepRecLink) rawOccIso else null,
                     createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                     updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
                 )
             }.distinctBy { it.id }
+        val validAppointmentIds = appointmentEntities.map { it.id }.toSet()
 
         val statementEntities = payload.creditCardStatements
             .filter { it.creditCardId in validCardIds && it.yearMonth.isNotBlank() }
@@ -1278,7 +1415,14 @@ class BackupManager internal constructor(
                     exceptionType = RecurrenceExceptionType.fromStringOrDefault(dto.exceptionType),
                     overrideTitle = dto.overrideTitle,
                     overrideDueAt = dto.overrideDueAt,
+                    overrideEndAt = dto.overrideEndAt,
+                    overrideDescription = dto.overrideDescription,
+                    overrideLocation = dto.overrideLocation,
+                    overrideLink = dto.overrideLink,
+                    overrideIsAllDay = dto.overrideIsAllDay,
                     taskId = dto.taskId?.takeIf { it in validTaskIds },
+                    appointmentId = dto.appointmentId?.takeIf { it in validAppointmentIds },
+                    eventId = dto.eventId?.takeIf { it in validEventIds },
                     createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                     updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
                 )
@@ -1316,8 +1460,9 @@ class BackupManager internal constructor(
                 storage.insertGoalProgressLogs(goalProgressLogEntities)
                 storage.insertProjects(projectEntities)
                 storage.insertCreditCards(cardEntities)
-                storage.insertEvents(eventEntities)
+                storage.insertEvents(eventEntities.filter { it.recurrenceId == null })
                 storage.insertTaskRecurrences(taskRecurrenceEntities)
+                storage.insertEvents(eventEntities.filter { it.recurrenceId != null })
                 storage.insertTasks(taskEntities)
                 storage.insertRecurrenceExceptions(recurrenceExceptionEntities)
                 storage.insertSubtasks(subtaskEntities)

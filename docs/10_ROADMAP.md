@@ -6,8 +6,8 @@
 
 ## 1. Concluído no Código Atual
 
-### 1.1 Núcleo do Aplicativo e Evolução Base (`v5.3.0` · Room `v6`)
-- **Arquitetura base, Room `v6` (`27` tabelas), migrações `v1→v6` e Diagnóstico (`GlobalErrorHandler`, `DiagnosticsScreen`)**.
+### 1.1 Núcleo do Aplicativo e Evolução Base (`v5.3.0` · Room `v7`)
+- **Arquitetura base, Room `v7` (`27` tabelas), migrações `v1→v7` (`MIGRATION_6_7`) e Diagnóstico (`GlobalErrorHandler`, `DiagnosticsScreen`)**.
 - **Shell de Navegação (`MainActivity` + `BackNavigationRules`):** barra inferior na ordem `TASKS, AGENDA, HOME, FINANCE, EVENTS`, `BackHandler` conectado a `activeEditorDirty` e sub-rotas top-level vs child.
 - **Dashboard (`HomeScreen`):** cabeçalho compacto integrando saudação + data + frase diária discreta, `9` blocos reordenáveis/desligáveis, `TaskRingChart`, resumo financeiro compartilhado (`FinanceRules`), indicadores de projetos/objetivos, `AlertBannerCard` para alertas reais e próximos compromissos/eventos.
 - **Tarefas e Projetos (`TasksAndProjectsScreen` + `RecurrenceEngine`):** lista executável sem mistura de contas financeiras, Kanban sobre a mesma tabela `tasks`, status separados da condição de prazo, subtarefas, vínculo Tarefa → Gasto (`transactions.taskId`, `"Tarefa: <título>"`) e **Lote 06 de Recorrência de Tarefas** (`task_recurrences`, `recurrence_exceptions`, `"Só esta"` vs `"Toda a série"`, projeção virtual e materialização idempotente).
@@ -23,20 +23,25 @@
   - *Frente A (Backup Dry-Run + Separação de Fluxos):* `BackupMergeEngine.computeMergePlan` compartilhado com `previewMerge(..., isDryRun = true)` (zero gravações no Room e no Mercado), separação completa dos diálogos de Restauração Completa (com checkbox explícito de confirmação destrutiva) e Mesclagem Incremental (com prévia real antes de confirmar e resumo `MergeSummary` em pt-BR), ampliando `BackupIncrementalMergeUnitTests` para `13` `@Test`.
   - *Frente B (Entrada Estruturada Interna `contractVersion = 1`):* pacote `data/ingestion/` (`StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt`) integrado ao `NexusRepository` (`processStructuredInputJson` / `processStructuredInputEnvelope`) sobre Room `v6` + `audit_history` (`STRUCTURED_INPUT_OP`), com JSON estrito, FKs e regras financeiras, rollback seguro e `StructuredInputUnitTests` (`7` `@Test`), **naquele momento sem transporte externo; o transporte e a sincronização pertencem à Rodada 3** (contrato documentado em [`14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`](./14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md)).
   - *Frente C (Pipeline de Assinatura & Verificação `apksigner`):* `app/build.gradle.kts` falha rapidamente em configurações parciais (`1..3/4`) e bloqueia `assembleRelease`/`bundleRelease`/`packageRelease` sem assinatura `release`; `.github/workflows/android-build.yml` adiciona `build-tools;35.0.0`, valida keystores via `keytool -list -v` (`-storepass:env`), verifica APKs via `apksigner verify --verbose --print-certs` comparando o SHA-256 real com o keystore e publica `NEXUS-Signing-Verification-Report` + `$GITHUB_STEP_SUMMARY`.
+- **Rodada 4 (Parcial — `GAP-001` / `REQ-009` e `GAP-003`) — Recorrência Multi-Domínio e Independência de Checklists (2026-11-26 · `v5.3.0` · Room `v7` / Backup `v8`):**
+  - *Recorrência de Compromissos e Eventos (`REQ-009` / `GAP-001`):* `TaskRecurrenceEntity` generalizada com `RecurrenceDomain` (`TASK`, `APPOINTMENT`, `EVENT`), nova frequência `ANNUAL`, overrides específicos em `RecurrenceExceptionEntity`, projeção virtual em `AgendaEngine` e `EventsScreen`, detecção de conflitos virtual↔materializado, materialização idempotente sob demanda (`"rec::<recurrenceId>::<occurrenceDateIso>"`), escopos `"Só esta ocorrência"` vs `"Toda a série"`, lembretes virtuais e proteção financeira integral em Eventos (projeções/materialização sob demanda nunca criam `TransactionEntity`, e séries editadas/excluídas preservam ocorrências `ATTENDED` ou com ingresso `PAID`/`SETTLED`).
+  - *Independência de Checklists (`GAP-003`):* `TaskRecurrenceEntity.templateSubtasksJson` armazena o checklist-modelo reutilizável da série (com backfill em `MIGRATION_6_7` e backups `<= v7`); alternar `isCompleted` grava apenas na ocorrência corrente e alterações estruturais na checklist em `TaskEditorSheet` solicitam `"Só esta ocorrência"` vs `"Toda a série"`.
+  - *Backup `v8` & Suítes JUnit:* `NexusBackupPayload.CURRENT_FORMAT_VERSION = 8` suportando o ciclo opcional `recurrences ↔ events`, `NexusRodada4RecurrenceUnitTests.kt` (`5` `@Test`) e ampliação de `BackupIncrementalMergeUnitTests.kt` (`15` `@Test`), totalizando `19` suítes / `145` `@Test` (**aguardando Gradle/CI e validação em dispositivo**).
 
-### 1.1.3 Rodada 3 — Ponte ChatGPT → NEXUS-INBOX → Android (**CONCLUÍDA — 2026-11-26**)
+### 1.1.3 Rodada 3 — Ponte ChatGPT → NEXUS-INBOX → Android (**EM ANDAMENTO**)
 
-A ponte foi implementada no código Android, corrigida e integrada à `main`. O fluxo real foi validado pelo usuário no aplicativo: conexão ao repositório privado `NEXUS-INBOX` e importação de registros por meio da Inbox.
+A primeira implementação da ponte foi produzida no AI Studio e passou por correções em branches isoladas. O escopo inclui repositório GitHub privado, consulta read-only, token protegido por Android Keystore, sincronização manual/periódica, prévia e confirmação explícita antes da importação.
 
-**Evidências de conclusão:**
-- Commit na `main`: `4041611a4ef4e111c3633790d0c09babdecb2ae8` — `refactor: enhance inbox parsing and UI terminology`.
-- GitHub Actions #70 (run `45792119560`) concluída com sucesso na `main`, incluindo testes unitários e geração do APK Debug. Release permaneceu ignorado por ausência dos secrets de assinatura.
-- O usuário confirmou que o aplicativo funcionou e que conseguiu importar registros pela ponte ChatGPT → `NEXUS-INBOX` → NEXUS Android.
-- O repositório privado `NEXUS-INBOX` foi localizado e contém arquivos JSON de teste e povoamento.
+**Situação de integração:** as correções finais ainda não foram incorporadas à `main`. A branch `fix/inbox-build-47-kotlin-compile` passou na GitHub Actions #50 (run `45748189511`), mas está divergente da `main` (4 commits à frente / 16 atrás na comparação atualizada de 26/11/2026 na comparação de 26/11/2026). Não fazer merge integral dessa branch. Reaplicar as correções necessárias no estado atual da `main` com o AI Studio, executar CI na `main` e validar a sincronização real no aparelho.
 
-**Limites da evidência:** a confirmação comprova a importação real. Não registrar como individualmente testados descarte sem gravação, reconsulta sem duplicidade, execução periódica em segundo plano, notificações/deep-links, reinício/rotação ou todos os cenários de segurança do token sem confirmação específica. Esses cenários permanecem no gate contínuo de confiabilidade.
+**Critérios para encerrar a Rodada 3:**
+1. Correções de compilação e teste da Inbox reproduzidas no código atual da `main`.
+2. GitHub Actions verde na `main`, com testes unitários e APK Debug.
+3. Repositório privado `NEXUS-INBOX` configurado no aplicativo, token read-only protegido pelo Android Keystore e teste de conexão real concluído.
+4. Arquivo suportado pela versão atual do contrato aparece na prévia, pode ser confirmado e é importado sem duplicação; descarte não altera dados.
+5. Documentação técnica, espelho `GOOGLE_IA/docs/` e artefatos internos do AI Studio coerentes.
 
-**Critérios de encerramento atendidos:** correções na `main`, CI verde e importação real no aparelho. A versão atual da Inbox permanece funcional como ponte de entrada v1. A ampliação do contrato para recorrências e a integração bidirecional definitiva foram adiadas para a Rodada 6, depois que o domínio do aplicativo e sua experiência estiverem estabilizados.
+A extensão da Inbox para regras recorrentes novas será concluída junto da Rodada 4, depois da definição do modelo de recorrência (`GAP-001`/`GAP-002`).
 
 ### 1.2 Módulo Mercado Financeiro (`Lotes 01 a 09` — Módulo Concluído e Encerrado)
 - **Lotes 01–02:** infraestrutura offline-first em `SharedPreferences`, roteamento e fallback de provedores públicos sem token para `USD-BRL`, `EUR-BRL`, `BTC-BRL`, `ETH-BRL`, `SOL-BRL`.
@@ -52,28 +57,26 @@ A ponte foi implementada no código Android, corrigida e integrada à `main`. O 
 
 ## 2. Sequência revisada de desenvolvimento
 
-> **Atualização de 26/11/2026.** As Rodadas 1, 2 e 3 permanecem concluídas; a Rodada 4 é a etapa atual; a integração bidirecional definitiva passa a ser a Rodada 6, após a evolução da experiência. A antiga Rodada 4 (aplicar a proposta Claude) deixa de ser a próxima execução: primeiro será concluída a base funcional e as lacunas de domínio. A evolução da experiência passa a ser a Rodada 5, baseada na documentação conceitual atualizada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/`, não na adoção automática da proposta original do Claude.
+> **Reorganização de 26/11/2026.** As Rodadas 1 e 2 permanecem concluídas; a Rodada 3 continua sendo a etapa atual. A antiga Rodada 4 (aplicar a proposta Claude) deixa de ser a próxima execução: primeiro será concluída a base funcional e as lacunas de domínio. A evolução da experiência passa a ser a Rodada 5, baseada na documentação conceitual atualizada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/`, não na adoção automática da proposta original do Claude.
 
 | Etapa | Estado | Objetivo e entregas |
 |---|---|---|
 | **Rodada 1 — Atualização e proteção dos dados** | **CONCLUÍDA** | Atualização in-place, assinatura configurável, backup incremental, merge transacional e testes unitários. Validações em aparelho e keystore persistente continuam no gate de release. |
 | **Rodada 2 — Importação e entrada estruturada** | **CONCLUÍDA** | Prévia dry-run, restauração/mesclagem separadas, contrato estruturado v1, validação, idempotência e rollback. |
-| **Rodada 3 — Ponte ChatGPT → GitHub → Android** | **CONCLUÍDA (2026-11-26)** | Correções integradas à `main`, GitHub Actions #70 verde e importação real confirmada pelo usuário no aplicativo. Cenários adicionais de confiabilidade permanecem no gate contínuo. |
-| **Rodada 4 — Completar o sistema funcional e fechar lacunas de domínio** | **EM ANDAMENTO — etapa atual** | Completar o domínio: recorrência de Compromissos/Eventos, checklist independente por ocorrência, checklists opcionais em Compromissos/Eventos, identidade contextual, demais lacunas de Eventos, consistência transversal e auditoria de completude. A expansão da ponte fica para a Rodada 6. |
+| **Rodada 3 — Ponte ChatGPT → GitHub → Android** | **EM ANDAMENTO — etapa atual** | Estabilizar as correções da Inbox sobre a `main`, executar CI e validar o ciclo real de sincronização, prévia, confirmação, descarte e importação no aparelho. Não integrar branches antigas integralmente. |
+| **Rodada 4 — Completar o sistema funcional e fechar lacunas de domínio** | **EM ANDAMENTO — `GAP-001` e `GAP-003` implementados no código** | Recorrência de Compromissos e Eventos (`REQ-009` / `GAP-001`) e checklist independente por ocorrência de tarefa recorrente (`GAP-003`) implementados em Room `v7` / Backup `v8` (aguardando Gradle/CI e validação em aparelho). Restam fora deste lote inicial: extensão versionada da Inbox (`GAP-002`), pendências de Eventos/backup ZIP (`REQ-012`, `REQ-014`, `REQ-026`), consistência da Agenda (`INT-01`), checklist rascunho (`INT-03`) e estado em rotação (`BUG-001`). |
 | **Rodada 5 — Arquitetura da informação e evolução da experiência** | **POSTERIOR — EM ANÁLISE** | Auditar o aplicativo funcional completo; mapear entidades e relações; decidir arquitetura de informação; definir linguagem visual; especificar componentes, fichas e interações; prototipar e validar; só então implementar em lotes pequenos. A proposta Claude permanece referência, não especificação aprovada. |
-| **Rodada 6 — Integração bidirecional ChatGPT ↔ NEXUS** | **FUTURA — após Rodadas 4 e 5** | Guia operacional validado, catálogo de capacidades, snapshot minimizado do estado, recibos/feed de alterações, sincronização manual e automação opcional segura. |
 
 ### 2.1 Escopo da Rodada 4 — completar o núcleo funcional
 
 A ordem interna inicial recomendada é:
 
-1. **Recorrência de Compromissos e Eventos (`REQ-009` / `GAP-001`):** auditar o motor atual de tarefas; definir modelo de séries, frequências, exceções, edição “só esta/toda a série”, projeção virtual, fuso horário, lembretes, backup e migrações; implementar e testar sem regredir recorrência de tarefas.
-2. **Checklist independente por ocorrência (`GAP-003`):** auditar o motor de recorrência de tarefas e a associação de subtasks; garantir que cada ocorrência reutilize o checklist-base, mas mantenha estado de conclusão independente e histórico próprio. Não copiar marcações da ocorrência anterior.
-3. **Checklists e completude dos registros:** especificar e implementar checklists opcionais em Compromissos e Eventos (`REQ-029`), além do checklist independente por ocorrência (`GAP-003`). Definir também metadados de identidade contextual/ícones (`REQ-030`) sem confundir tipo de registro com ação.
+1. **Recorrência de Compromissos e Eventos (`REQ-009` / `GAP-001`) — `IMPLEMENTADA NO CÓDIGO (aguardando CI/aparelho)`:** modelo generalizado via `RecurrenceDomain`, frequência `ANNUAL`, exceções `SKIP`/`OVERRIDE` por ocorrência, edição/exclusão `"só esta/toda a série"`, projeção virtual na Agenda e em Eventos, materialização sob demanda sem transações fantasma, lembretes virtuais e `MIGRATION_6_7` + Backup `v8`.
+2. **Checklist independente por ocorrência (`GAP-003`) — `IMPLEMENTADA NO CÓDIGO (aguardando CI/aparelho)`:** checklist-modelo da série isolado em `templateSubtasksJson` com backfill `v6→v7`, evitando copiar marcações da ocorrência anterior e mantendo histórico independente.
+3. **Ponte e contrato de entrada (`GAP-002`) — `PENDENTE`:** estender/versionar o contrato `v1` para criar e atualizar regras, exceções e checklists recorrentes com prévia, idempotência, validação e rollback. Não simular séries com registros únicos.
 4. **Completar Eventos e seus dados associados:** resolver `REQ-012` (gestão de compromissos vinculados), `REQ-014` (campos avançados e banner) e `REQ-026` (backup ZIP com banners), respeitando migrações e compatibilidade.
 5. **Consistência funcional e técnica:** resolver `INT-01` (motor legado da Agenda), `INT-03` (rascunho de checklist) e `BUG-001` (preservação de rota/rascunhos), após confirmar o comportamento atual e os testes necessários.
-6. **Auditoria de completude:** percorrer requisitos e rastreabilidade, identificar funcionalidades parcialmente implementadas ou não verificadas, classificar por impacto e decidir explicitamente o que precisa ser concluído antes da reformulação. Incluir casos reais combinando recorrência, checklists, relações, ícones/contexto, notificações, backup e histórico. Não transformar cada item opcional/baixo impacto em bloqueio artificial.
-7. **Guia operacional para o ChatGPT (`docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`):** depois que os modelos e fluxos de domínio estiverem estáveis, solicitar ao Google AI Studio que gere e valide o guia a partir do código real. O guia deverá ensinar como transformar pedidos em operações JSON válidas, com exemplos de tarefas, checklists, rotina semanal de academia, compromissos, eventos, recorrências, vínculos, finanças e atualizações. O Google AI Studio trabalha no workspace local e não acessa GitHub; o usuário sincroniza manualmente os arquivos e o ChatGPT verifica o resultado no repositório/CI. Não publicar exemplos fictícios ou incompatíveis com os DTOs; manter o guia sincronizado quando o contrato mudar.
+6. **Auditoria de completude:** percorrer requisitos e rastreabilidade, identificar funcionalidades parcialmente implementadas ou não verificadas, classificar por impacto e decidir explicitamente o que precisa ser concluído antes da reformulação. Não transformar cada item opcional/baixo impacto em bloqueio artificial.
 
 Cada item deve ter especificação, implementação, testes automatizados adequados e validação no aplicativo real quando depender de Android/Room/WorkManager/UI. O registro `15_REGISTRO_LACUNAS_E_FALHAS.md` mantém as evidências e o estado de cada pendência.
 
@@ -92,30 +95,7 @@ A Rodada 5 não é “implementar o Claude” nem fazer redesign de uma vez. Seg
 
 A atualização conceitual posterior ao documento original do Claude refinou pontos importantes: fichas especializadas, consulta separada de edição, componentes proporcionais, relações sem duplicar registros e navegação ainda em análise. A arquitetura de cinco destinos do Claude não está aprovada. Preservar a navegação atual até decisão formal.
 
-### 2.3 Rodada 6 — finalização da integração bidirecional ChatGPT ↔ NEXUS
-
-A ponte da Rodada 3 permanece funcional para entrada de registros pelo contrato v1. Ela não será expandida agora. A finalização da integração será feita **somente depois da Rodada 4 (domínio completo) e da Rodada 5 (experiência estabilizada)**, para evitar construir contratos e sincronizações em cima de modelos que ainda vão mudar.
-
-Entregas planejadas:
-1. **Guia operacional oficial:** concluir `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` com base no código real e exemplos validados. O ChatGPT deve consultar esse guia antes de criar JSON; o Google AI Studio é responsável por gerar/atualizar a documentação técnica a partir da implementação.
-2. **Catálogo de capacidades:** exportar um documento/JSON versionado que informe entidades, campos, relações, operações suportadas, limitações, enumerações e versão do contrato. É a descrição do que o NEXUS sabe fazer, não os dados pessoais do usuário.
-3. **Snapshot de estado:** exportar uma representação compacta e selecionável do estado atual do NEXUS (agenda, tarefas, compromissos, eventos, pendências e relações necessárias), com data/hora, versão e escopo. Não usar o backup completo como contexto padrão; evitar publicar dados financeiros ou pessoais além do necessário.
-4. **Retorno de alterações:** registrar recibos/resultado das importações e operações, e mudanças relevantes feitas no NEXUS desde a última sincronização. Avaliar feed incremental de mudanças em vez de reescrever o estado inteiro a cada execução.
-5. **Sincronização manual de mão dupla:** uma ação clara de sincronizar pode executar, em ordem segura, leitura de comandos pendentes, prévia/validação e confirmação de importação, seguida de envio do snapshot/recibos atualizados. A interface deve informar o que entrou, o que saiu, conflitos e falhas.
-6. **Automação opcional:** avaliar envio periódico (por exemplo, madrugada) e consulta de entrada em segundo plano. WorkManager é best-effort e pode atrasar por Doze, bateria e rede; não prometer execução exata às 00h ou 05h. O usuário mantém controle para pausar/desativar.
-7. **Segurança e privacidade:** não ampliar automaticamente o PAT de leitura atual para leitura/escrita dentro do APK. Comparar GitHub App com credenciais curtas, serviço intermediário mínimo e token fine-grained separado, restrito ao único repositório e com expiração. Android Keystore protege armazenamento em repouso, mas não elimina o risco de um segredo de escrita disponível ao processo do aplicativo. Nunca versionar token, enviar token em JSON, backup ou logs.
-8. **Arquitetura local-first:** a integração é opcional; NEXUS deve continuar plenamente utilizável sem GitHub/ChatGPT. Definir conflito, idempotência, exclusão, tombstones, concorrência e fonte de verdade antes de sincronizar alterações em ambos os sentidos.
-
-**Separação obrigatória de artefatos:**
-- `capabilities.json` (ou equivalente): o que a versão do aplicativo suporta; muda quando a implementação/contrato muda.
-- `state_snapshot.json` (ou equivalente): o que existe agora no aplicativo; muda quando os dados mudam.
-- `inbox/*.json`: comandos/entradas preparados pelo ChatGPT para o NEXUS.
-- `receipts/` ou `changes/`: resultados e alterações produzidas pelo NEXUS para consumo posterior do ChatGPT.
-
-Esses nomes são propostas de organização, não caminhos ou contratos já implementados. A estrutura final será decidida na especificação da Rodada 6.
-
-
-### 2.4 Gate contínuo de confiabilidade e release
+### 2.3 Gate contínuo de confiabilidade e release
 
 Não é uma rodada isolada: acompanha todas as etapas. Inclui keystore persistente, atualização in-place, migrações Room, backup/restauração/merge, testes de regressão, segurança do token, notificações, desempenho e validação em aparelho. Build verde não substitui validação prática.
 
@@ -129,7 +109,7 @@ Não é uma rodada isolada: acompanha todas as etapas. Inclui keystore persisten
 | **Dependência ociosa** | Remover `androidx.navigation:navigation-compose:2.8.5` do catálogo e `app/build.gradle.kts` | `app/build.gradle.kts:65`, `gradle/libs.versions.toml` | Baixo — reduz tamanho do build e evita confusão arquitetural |
 | **Modularização gradual** | Quebrar arquivos monolíticos extensos (`NexusRepository.kt` ~4.914 linhas, `EntityEditors.kt` ~2.378, `FinanceScreen.kt`, `NexusViewModel.kt` ~1.521) conforme novos lotes tocarem nessas áreas | `data/repository/`, `ui/` | Médio — melhora legibilidade e tempo de análise K2 |
 | **Infraestrutura de build/testes** | Adicionar `./gradlew` na raiz, gerar/versionar `app/schemas/` após KSP real, provisionar os secrets/keystore persistente para ativar assinatura consistente entre releases e iniciar cobertura `androidTest` (migrações Room + UI crítica) | Raiz, `app/schemas/`, `keystore.properties`, `.github/workflows/android-build.yml`, `app/src/androidTest/` | Alto para previsibilidade de releases futuras e atualização in-place |
-| **Validação real em CI / Dispositivo** | Executar `gradle :app:testDebugUnitTest :app:assembleDebug` (e `:app:assembleRelease` com secrets) sobre o código atual (`v5.3.0`, `18` suítes / `137` `@Test`) e validar em aparelho/tablet real (atualização in-place via `adb install -r` após `apksigner verify`, prévia dry-run e mesclagem incremental com backup real, fluxo real ChatGPT → `NEXUS-INBOX` com GitHub privado + Keystore PAT, evolução visual/adaptativa, notificações Android 13+, deep-link e HTTP real) | CI + Dispositivo Android | Crítico antes de publicar nova release |
+| **Validação real em CI / Dispositivo** | Executar `gradle :app:testDebugUnitTest :app:assembleDebug` (e `:app:assembleRelease` com secrets) sobre o código atual (`v5.3.0`, Room `v7`, `19` suítes / `145` `@Test`) e validar em aparelho/tablet real (atualização in-place `v6→v7` via `adb install -r` após `apksigner verify`, séries recorrentes de Compromissos/Eventos, checklist independente entre ocorrências, prévia dry-run e mesclagem incremental `v8`, fluxo real ChatGPT → `NEXUS-INBOX`, evolução visual/adaptativa, notificações Android 13+, deep-link e HTTP real) | CI + Dispositivo Android | Crítico antes de publicar nova release |
 
 ---
 

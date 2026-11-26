@@ -38,7 +38,7 @@ data class NexusBackupPayload(
     val marketConfig: MarketBackupConfigDto? = null
 ) {
     companion object {
-        const val CURRENT_FORMAT_VERSION = 7
+        const val CURRENT_FORMAT_VERSION = 8
     }
 }
 
@@ -133,6 +133,8 @@ data class EventBackupDto(
     val paymentMethod: String = "PIX",
     val creditCardId: String? = null,
     val installmentsCount: Int = 1,
+    val recurrenceId: String? = null,
+    val occurrenceDateIso: String? = null,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 )
@@ -181,6 +183,8 @@ data class AppointmentBackupDto(
     val isAllDay: Boolean = false,
     val location: String = "",
     val link: String = "",
+    val recurrenceId: String? = null,
+    val occurrenceDateIso: String? = null,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 )
@@ -496,6 +500,26 @@ data class TaskRecurrenceBackupDto(
     val endDateIso: String? = null,
     val maxOccurrences: Int? = null,
     val isActive: Boolean = true,
+    val domain: String = "TASK",
+    val isAllDay: Boolean = false,
+    val durationMillis: Long = 3_600_000L,
+    val location: String = "",
+    val link: String = "",
+    val officialLink: String = "",
+    val ticketLink: String = "",
+    val locationName: String = "",
+    val address: String = "",
+    val city: String = "",
+    val state: String = "",
+    val eventStatus: String = "PLANNED",
+    val ticketStatus: String = "FREE",
+    val ticketPriceCents: Long = 0L,
+    val ticketQuantity: Int = 1,
+    val ticketFeesCents: Long = 0L,
+    val paymentMethod: String = "PIX",
+    val creditCardId: String? = null,
+    val installmentsCount: Int = 1,
+    val templateSubtasksJson: String = "[]",
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 )
@@ -508,7 +532,14 @@ data class RecurrenceExceptionBackupDto(
     val exceptionType: String = "SKIP",
     val overrideTitle: String? = null,
     val overrideDueAt: Long? = null,
+    val overrideEndAt: Long? = null,
+    val overrideDescription: String? = null,
+    val overrideLocation: String? = null,
+    val overrideLink: String? = null,
+    val overrideIsAllDay: Boolean? = null,
     val taskId: String? = null,
+    val appointmentId: String? = null,
+    val eventId: String? = null,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 )

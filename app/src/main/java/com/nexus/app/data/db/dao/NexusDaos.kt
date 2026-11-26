@@ -33,6 +33,7 @@ import com.nexus.app.data.db.entity.TaskEntity
 import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.data.db.entity.TransactionEntity
 import com.nexus.app.domain.model.BriefingType
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.ReminderCategory
 import com.nexus.app.domain.model.ReminderSourceType
 import com.nexus.app.domain.model.ReminderStatus
@@ -156,14 +157,32 @@ interface EventDao {
     )
     fun search(query: String): Flow<List<EventEntity>>
 
+    @Query("SELECT * FROM events WHERE recurrenceId = :recurrenceId AND occurrenceDateIso = :occurrenceDateIso LIMIT 1")
+    suspend fun getByRecurrenceAndDate(recurrenceId: String, occurrenceDateIso: String): EventEntity?
+
+    @Query("SELECT * FROM events WHERE recurrenceId = :recurrenceId ORDER BY startAt ASC, createdAt ASC")
+    suspend fun getByRecurrenceId(recurrenceId: String): List<EventEntity>
+
+    @Query("UPDATE events SET recurrenceId = NULL, updatedAt = :updatedAt WHERE recurrenceId = :recurrenceId")
+    suspend fun unlinkRecurrence(recurrenceId: String, updatedAt: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(event: EventEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(event: EventEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<EventEntity>)
 
+    @Update
+    suspend fun update(event: EventEntity)
+
     @Query("DELETE FROM events WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM events WHERE recurrenceId = :recurrenceId AND eventStatus != 'ATTENDED'")
+    suspend fun deleteNonAttendedByRecurrence(recurrenceId: String)
 
     @Query("DELETE FROM events")
     suspend fun deleteAll()
@@ -307,14 +326,32 @@ interface AppointmentDao {
     )
     fun search(query: String): Flow<List<AppointmentEntity>>
 
+    @Query("SELECT * FROM appointments WHERE recurrenceId = :recurrenceId AND occurrenceDateIso = :occurrenceDateIso LIMIT 1")
+    suspend fun getByRecurrenceAndDate(recurrenceId: String, occurrenceDateIso: String): AppointmentEntity?
+
+    @Query("SELECT * FROM appointments WHERE recurrenceId = :recurrenceId ORDER BY startAt ASC, createdAt ASC")
+    suspend fun getByRecurrenceId(recurrenceId: String): List<AppointmentEntity>
+
+    @Query("UPDATE appointments SET recurrenceId = NULL, updatedAt = :updatedAt WHERE recurrenceId = :recurrenceId")
+    suspend fun unlinkRecurrence(recurrenceId: String, updatedAt: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(appointment: AppointmentEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(appointment: AppointmentEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<AppointmentEntity>)
 
+    @Update
+    suspend fun update(appointment: AppointmentEntity)
+
     @Query("DELETE FROM appointments WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM appointments WHERE recurrenceId = :recurrenceId")
+    suspend fun deleteByRecurrenceId(recurrenceId: String)
 
     @Query("DELETE FROM appointments")
     suspend fun deleteAll()
@@ -924,6 +961,12 @@ interface TaskRecurrenceDao {
     @Query("SELECT * FROM recurrences WHERE isActive = 1 ORDER BY createdAt ASC")
     suspend fun getActiveOnce(): List<TaskRecurrenceEntity>
 
+    @Query("SELECT * FROM recurrences WHERE domain = :domain ORDER BY createdAt ASC")
+    suspend fun getByDomainOnce(domain: RecurrenceDomain): List<TaskRecurrenceEntity>
+
+    @Query("SELECT * FROM recurrences WHERE domain = :domain AND isActive = 1 ORDER BY createdAt ASC")
+    suspend fun getActiveByDomainOnce(domain: RecurrenceDomain): List<TaskRecurrenceEntity>
+
     @Query("SELECT * FROM recurrences WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): TaskRecurrenceEntity?
 
@@ -951,6 +994,9 @@ interface RecurrenceExceptionDao {
     @Query("SELECT * FROM recurrence_exceptions ORDER BY occurrenceDateIso ASC")
     suspend fun getAllOnce(): List<RecurrenceExceptionEntity>
 
+    @Query("SELECT * FROM recurrence_exceptions WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): RecurrenceExceptionEntity?
+
     @Query("SELECT * FROM recurrence_exceptions WHERE recurrenceId = :recurrenceId ORDER BY occurrenceDateIso ASC")
     suspend fun getByRecurrenceId(recurrenceId: String): List<RecurrenceExceptionEntity>
 
@@ -962,6 +1008,9 @@ interface RecurrenceExceptionDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<RecurrenceExceptionEntity>)
+
+    @Query("DELETE FROM recurrence_exceptions WHERE id = :id")
+    suspend fun deleteById(id: String)
 
     @Query("DELETE FROM recurrence_exceptions WHERE recurrenceId = :recurrenceId")
     suspend fun deleteByRecurrenceId(recurrenceId: String)

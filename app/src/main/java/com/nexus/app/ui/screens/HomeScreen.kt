@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.DashboardCustomize
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -1121,16 +1122,31 @@ fun AppointmentCompactCard(
             color = palette.textPrimary
         )
         Spacer(modifier = Modifier.height(4.dp))
+        val isRecurring = item.recurrenceId != null || item.isVirtualRecurrence
         val meta = buildList {
+            if (isRecurring) add("Recorrente")
             add(timeSummary)
             item.category?.let { add(it.name) }
             if (appt.location.isNotBlank()) add(appt.location)
         }.joinToString(" · ")
-        Text(
-            text = meta,
-            style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-            color = palette.textSecondary
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (isRecurring) {
+                Icon(
+                    imageVector = Icons.Outlined.Repeat,
+                    contentDescription = "Compromisso recorrente",
+                    tint = palette.accentNeon,
+                    modifier = Modifier.size(13.dp)
+                )
+            }
+            Text(
+                text = meta,
+                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                color = palette.textSecondary
+            )
+        }
         if (showConflictAlert && item.hasConflict) {
             Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

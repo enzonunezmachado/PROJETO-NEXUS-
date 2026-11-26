@@ -4,6 +4,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.nexus.app.core.DateTimeUtils
 import com.nexus.app.domain.model.CategoryScope
+import com.nexus.app.domain.rules.RecurrenceEngine
 
 /**
  * Estrategia permanente de evolucao do banco NEXUS.
@@ -607,12 +608,102 @@ object NexusMigrations {
         }
     }
 
+    val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE appointments ADD COLUMN recurrenceId TEXT REFERENCES recurrences(id) ON DELETE SET NULL")
+            db.execSQL("ALTER TABLE appointments ADD COLUMN occurrenceDateIso TEXT")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_appointments_recurrenceId ON appointments(recurrenceId)")
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS index_appointments_recurrenceId_occurrenceDateIso ON appointments(recurrenceId, occurrenceDateIso)"
+            )
+
+            db.execSQL("ALTER TABLE events ADD COLUMN recurrenceId TEXT REFERENCES recurrences(id) ON DELETE SET NULL")
+            db.execSQL("ALTER TABLE events ADD COLUMN occurrenceDateIso TEXT")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_events_recurrenceId ON events(recurrenceId)")
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS index_events_recurrenceId_occurrenceDateIso ON events(recurrenceId, occurrenceDateIso)"
+            )
+
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN domain TEXT NOT NULL DEFAULT 'TASK'")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN isAllDay INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN durationMillis INTEGER NOT NULL DEFAULT 3600000")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN location TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN link TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN officialLink TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN ticketLink TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN locationName TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN address TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN city TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN state TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN eventStatus TEXT NOT NULL DEFAULT 'PLANNED'")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN ticketStatus TEXT NOT NULL DEFAULT 'FREE'")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN ticketPriceCents INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN ticketQuantity INTEGER NOT NULL DEFAULT 1")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN ticketFeesCents INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN paymentMethod TEXT NOT NULL DEFAULT 'PIX'")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN creditCardId TEXT")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN installmentsCount INTEGER NOT NULL DEFAULT 1")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN templateSubtasksJson TEXT NOT NULL DEFAULT '[]'")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_recurrences_domain ON recurrences(domain)")
+
+            db.execSQL("ALTER TABLE recurrence_exceptions ADD COLUMN overrideEndAt INTEGER")
+            db.execSQL("ALTER TABLE recurrence_exceptions ADD COLUMN overrideDescription TEXT")
+            db.execSQL("ALTER TABLE recurrence_exceptions ADD COLUMN overrideLocation TEXT")
+            db.execSQL("ALTER TABLE recurrence_exceptions ADD COLUMN overrideLink TEXT")
+            db.execSQL("ALTER TABLE recurrence_exceptions ADD COLUMN overrideIsAllDay INTEGER")
+            db.execSQL("ALTER TABLE recurrence_exceptions ADD COLUMN appointmentId TEXT")
+            db.execSQL("ALTER TABLE recurrence_exceptions ADD COLUMN eventId TEXT")
+
+            // Backfill legacy v6 checklist template into recurrences.templateSubtasksJson
+            val recurrenceIds = mutableListOf<String>()
+            db.query("SELECT id FROM recurrences").use { cursor ->
+                while (cursor.moveToNext()) {
+                    recurrenceIds += cursor.getString(0)
+                }
+            }
+            recurrenceIds.forEach { recId ->
+                var sourceTaskId: String? = null
+                db.query(
+                    """
+                    SELECT id FROM tasks
+                    WHERE recurrenceId = ?
+                    ORDER BY CASE WHEN status != 'COMPLETED' AND status != 'CANCELLED' THEN 0 ELSE 1 END, createdAt DESC
+                    LIMIT 1
+                    """.trimIndent(),
+                    arrayOf<Any>(recId)
+                ).use { taskCursor ->
+                    if (taskCursor.moveToFirst()) {
+                        sourceTaskId = taskCursor.getString(0)
+                    }
+                }
+                val taskId = sourceTaskId ?: return@forEach
+                val titles = mutableListOf<String>()
+                db.query(
+                    "SELECT title FROM subtasks WHERE taskId = ? ORDER BY sortOrder ASC, createdAt ASC",
+                    arrayOf<Any>(taskId)
+                ).use { subCursor ->
+                    while (subCursor.moveToNext()) {
+                        val t = subCursor.getString(0)?.trim().orEmpty()
+                        if (t.isNotEmpty()) titles += t
+                    }
+                }
+                if (titles.isNotEmpty()) {
+                    db.execSQL(
+                        "UPDATE recurrences SET templateSubtasksJson = ? WHERE id = ?",
+                        arrayOf<Any>(RecurrenceEngine.serializeChecklistTemplate(titles), recId)
+                    )
+                }
+            }
+        }
+    }
+
     val ALL_MIGRATIONS: Array<Migration> = arrayOf(
         MIGRATION_1_2,
         MIGRATION_2_3,
         MIGRATION_3_4,
         MIGRATION_4_5,
-        MIGRATION_5_6
+        MIGRATION_5_6,
+        MIGRATION_6_7
     )
 }
 

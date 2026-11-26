@@ -1,4 +1,4 @@
-# 04 — Modelo de Dados & Dicionário Completo (`Room v6 + Stores Externos + Backup v7`)
+# 04 — Modelo de Dados & Dicionário Completo (`Room v7 + Stores Externos + Backup v8`)
 
 > **Fonte exata:** `NexusDatabase.kt`, `NexusEntities.kt`, `NexusMigrations.kt`, `NexusTypeConverters.kt`, `NexusEnums.kt`, `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `data/market/*Store.kt` e `NexusWidgetConfigStore.kt`.
 
@@ -7,7 +7,7 @@
 ## 1. Visão Geral da Persistência
 
 O NEXUS divide sua persistência em **duas camadas complementares**:
-1. **Room SQLite (`nexus_local.db`, `DATABASE_VERSION = 6`, `exportSchema = true`)**: `27` tabelas e `27` DAOs contendo todos os dados estruturados do usuário (rotina, produtividade, financeiro, objetivos, lembretes, logs).
+1. **Room SQLite (`nexus_local.db`, `DATABASE_VERSION = 7`, `exportSchema = true`)**: `27` tabelas e `27` DAOs contendo todos os dados estruturados do usuário (rotina, produtividade, financeiro, objetivos, lembretes, logs).
 2. **Persistência Isolada fora do Room**:
    - **Módulo Mercado (`data/market/*Store.kt`):** cache de cotações e favoritos em `SharedPreferences`; histórico de preços e alertas de preço em arquivos JSON atômicos em `filesDir`.
    - **Widgets Glance (`widgets/NexusWidgetConfigStore.kt`):** preferências visuais por `appWidgetId` em `SharedPreferences`.
@@ -16,7 +16,7 @@ O NEXUS divide sua persistência em **duas camadas complementares**:
 
 ---
 
-## 2. Dicionário Completo das 27 Entidades Room (`DATABASE_VERSION = 6`)
+## 2. Dicionário Completo das 27 Entidades Room (`DATABASE_VERSION = 7`)
 
 > **Padrão transversal:** todas as `27` tabelas usam PK `id: String` (`TEXT NOT NULL PRIMARY KEY`) e timestamps `createdAt: Long` / `updatedAt: Long` (`INTEGER NOT NULL`, epoch ms UTC), omitidos na descrição extra quando triviais. Timestamps usam epoch ms UTC; dias calendário isolados usam `dateIso` (`YYYY-MM-DD`) e competências mensais usam `yearMonth` (`YYYY-MM`).
 
@@ -32,12 +32,12 @@ O NEXUS divide sua persistência em **duas camadas complementares**:
 | Tabela (`@Entity`) | Colunas Completas | FKs e Índices |
 | --- | --- | --- |
 | `projects` (`ProjectEntity`) | `id: String`, `name: String`, `description: String [""]`, `deadlineAt: Long? [null]`, `status: ProjectStatus [ACTIVE]`, `priority: TaskPriority [NORMAL]`, `goalId: String? [null]`, `createdAt: Long`, `updatedAt: Long` | FK `goalId → personal_goals(id)` (`SET_NULL`). Ídx: `goalId` |
-| `events` (`EventEntity`) | `id: String`, `name: String`, `description: String [""]`, `categoryId: String? [null]`, `startAt: Long`, `endAt: Long`, `isAllDay: Boolean [false]`, `officialLink: String [""]`, `ticketLink: String [""]`, `locationName: String [""]`, `address: String [""]`, `city: String [""]`, `state: String [""]`, `notes: String [""]`, `eventStatus: EventLifecycleStatus [PLANNED]`, `ticketStatus: TicketStatus [FREE]`, `ticketPriceCents: Long [0L]`, `ticketQuantity: Int [1]`, `ticketFeesCents: Long [0L]`, `ticketTotalCents: Long [0L]`, `ticketPurchaseDate: Long? [null]`, `ticketDueDate: Long? [null]`, `paymentMethod: PaymentMethod [PIX]`, `creditCardId: String? [null]`, `installmentsCount: Int [1]`, `createdAt: Long`, `updatedAt: Long` | FKs `categoryId → categories(id)` (`SET_NULL`), `creditCardId → credit_cards(id)` (`SET_NULL`). Ídx: `categoryId`, `creditCardId`, `startAt` |
+| `events` (`EventEntity`) | `id: String`, `name: String`, `description: String [""]`, `categoryId: String? [null]`, `startAt: Long`, `endAt: Long`, `isAllDay: Boolean [false]`, `officialLink: String [""]`, `ticketLink: String [""]`, `locationName: String [""]`, `address: String [""]`, `city: String [""]`, `state: String [""]`, `notes: String [""]`, `eventStatus: EventLifecycleStatus [PLANNED]`, `ticketStatus: TicketStatus [FREE]`, `ticketPriceCents: Long [0L]`, `ticketQuantity: Int [1]`, `ticketFeesCents: Long [0L]`, `ticketTotalCents: Long [0L]`, `ticketPurchaseDate: Long? [null]`, `ticketDueDate: Long? [null]`, `paymentMethod: PaymentMethod [PIX]`, `creditCardId: String? [null]`, `installmentsCount: Int [1]`, `recurrenceId: String? [null]`, `occurrenceDateIso: String? [null]`, `createdAt: Long`, `updatedAt: Long` | FKs `categoryId → categories(id)` (`SET_NULL`), `creditCardId → credit_cards(id)` (`SET_NULL`), `recurrenceId → recurrences(id)` (`SET_NULL`). Ídx: `categoryId`, `creditCardId`, `startAt`, `recurrenceId`, `UNIQUE(recurrenceId, occurrenceDateIso)` |
 | `tasks` (`TaskEntity`) | `id: String`, `title: String`, `description: String [""]`, `projectId: String?`, `categoryId: String?`, `eventId: String?`, `goalId: String?`, `priority: TaskPriority [NORMAL]`, `status: TaskStatus [NOT_STARTED]`, `dueAt: Long?`, `hasDueTime: Boolean [false]`, `notes: String [""]`, `completedAt: Long?`, `recurrenceId: String?`, `occurrenceDateIso: String?`, `createdAt: Long`, `updatedAt: Long` | FKs `projectId → projects`, `categoryId → categories`, `eventId → events`, `goalId → personal_goals`, `recurrenceId → recurrences` (todas `SET_NULL`). Ídx: os 5 FKs + `status`, `dueAt`, `UNIQUE(recurrenceId, occurrenceDateIso)` |
 | `subtasks` (`SubtaskEntity`) | `id: String`, `taskId: String`, `title: String`, `isCompleted: Boolean [false]`, `sortOrder: Int [0]`, `createdAt: Long`, `updatedAt: Long` | FK `taskId → tasks(id)` (`CASCADE`). Ídx: `taskId` |
-| `appointments` (`AppointmentEntity`) | `id: String`, `title: String`, `description: String [""]`, `categoryId: String?`, `eventId: String?`, `startAt: Long`, `endAt: Long`, `isAllDay: Boolean [false]`, `location: String [""]`, `link: String [""]`, `createdAt: Long`, `updatedAt: Long` | FKs `categoryId → categories`, `eventId → events` (`SET_NULL`). Ídx: `categoryId`, `eventId`, `startAt`, `endAt` |
-| `recurrences` (`TaskRecurrenceEntity`) | `id: String`, `title: String`, `description: String [""]`, `projectId: String?`, `categoryId: String?`, `eventId: String?`, `goalId: String?`, `priority: TaskPriority [NORMAL]`, `notes: String [""]`, `hasDueTime: Boolean [false]`, `dueTimeMinutesOfDay: Int?`, `reminderMinutesBefore: Int?`, `frequency: TaskRecurrenceFrequency [WEEKLY]`, `customIntervalDays: Int [1]`, `weekdaysMask: Int [0]`, `startDateIso: String`, `endDateIso: String?`, `maxOccurrences: Int?`, `isActive: Boolean [true]`, `createdAt: Long`, `updatedAt: Long` | FKs `projectId`, `categoryId`, `eventId`, `goalId` (`SET_NULL`). Ídx: os 4 FKs + `isActive` |
-| `recurrence_exceptions` (`RecurrenceExceptionEntity`) | `id: String`, `recurrenceId: String`, `occurrenceDateIso: String`, `exceptionType: RecurrenceExceptionType [SKIP]`, `overrideTitle: String?`, `overrideDueAt: Long?`, `taskId: String?`, `createdAt: Long`, `updatedAt: Long` | FK `recurrenceId → recurrences(id)` (`CASCADE`). Ídx: `recurrenceId`, `UNIQUE(recurrenceId, occurrenceDateIso)` |
+| `appointments` (`AppointmentEntity`) | `id: String`, `title: String`, `description: String [""]`, `categoryId: String?`, `eventId: String?`, `startAt: Long`, `endAt: Long`, `isAllDay: Boolean [false]`, `location: String [""]`, `link: String [""]`, `recurrenceId: String?`, `occurrenceDateIso: String?`, `createdAt: Long`, `updatedAt: Long` | FKs `categoryId → categories`, `eventId → events`, `recurrenceId → recurrences` (`SET_NULL`). Ídx: `categoryId`, `eventId`, `startAt`, `endAt`, `recurrenceId`, `UNIQUE(recurrenceId, occurrenceDateIso)` |
+| `recurrences` (`TaskRecurrenceEntity`) | `id: String`, `title: String`, `description: String [""]`, `projectId: String?`, `categoryId: String?`, `eventId: String?`, `goalId: String?`, `priority: TaskPriority [NORMAL]`, `notes: String [""]`, `hasDueTime: Boolean [false]`, `dueTimeMinutesOfDay: Int?`, `reminderMinutesBefore: Int?`, `frequency: TaskRecurrenceFrequency [WEEKLY]`, `customIntervalDays: Int [1]`, `weekdaysMask: Int [0]`, `startDateIso: String`, `endDateIso: String?`, `maxOccurrences: Int?`, `isActive: Boolean [true]`, `domain: RecurrenceDomain [TASK]`, `isAllDay: Boolean [false]`, `durationMillis: Long [3600000L]`, `location: String [""]`, `link: String [""]`, `officialLink: String [""]`, `ticketLink: String [""]`, `locationName: String [""]`, `address: String [""]`, `city: String [""]`, `state: String [""]`, `eventStatus: EventLifecycleStatus [PLANNED]`, `ticketStatus: TicketStatus [FREE]`, `ticketPriceCents: Long [0L]`, `ticketQuantity: Int [1]`, `ticketFeesCents: Long [0L]`, `paymentMethod: PaymentMethod [PIX]`, `creditCardId: String? [null]`, `installmentsCount: Int [1]`, `templateSubtasksJson: String ["[]"]`, `createdAt: Long`, `updatedAt: Long` | FKs `projectId`, `categoryId`, `eventId`, `goalId` (`SET_NULL`). Ídx: os 4 FKs + `isActive`, `domain` |
+| `recurrence_exceptions` (`RecurrenceExceptionEntity`) | `id: String`, `recurrenceId: String`, `occurrenceDateIso: String`, `exceptionType: RecurrenceExceptionType [SKIP]`, `overrideTitle: String?`, `overrideDueAt: Long?`, `overrideEndAt: Long?`, `overrideDescription: String?`, `overrideLocation: String?`, `overrideLink: String?`, `overrideIsAllDay: Boolean?`, `taskId: String?`, `appointmentId: String?`, `eventId: String?`, `createdAt: Long`, `updatedAt: Long` | FK `recurrenceId → recurrences(id)` (`CASCADE`). Ídx: `recurrenceId`, `UNIQUE(recurrenceId, occurrenceDateIso)` |
 
 ### 2.3 Financeiro
 
@@ -71,7 +71,7 @@ O NEXUS divide sua persistência em **duas camadas complementares**:
 
 ## 3. Catálogo de Enums Persistidos (`NexusTypeConverters` e Mercado)
 
-### `NexusTypeConverters` (21 enums persistidos como `TEXT` via `.name` e recuperados com `fromStringOrDefault`)
+### `NexusTypeConverters` (`22` enums persistidos como `TEXT` via `.name` e recuperados com `fromStringOrDefault`)
 - `TaskPriority` (`LOW, NORMAL, HIGH, URGENT`)
 - `TaskStatus` (`NOT_STARTED, IN_PROGRESS, WAITING, BLOCKED, COMPLETED, CANCELLED`)
 - `ProjectStatus` (`PLANNED, ACTIVE, ON_HOLD, COMPLETED, ARCHIVED`)
@@ -91,7 +91,8 @@ O NEXUS divide sua persistência em **duas camadas complementares**:
 - `NexusDateFormat` (`WEEKDAY_DD_MM_YYYY, DD_MM_YYYY, DD_MMM_YYYY, DD_MM_WEEKDAY`)
 - `GoalStatus` (`ACTIVE, PAUSED, COMPLETED, CANCELLED`)
 - `GoalProgressMode` (`AUTO, MANUAL`)
-- `TaskRecurrenceFrequency` (`DAILY, SPECIFIC_WEEKDAYS, WEEKLY, BIWEEKLY, MONTHLY, CUSTOM_DAYS`)
+- `TaskRecurrenceFrequency` (`DAILY, SPECIFIC_WEEKDAYS, WEEKLY, BIWEEKLY, MONTHLY, ANNUAL, CUSTOM_DAYS`)
+- `RecurrenceDomain` (`TASK, APPOINTMENT, EVENT`)
 - `RecurrenceExceptionType` (`SKIP, OVERRIDE`)
 
 *(Enums usados apenas em JSON/Domínio: `DashboardBlockType` [9 blocos], `QuoteLibraryStatus`, `AssetCategory`, `QuoteModality`, `QuoteTrend`, `MarketHistoryRange`, `MarketHistoryGranularity`, `MarketAlertCondition`, `MarketAlertStatus`.)*
@@ -100,7 +101,7 @@ O NEXUS divide sua persistência em **duas camadas complementares**:
 
 ## 4. Persistência Não-Room (Mercado e Widgets)
 
-| Componente | Mecanismo e Localização | Estrutura / Chaves | Entra no Backup v7? |
+| Componente | Mecanismo e Localização | Estrutura / Chaves | Entra no Backup v8? |
 | --- | --- | --- | --- |
 | `SharedPreferencesMarketQuoteStore` | `SharedPreferences` `"nexus_market_quotes_cache"` (`MODE_PRIVATE`) | Chave `"quote_record_<assetCode>"` → `PersistedMarketQuoteRecord` (`lastValidQuote`, `lastAttemptAtEpochMs`, `lastAttemptError`) | **Não** (cache reconstruível) |
 | `FileMarketHistoryStore` | Arquivos em `filesDir/market_history/<SAFE_CODE>_<RANGE>.json` (escrita atômica `.tmp` + `renameTo`) | `PersistedMarketHistoryRecord` (`series: MarketHistorySeries?`, `lastAttemptAtEpochMs`, `lastAttemptError`) | **Não** (cache reconstruível) |
@@ -112,7 +113,7 @@ O NEXUS divide sua persistência em **duas camadas complementares**:
 
 ## 5. Histórico de Migrações Room (`NexusMigrations.kt`)
 
-`fallbackToDestructiveMigration()` é **proibido**. Todas as `5` migrações adicionadas preservam dados anteriores:
+`fallbackToDestructiveMigration()` é **proibido**. Todas as `6` migrações adicionadas preservam dados anteriores:
 
 | Migração | Alterações Aplicadas |
 | --- | --- |
@@ -121,28 +122,29 @@ O NEXUS divide sua persistência em **duas camadas complementares**:
 | `MIGRATION_3_4` | Cria `personalization_settings`, `quotes`, `personal_goals`, `goal_milestones`, `goal_progress_logs`; `projects.goalId`, `tasks.goalId`; seed de personalização |
 | `MIGRATION_4_5` | `appointments.eventId` (`SET_NULL`), `transactions.taskId` (`SET_NULL`) + índices |
 | `MIGRATION_5_6` | Cria `recurrences` e `recurrence_exceptions`; adiciona `tasks.recurrenceId` (`SET_NULL`) e `tasks.occurrenceDateIso` + índice `UNIQUE(recurrenceId, occurrenceDateIso)` |
+| `MIGRATION_6_7` | Generaliza `recurrences` (`domain`, `isAllDay`, `durationMillis`, `location`, `link`, snapshot de evento, `templateSubtasksJson` com backfill das tarefas `v6`) e `recurrence_exceptions` (`overrideEndAt`, `overrideDescription`, `overrideLocation`, `overrideLink`, `overrideIsAllDay`, `appointmentId`, `eventId`); adiciona `recurrenceId` (`SET_NULL`) e `occurrenceDateIso` + `UNIQUE(recurrenceId, occurrenceDateIso)` em `appointments` e `events` |
 
 ---
 
-## 6. Especificação de Backup e Exportação (`CURRENT_FORMAT_VERSION = 7`)
+## 6. Especificação de Backup e Exportação (`CURRENT_FORMAT_VERSION = 8`)
 
 - **Formato JSON (`NexusBackupPayload`):**
-  - Metadados: `formatVersion` (`7`), `appVersion`, `exportedAt` (ISO UTC), `databaseVersion` (`6`).
-  - `27` listas tipadas (`*BackupDto`) espelhando as 27 tabelas Room.
+  - Metadados: `formatVersion` (`8`), `appVersion`, `exportedAt` (ISO UTC), `databaseVersion` (`7`).
+  - `27` listas tipadas (`*BackupDto`) espelhando as 27 tabelas Room (incluindo campos `v8` em `EventBackupDto`, `AppointmentBackupDto`, `TaskRecurrenceBackupDto` e `RecurrenceExceptionBackupDto`).
   - `marketConfig: MarketBackupConfigDto?` (`configVersion = 1`, `favoriteAssetCodes: List<String>?`, `priceAlerts: List<MarketPriceAlertBackupDto>?`).
-- **Retrocompatibilidade (`v1..v7`):** parser `Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }` com defaults em todos os DTOs. Se `marketConfig == null` (ou subcampos `== null`), preserva os favoritos/alertas locais existentes; se lista presente e vazia (`[]`), substitui por vazio.
+- **Retrocompatibilidade (`v1..v8`):** parser `Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true }` com defaults em todos os DTOs e backfill automático de `templateSubtasksJson` quando ausente em backups `<= v7`. Se `marketConfig == null` (ou subcampos `== null`), preserva os favoritos/alertas locais existentes; se lista presente e vazia (`[]`), substitui por vazio.
 - **Modo 1 — Restauração Completa (`BackupManager.restoreAtomically`):**
-  1. Sanitiza FKs órfãs contra pais existentes e mapeia enums inválidos com fallback seguro.
+  1. Sanitiza FKs órfãs contra pais existentes e mapeia enums inválidos com fallback seguro (quebrando o ciclo `recurrences.eventId ↔ events.recurrenceId` na inserção topológica em `restoreAtomically`).
   2. Valida `marketConfig`: filtra códigos inexistentes no `MarketAssetCatalog`, `targetPrice > 0 && isFinite()`, compatibilidade estrita de `currencyOrUnit` (`pts` para índices, código ISO para demais), normaliza estados inconsistentes (`WAITING` + `isActive=false` → `PAUSED`; `TRIGGERED` → `isActive=false`, `awaitingConditionReset=false`) e remove duplicidades.
   3. Dentro de `database.withTransaction`: limpa tabelas filhas → pais, insere pais → filhos na ordem topológica e executa `applyMarketConfigWithRollback` ao final; se o commit Room ou a gravação do Mercado falhar, aciona `rollbackMarketConfig` restaurando os snapshots prévios de favoritos e alertas.
   4. Pós-commit: não avalia alertas nem dispara notificações de mercado na restauração; ressincroniza apenas lembretes Room e atualiza widgets Glance.
 - **Modo 2 — Mesclagem Incremental (`BackupManager.mergeBackupAtomically` / `BackupMergeEngine`):**
   1. Valida compatibilidade estrutural (`formatVersion in 1..CURRENT_FORMAT_VERSION` e `databaseVersion <= DATABASE_VERSION`) antes de abrir transação.
   2. Compartilha um único planejador (`computeMergePlan`) entre a **prévia dry-run** (`previewMerge`, zero gravações no Room ou Mercado) e a **execução efetiva** (`mergeAtomically` via `BackupStorageGateway` dentro de `database.withTransaction` com **zero chamadas `deleteAll`**).
-  3. Processa entidades na ordem topológica (níveis 0 a 4) aplicando preservação local estrita: colisões por `id` ou por chave natural `UNIQUE` (`tasks(recurrenceId, occurrenceDateIso)`, `recurrence_exceptions(recurrenceId, occurrenceDateIso)`, `credit_card_statements(creditCardId, yearMonth)`, `transactions(recurringRuleId, occurrenceIndex)`, `budgets(categoryId, yearMonth)`, `reminders(sourceType, sourceId, category)`, `briefing_history(briefingType, dateIso)`) e singletons (`settings`, `routine_assistant_settings`, `personalization_settings`) nunca sobrescrevem o estado local e são contabilizados em `MergeSummary`.
+  3. Processa entidades na ordem topológica (níveis 0 a 4, com vínculo seguro do ciclo opcional `recurrences.eventId ↔ events.recurrenceId`) aplicando preservação local estrita: colisões por `id` ou por chave natural `UNIQUE` (`tasks(recurrenceId, occurrenceDateIso)`, `appointments(recurrenceId, occurrenceDateIso)`, `events(recurrenceId, occurrenceDateIso)`, `recurrence_exceptions(recurrenceId, occurrenceDateIso)`, `credit_card_statements(creditCardId, yearMonth)`, `transactions(recurringRuleId, occurrenceIndex)`, `budgets(categoryId, yearMonth)`, `reminders(sourceType, sourceId, category)`, `briefing_history(briefingType, dateIso)`) e singletons (`settings`, `routine_assistant_settings`, `personalization_settings`) nunca sobrescrevem o estado local e são contabilizados em `MergeSummary`.
   4. Política de integridade referencial: FKs obrigatórias ausentes no conjunto mesclado (`subtasks.taskId`, `recurrence_exceptions.recurrenceId`, `credit_card_statements.creditCardId`, `budgets.categoryId`, `goal_milestones.goalId`, `goal_progress_logs.goalId`) causam rejeição do registro; FKs opcionais ausentes são anuladas (`null`) com emissão de `MergeIssueItem` tipo `REFERENCE_SANITIZED_NEEDS_REVIEW`.
   5. Proteções financeiras específicas: rejeita despesa redundante de `"pagamento de fatura"` quando já existe `CreditCardStatementEntity` correspondente (`ADR-006`), preserva `declaredBalanceCents` e limites locais e exige vínculo consistente entre parcelas/faturas/transações.
   6. `marketConfig`: realiza união incremental sem duplicar códigos em `favoriteAssetCodes` nem alertas equivalentes (`id` ou assinatura `(assetCode, condition, targetPrice)`) sob o mesmo rollback coordenado Room ↔ Mercado.
-- **Camada Interna de Entrada Estruturada (`data/ingestion/`, Room `v6` inalterado):** utiliza exatamente as tabelas oficiais existentes (`tasks`, `appointments`, `events`, `projects`, `personal_goals`, `transactions`) e registra recibos de idempotência (`APPLIED`, `CONFLICT_PRESERVED_LOCAL`) na tabela `audit_history` com `entityType = "STRUCTURED_INPUT_OP"` e `entityId = operationId` dentro da mesma `database.withTransaction` (rejeições e rollbacks não são gravados, permitindo reenvio seguro). Detalhes em [`14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`](./14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md).
+- **Camada Interna de Entrada Estruturada (`data/ingestion/`, contrato `v1` inalterado na Rodada 4):** utiliza exatamente as tabelas oficiais existentes (`tasks`, `appointments`, `events`, `projects`, `personal_goals`, `transactions`) e registra recibos de idempotência (`APPLIED`, `CONFLICT_PRESERVED_LOCAL`) na tabela `audit_history` com `entityType = "STRUCTURED_INPUT_OP"` e `entityId = operationId` dentro da mesma `database.withTransaction` (rejeições e rollbacks não são gravados, permitindo reenvio seguro). Detalhes em [`14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`](./14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md).
 - **CSV Financeiro (`exportFinancialCsv`):** UTF-8 via SAF com **15 colunas** separadas por vírgula (valores `%.2f` em `Locale.US`, datas `dd/MM/yyyy`).
 - **Frases (`QuoteLibraryScreen`):** exportação e importação SAF em `.json` ou `.txt` (separadores ` - ` ou ` | `, ignorando linhas iniciadas por `#`).

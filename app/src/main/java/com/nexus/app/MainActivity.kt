@@ -52,8 +52,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nexus.app.data.db.entity.AppointmentEntity
 import com.nexus.app.data.db.entity.CreditCardEntity
+import com.nexus.app.data.db.entity.EventEntity
 import com.nexus.app.data.db.entity.FinancialGoalEntity
 import com.nexus.app.data.db.entity.LoanEntity
+import com.nexus.app.data.db.entity.TaskRecurrenceEntity
+import com.nexus.app.domain.model.AgendaItem
+import com.nexus.app.domain.model.EventWithDetails
 import com.nexus.app.domain.model.MarketAssetCatalog
 import com.nexus.app.domain.model.ReminderCategory
 import com.nexus.app.domain.model.ReminderSourceType
@@ -62,6 +66,7 @@ import com.nexus.app.domain.rules.BackAction
 import com.nexus.app.domain.rules.BackNavigationState
 import com.nexus.app.domain.rules.BackSubRouteKind
 import com.nexus.app.domain.rules.BackTabKind
+import com.nexus.app.domain.rules.RecurrenceEngine
 import com.nexus.app.domain.rules.resolveBackAction
 import com.nexus.app.notifications.NexusNotificationScheduler
 import com.nexus.app.ui.FinanceTabMode
@@ -235,6 +240,8 @@ private fun NexusAppRoot(
     val tasksFilter by viewModel.tasksFilter.collectAsStateWithLifecycle()
     val allProjects by viewModel.allProjects.collectAsStateWithLifecycle()
     val allEvents by viewModel.allEvents.collectAsStateWithLifecycle()
+    val taskRecurrences by viewModel.taskRecurrences.collectAsStateWithLifecycle()
+    val allAgendaItems by viewModel.allAgendaItems.collectAsStateWithLifecycle()
     val agendaOccurrences by viewModel.agendaOccurrences.collectAsStateWithLifecycle()
     val agendaFilter by viewModel.agendaFilter.collectAsStateWithLifecycle()
     val financeSummary by viewModel.financeSummary.collectAsStateWithLifecycle()
@@ -287,8 +294,29 @@ private fun NexusAppRoot(
         val subRouteStack = remember { mutableStateListOf<SubRoute>() }
         var activeEditor by remember { mutableStateOf<ActiveEditor>(ActiveEditor.None) }
         var loadedAppointment by remember { mutableStateOf<AppointmentEntity?>(null) }
+        var loadedAppointmentRecurrence by remember { mutableStateOf<TaskRecurrenceEntity?>(null) }
+        var loadedEventFallback by remember { mutableStateOf<EventEntity?>(null) }
+        var loadedEventRecurrence by remember { mutableStateOf<TaskRecurrenceEntity?>(null) }
         var activeEditorDirty by remember { mutableStateOf(false) }
         var showEditorDiscardDialog by remember { mutableStateOf(false) }
+
+        val virtualRecurringEvents = remember(allAgendaItems, cardsWithStatements) {
+            allAgendaItems
+                .filterIsInstance<AgendaItem.EventItem>()
+                .filter { it.isVirtualRecurrence }
+                .distinctBy { it.event.id }
+                .map { item ->
+                    EventWithDetails(
+                        event = item.event,
+                        category = item.category,
+                        creditCard = item.event.creditCardId?.let { cardId ->
+                            cardsWithStatements.firstOrNull { it.card.id == cardId }?.card
+                        },
+                        linkedTasks = emptyList(),
+                        linkedTransactions = emptyList()
+                    )
+                }
+        }
 
         val navigateToSubRoute: (SubRoute) -> Unit = { target ->
             if (target == SubRoute.None) {
@@ -348,14 +376,86 @@ private fun NexusAppRoot(
             }
         }
 
+        val openTaskEditor: (String?, String?) -> Unit = { taskId, initialEventId ->
+            if (taskId == null) {
+                activeEditor = ActiveEditor.TaskEditor(null, initialEventId)
+            } else {
+                val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(taskId)
+                if (virtualPair != null) {
+                    viewModel.openOrMaterializeRecurringOccurrence(
+                        recurrenceId = virtualPair.first,
+                        occurrenceDateIso = virtualPair.second
+                    ) { materializedId ->
+                        activeEditor = ActiveEditor.TaskEditor(materializedId, initialEventId)
+                    }
+                } else {
+                    activeEditor = ActiveEditor.TaskEditor(taskId, initialEventId)
+                }
+            }
+        }
+
         val openAppointmentEditor: (String?) -> Unit = { apptId ->
             if (apptId == null) {
                 loadedAppointment = null
+                loadedAppointmentRecurrence = null
                 activeEditor = ActiveEditor.AppointmentEditor(null)
             } else {
-                scope.launch {
-                    loadedAppointment = repository.getAppointmentById(apptId)
-                    activeEditor = ActiveEditor.AppointmentEditor(apptId)
+                val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(apptId)
+                if (virtualPair != null) {
+                    viewModel.openOrMaterializeRecurringAppointmentOccurrence(
+                        recurrenceId = virtualPair.first,
+                        occurrenceDateIso = virtualPair.second
+                    ) { materializedId ->
+                        scope.launch {
+                            val loaded = repository.getAppointmentById(materializedId)
+                            loadedAppointment = loaded
+                            loadedAppointmentRecurrence = (loaded?.recurrenceId ?: virtualPair.first)
+                                .let { repository.getTaskRecurrenceById(it) }
+                            activeEditor = ActiveEditor.AppointmentEditor(materializedId)
+                        }
+                    }
+                } else {
+                    scope.launch {
+                        val loaded = repository.getAppointmentById(apptId)
+                        loadedAppointment = loaded
+                        loadedAppointmentRecurrence = loaded?.recurrenceId?.let {
+                            repository.getTaskRecurrenceById(it)
+                        }
+                        activeEditor = ActiveEditor.AppointmentEditor(apptId)
+                    }
+                }
+            }
+        }
+
+        val openEventEditor: (String?) -> Unit = { eventId ->
+            if (eventId == null) {
+                loadedEventFallback = null
+                loadedEventRecurrence = null
+                activeEditor = ActiveEditor.EventEditor(null)
+            } else {
+                val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(eventId)
+                if (virtualPair != null) {
+                    viewModel.openOrMaterializeRecurringEventOccurrence(
+                        recurrenceId = virtualPair.first,
+                        occurrenceDateIso = virtualPair.second
+                    ) { materializedId ->
+                        scope.launch {
+                            val loaded = repository.getEventById(materializedId)
+                            loadedEventFallback = loaded
+                            loadedEventRecurrence = (loaded?.recurrenceId ?: virtualPair.first)
+                                .let { repository.getTaskRecurrenceById(it) }
+                            activeEditor = ActiveEditor.EventEditor(materializedId)
+                        }
+                    }
+                } else {
+                    scope.launch {
+                        val loaded = repository.getEventById(eventId)
+                        loadedEventFallback = loaded
+                        loadedEventRecurrence = loaded?.recurrenceId?.let {
+                            repository.getTaskRecurrenceById(it)
+                        }
+                        activeEditor = ActiveEditor.EventEditor(eventId)
+                    }
                 }
             }
         }
@@ -410,7 +510,7 @@ private fun NexusAppRoot(
                 when (sourceType) {
                     ReminderSourceType.TASK -> {
                         currentTab = MainTab.TASKS
-                        activeEditor = ActiveEditor.TaskEditor(sourceId)
+                        openTaskEditor(sourceId, null)
                     }
                     ReminderSourceType.APPOINTMENT -> {
                         currentTab = MainTab.AGENDA
@@ -418,7 +518,7 @@ private fun NexusAppRoot(
                     }
                     ReminderSourceType.EVENT -> {
                         currentTab = MainTab.EVENTS
-                        activeEditor = ActiveEditor.EventEditor(sourceId)
+                        openEventEditor(sourceId)
                     }
                     ReminderSourceType.TRANSACTION -> {
                         currentTab = MainTab.FINANCE
@@ -466,7 +566,7 @@ private fun NexusAppRoot(
                     NexusWidgetNavigation.TARGET_TASK -> {
                         currentTab = MainTab.TASKS
                         if (!widgetRecordId.isNullOrBlank()) {
-                            activeEditor = ActiveEditor.TaskEditor(widgetRecordId)
+                            openTaskEditor(widgetRecordId, null)
                         }
                     }
                     NexusWidgetNavigation.TARGET_TRANSACTION -> {
@@ -478,7 +578,7 @@ private fun NexusAppRoot(
                     NexusWidgetNavigation.TARGET_EVENT -> {
                         currentTab = MainTab.EVENTS
                         if (!widgetRecordId.isNullOrBlank()) {
-                            activeEditor = ActiveEditor.EventEditor(widgetRecordId)
+                            openEventEditor(widgetRecordId)
                         }
                     }
                 }
@@ -627,7 +727,7 @@ private fun NexusAppRoot(
                     onDeleteMilestone = viewModel::deleteMilestone,
                     onLinkTaskToGoal = viewModel::linkTaskToGoal,
                     onLinkProjectToGoal = viewModel::linkProjectToGoal,
-                    onOpenTask = { activeEditor = ActiveEditor.TaskEditor(it) },
+                    onOpenTask = { openTaskEditor(it, null) },
                     onToggleTaskComplete = viewModel::toggleTaskCompletion,
                     onOpenProject = { activeEditor = ActiveEditor.ProjectEditor(it) },
                     modifier = contentModifier
@@ -703,11 +803,11 @@ private fun NexusAppRoot(
                     initialTabIndex = activeRoute.initialTabIndex,
                     onBack = popSubRoute,
                     onMarkBriefingReviewed = viewModel::markBriefingReviewed,
-                    onOpenTask = { activeEditor = ActiveEditor.TaskEditor(it) },
+                    onOpenTask = { openTaskEditor(it, null) },
                     onToggleTaskComplete = viewModel::toggleTaskCompletion,
                     onPostponeTaskToTomorrow = viewModel::postponeTaskToTomorrow,
                     onOpenAppointment = openAppointmentEditor,
-                    onOpenEvent = { activeEditor = ActiveEditor.EventEditor(it) },
+                    onOpenEvent = openEventEditor,
                     onOpenTransaction = { activeEditor = ActiveEditor.TransactionEditor(it) },
                     onSettleTransaction = viewModel::settleTransaction,
                     onPostponeTransactionToTomorrow = viewModel::postponeTransactionToTomorrow,
@@ -724,12 +824,12 @@ private fun NexusAppRoot(
                     results = globalSearchResults,
                     onQueryChange = viewModel::setGlobalSearchQuery,
                     onBack = popSubRoute,
-                    onOpenTask = { activeEditor = ActiveEditor.TaskEditor(it) },
+                    onOpenTask = { openTaskEditor(it, null) },
                     onToggleTaskComplete = viewModel::toggleTaskCompletion,
                     onOpenProject = { activeEditor = ActiveEditor.ProjectEditor(it) },
                     onOpenGoal = { goalId -> navigateToSubRoute(SubRoute.Planning(goalId)) },
                     onOpenAppointment = openAppointmentEditor,
-                    onOpenEvent = { activeEditor = ActiveEditor.EventEditor(it) },
+                    onOpenEvent = openEventEditor,
                     onOpenTransaction = { activeEditor = ActiveEditor.TransactionEditor(it) },
                     onToggleSettleTransaction = viewModel::settleTransaction,
                     onOpenFinanceCards = openFinanceCards,
@@ -844,13 +944,13 @@ private fun NexusAppRoot(
                                 viewModel.setTasksTabMode(TasksTabMode.OVERDUE)
                                 currentTab = MainTab.TASKS
                             },
-                            onOpenTask = { activeEditor = ActiveEditor.TaskEditor(it) },
+                            onOpenTask = { openTaskEditor(it, null) },
                             onToggleTaskComplete = viewModel::toggleTaskCompletion,
                             onOpenAgenda = {
                                 currentTab = MainTab.AGENDA
                             },
                             onOpenAppointment = openAppointmentEditor,
-                            onOpenEvent = { activeEditor = ActiveEditor.EventEditor(it) },
+                            onOpenEvent = openEventEditor,
                             onOpenFinance = { currentTab = MainTab.FINANCE },
                             onOpenFinanceCards = openFinanceCards,
                             onOpenTransaction = { activeEditor = ActiveEditor.TransactionEditor(it) },
@@ -868,8 +968,8 @@ private fun NexusAppRoot(
                             onShowPaidChange = viewModel::setAgendaShowPaid,
                             onClearFilters = viewModel::clearAgendaFilters,
                             onOpenAppointment = openAppointmentEditor,
-                            onOpenTask = { activeEditor = ActiveEditor.TaskEditor(it) },
-                            onOpenEvent = { activeEditor = ActiveEditor.EventEditor(it) },
+                            onOpenTask = { openTaskEditor(it, null) },
+                            onOpenEvent = openEventEditor,
                             onOpenTransaction = { activeEditor = ActiveEditor.TransactionEditor(it) },
                             onOpenCards = openFinanceCards,
                             onOpenProject = { activeEditor = ActiveEditor.ProjectEditor(it) },
@@ -877,6 +977,16 @@ private fun NexusAppRoot(
                             onOpenVirtualRecurringTask = { recId, dateIso ->
                                 viewModel.openOrMaterializeRecurringOccurrence(recId, dateIso) { materializedTaskId ->
                                     activeEditor = ActiveEditor.TaskEditor(materializedTaskId)
+                                }
+                            },
+                            onOpenVirtualRecurringAppointment = { recId, dateIso ->
+                                viewModel.openOrMaterializeRecurringAppointmentOccurrence(recId, dateIso) { materializedApptId ->
+                                    openAppointmentEditor(materializedApptId)
+                                }
+                            },
+                            onOpenVirtualRecurringEvent = { recId, dateIso ->
+                                viewModel.openOrMaterializeRecurringEventOccurrence(recId, dateIso) { materializedEventId ->
+                                    openEventEditor(materializedEventId)
                                 }
                             },
                             modifier = contentModifier
@@ -891,11 +1001,11 @@ private fun NexusAppRoot(
                             onPriorityFilterChange = viewModel::setTasksPriorityFilter,
                             onProjectFilterChange = viewModel::setTasksProjectFilter,
                             onClearFilters = viewModel::clearTasksFilters,
-                            onOpenTask = { activeEditor = ActiveEditor.TaskEditor(it) },
+                            onOpenTask = { openTaskEditor(it, null) },
                             onToggleTaskComplete = viewModel::toggleTaskCompletion,
                             onUpdateTaskStatus = viewModel::updateTaskStatus,
                             onOpenProject = { activeEditor = ActiveEditor.ProjectEditor(it) },
-                            onCreateTask = { activeEditor = ActiveEditor.TaskEditor(null) },
+                            onCreateTask = { openTaskEditor(null, null) },
                             onCreateProject = { activeEditor = ActiveEditor.ProjectEditor(null) },
                             modifier = contentModifier
                         )
@@ -961,8 +1071,9 @@ private fun NexusAppRoot(
                         )
                         MainTab.EVENTS -> EventsScreen(
                             events = allEvents,
-                            onOpenEvent = { activeEditor = ActiveEditor.EventEditor(it) },
-                            onCreateEvent = { activeEditor = ActiveEditor.EventEditor(null) },
+                            virtualRecurringEvents = virtualRecurringEvents,
+                            onOpenEvent = openEventEditor,
+                            onCreateEvent = { openEventEditor(null) },
                             modifier = contentModifier
                         )
                     }
@@ -974,10 +1085,10 @@ private fun NexusAppRoot(
             ActiveEditor.None -> Unit
             ActiveEditor.QuickAddChooser -> QuickAddChooserSheet(
                 onDismiss = { activeEditor = ActiveEditor.None },
-                onSelectNewTask = { activeEditor = ActiveEditor.TaskEditor(null) },
+                onSelectNewTask = { openTaskEditor(null, null) },
                 onSelectNewAppointment = { openAppointmentEditor(null) },
                 onSelectNewProject = { activeEditor = ActiveEditor.ProjectEditor(null) },
-                onSelectNewEvent = { activeEditor = ActiveEditor.EventEditor(null) },
+                onSelectNewEvent = { openEventEditor(null) },
                 onSelectNewTransaction = {
                     activeEditor = ActiveEditor.TransactionEditor(null, initialType = TransactionType.EXPENSE)
                 }
@@ -1026,7 +1137,7 @@ private fun NexusAppRoot(
                     },
                     onToggleComplete = viewModel::toggleTaskCompletion,
                     onToggleSubtask = viewModel::toggleSubtask,
-                    onOpenEvent = { evId -> activeEditor = ActiveEditor.EventEditor(evId) },
+                    onOpenEvent = openEventEditor,
                     onRegisterExpense = { id, title, desc, projId, catId, evId, goalId, prio, st, dueAt, hasTime, notes, subs, reminderMins, recDraft, editScope ->
                         viewModel.saveTask(
                             id = id,
@@ -1075,15 +1186,20 @@ private fun NexusAppRoot(
                             it.category == ReminderCategory.SCHEDULE
                     }
                 }
+                val activeAppointmentRecurrence = loadedAppointmentRecurrence
+                    ?: loadedAppointment?.recurrenceId?.let { recId ->
+                        taskRecurrences.firstOrNull { it.id == recId }
+                    }
                 AppointmentEditorSheet(
                     existingAppointment = loadedAppointment,
+                    existingRecurrence = activeAppointmentRecurrence,
                     categories = categories,
                     events = allEvents,
                     initialDate = agendaFilter.selectedDate,
                     existingReminder = existingReminder,
                     defaultReminderMinutes = routineSettings.defaultAppointmentReminderMinutes,
                     onDismiss = { activeEditor = ActiveEditor.None },
-                    onSave = { id, title, desc, catId, evId, startAt, endAt, isAllDay, location, link, reminderMins ->
+                    onSave = { id, title, desc, catId, evId, startAt, endAt, isAllDay, location, link, reminderMins, recDraft, editScope ->
                         viewModel.saveAppointment(
                             id = id,
                             title = title,
@@ -1096,11 +1212,15 @@ private fun NexusAppRoot(
                             location = location,
                             link = link,
                             reminderMinutesBefore = reminderMins,
+                            recurrenceDraft = recDraft,
+                            recurringEditScope = editScope,
                             onSaved = { activeEditor = ActiveEditor.None }
                         )
                     },
-                    onDelete = { apptId ->
-                        viewModel.deleteAppointment(apptId) { activeEditor = ActiveEditor.None }
+                    onDelete = { apptId, deleteScope ->
+                        viewModel.deleteAppointment(apptId, scope = deleteScope) {
+                            activeEditor = ActiveEditor.None
+                        }
                     },
                     onError = viewModel::logUiError,
                     onDirtyStateChange = { activeEditorDirty = it }
@@ -1136,7 +1256,22 @@ private fun NexusAppRoot(
             is ActiveEditor.EventEditor -> {
                 val existing = editor.eventId?.let { id ->
                     allEvents.firstOrNull { it.event.id == id }
+                        ?: loadedEventFallback?.takeIf { it.id == id }?.let { ev ->
+                            EventWithDetails(
+                                event = ev,
+                                category = ev.categoryId?.let { cId -> categories.firstOrNull { it.id == cId } },
+                                creditCard = ev.creditCardId?.let { cardId ->
+                                    cardsWithStatements.firstOrNull { it.card.id == cardId }?.card
+                                },
+                                linkedTasks = emptyList(),
+                                linkedTransactions = emptyList()
+                            )
+                        }
                 }
+                val activeEventRecurrence = loadedEventRecurrence
+                    ?: existing?.event?.recurrenceId?.let { recId ->
+                        taskRecurrences.firstOrNull { it.id == recId }
+                    }
                 val existingReminder = editor.eventId?.let { id ->
                     reminders.firstOrNull {
                         it.sourceType == ReminderSourceType.EVENT &&
@@ -1146,13 +1281,14 @@ private fun NexusAppRoot(
                 }
                 EventEditorSheet(
                     existingEvent = existing,
+                    existingRecurrence = activeEventRecurrence,
                     categories = categories,
                     creditCards = cardsWithStatements.map { it.card },
                     existingReminder = existingReminder,
                     defaultReminderMinutes = routineSettings.defaultEventReminderMinutes,
                     countLinkedAppointments = viewModel::countAppointmentsForEvent,
                     onDismiss = { activeEditor = ActiveEditor.None },
-                    onSave = { id, name, desc, catId, startAt, endAt, allDay, officialUrl, ticketUrl, locName, addr, city, st, notes, evStatus, tStatus, tPrice, tQty, tFees, tPurchaseDate, tDueDate, payMethod, cardId, instCount, reminderMins ->
+                    onSave = { id, name, desc, catId, startAt, endAt, allDay, officialUrl, ticketUrl, locName, addr, city, st, notes, evStatus, tStatus, tPrice, tQty, tFees, tPurchaseDate, tDueDate, payMethod, cardId, instCount, reminderMins, recDraft, editScope ->
                         viewModel.saveEvent(
                             id = id,
                             name = name,
@@ -1179,17 +1315,21 @@ private fun NexusAppRoot(
                             creditCardId = cardId,
                             installmentsCount = instCount,
                             reminderMinutesBefore = reminderMins,
+                            recurrenceDraft = recDraft,
+                            recurringEditScope = editScope,
                             onSaved = { activeEditor = ActiveEditor.None }
                         )
                     },
-                    onDelete = { eventId ->
-                        viewModel.deleteEvent(eventId) { activeEditor = ActiveEditor.None }
+                    onDelete = { eventId, deleteScope ->
+                        viewModel.deleteEvent(eventId, scope = deleteScope) {
+                            activeEditor = ActiveEditor.None
+                        }
                     },
                     onAddLinkedTask = { evId ->
-                        activeEditor = ActiveEditor.TaskEditor(taskId = null, initialEventId = evId)
+                        openTaskEditor(null, evId)
                     },
                     onOpenTask = { taskId ->
-                        activeEditor = ActiveEditor.TaskEditor(taskId = taskId)
+                        openTaskEditor(taskId, null)
                     },
                     onAddAdditionalExpense = { evId ->
                         activeEditor = ActiveEditor.TransactionEditor(

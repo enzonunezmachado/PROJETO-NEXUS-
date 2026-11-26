@@ -128,7 +128,7 @@ abstract class NexusDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "nexus_local.db"
-        const val DATABASE_VERSION = 6
+        const val DATABASE_VERSION = 7
 
         fun build(context: Context): NexusDatabase {
             return Room.databaseBuilder(

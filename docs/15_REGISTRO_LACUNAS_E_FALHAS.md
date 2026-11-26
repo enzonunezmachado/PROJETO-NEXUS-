@@ -10,33 +10,23 @@
 |---|---|
 | ID | `GAP-001` |
 | Requisito relacionado | `REQ-009` |
-| Estado | **NÃO IMPLEMENTADA — pendência funcional conhecida** |
-| Origem | `docs/02_ESPECIFICACAO_PRODUTO.md`, `docs/07_ESTADO_ATUAL.md`, `docs/10_ROADMAP.md`, `docs/12_RASTREABILIDADE.md`, `ADR-008` |
-| Escopo afetado | Compromissos, Eventos, Agenda, lembretes/notificações, persistência, backup e entrada estruturada |
-| Evidência prática | No povoamento de 26/11/2026, a corrida semanal “A Vida é um Corre”, quinta-feira às 20h, não pôde ser registrada como compromisso recorrente pela ponte. Foi preservada apenas como informação dentro da checklist da rotina semanal; isso não cria ocorrências reais na Agenda nem lembretes recorrentes. |
+| Estado | **IMPLEMENTADA NO CÓDIGO (Rodada 4) — aguardando compilação Gradle/CI e validação em dispositivo** |
+| Origem | `docs/02_ESPECIFICACAO_PRODUTO.md`, `docs/07_ESTADO_ATUAL.md`, `docs/10_ROADMAP.md`, `docs/12_RASTREABILIDADE.md`, `ADR-008`, `ADR-019` |
+| Escopo afetado | Compromissos, Eventos, Agenda, lembretes/notificações, Room `v7`, Backup `v8` (entrada estruturada `GAP-002` mantida fora desta rodada) |
+| Evidência prática | No povoamento de 26/11/2026, a corrida semanal “A Vida é um Corre”, quinta-feira às 20h, não podia ser registrada como compromisso recorrente nem criada no app. Na Rodada 4, o suporte nativo a séries recorrentes de Compromissos e Eventos foi implementado no aplicativo Android. |
 
-### Situação confirmada
-- A recorrência de **Tarefas** existe no código: regras, exceções, projeção virtual na Agenda e materialização idempotente ao concluir.
-- A recorrência de **Compromissos e Eventos** está explicitamente marcada como não implementada em `REQ-009`.
-- A `ADR-008` registra que a expansão para esses domínios foi adiada para lote futuro.
-- O contrato da ponte `v1` não oferece entidade `RECURRENCE` nem campos de regra recorrente para `APPOINTMENT`/`EVENT`. O DTO de tarefa pode referenciar `recurrenceId`, mas isso não equivale a permitir criar uma regra nova por meio da ponte.
-- Portanto, atualmente não se deve representar uma série recorrente como vários registros únicos inventados, nem dizer que uma tarefa de checklist equivale a um compromisso recorrente.
+### Implementação realizada na Rodada 4 (`ADR-019`)
+- **Modelo e migração (`Room v7`):** `TaskRecurrenceEntity` estendida com `RecurrenceDomain` (`TASK`, `APPOINTMENT`, `EVENT`), frequência `TaskRecurrenceFrequency.ANNUAL`, duração/allDay/local/links/snapshot de evento; `appointments` e `events` receberam `recurrenceId` (`SET_NULL`) + `occurrenceDateIso` + `UNIQUE(recurrenceId, occurrenceDateIso)`; `RecurrenceExceptionEntity` recebeu overrides de horário/descrição/local/link/allDay e referências `appointmentId`/`eventId` via `MIGRATION_6_7`.
+- **Motor, projeção e conflitos:** `RecurrenceEngine` calcula ocorrências de Compromissos e Eventos (incluindo `ANNUAL` com ajuste de 29/02) na zona `America/Sao_Paulo` e gera IDs virtuais determinísticos `"rec::<recurrenceId>::<occurrenceDateIso>"`. `AgendaEngine` e `EventsScreen` projetam séries virtuais na janela consultada (com detecção de conflitos virtual↔materializado na Agenda), sem pré-gerar centenas de linhas.
+- **Materialização sob demanda e escopos:** ao abrir/editar/excluir um item `"rec::..."`, `NexusRepository` materializa a ocorrência de forma idempotente ou aplica `RecurrenceExceptionEntity` (`SKIP` / `OVERRIDE`), suportando `"Só esta ocorrência"` vs `"Toda a série"` em `EntityEditors.kt` (`AppointmentEditorSheet` e `EventEditorSheet`).
+- **Proteção financeira em Eventos:** ocorrências virtuais e materializações sob demanda nunca criam obrigações `TransactionEntity`; edições/exclusões `"Toda a série"` preservam e desvinculam ocorrências já com `ATTENDED` ou ingresso `PAID` / transação `SETTLED`.
+- **Lembretes e Backup `v8`:** `NexusNotificationScheduler` e `NexusRepository` agendam/cancelam lembretes para ocorrências virtuais `rec::...`; `BackupModels.kt`, `BackupManager.kt` e `BackupMergeEngine.kt` evoluídos para `CURRENT_FORMAT_VERSION = 8`.
+- **Testes automatizados adicionados:** `NexusRodada4RecurrenceUnitTests.kt` (`5` `@Test`) e ampliação de `BackupIncrementalMergeUnitTests.kt` (`15` `@Test`).
 
-### Trabalho necessário antes de implementar
-1. Levantar o modelo real atual de `TaskRecurrenceEntity`, `RecurrenceExceptionEntity`, `RecurrenceEngine`, `AgendaEngine`, lembretes e regras de notificação.
-2. Definir se a regra será generalizada por tipo de entidade ou se compromissos/eventos terão vínculos/tabelas específicas; avaliar migração Room e compatibilidade de backup.
-3. Definir frequências, intervalos, dias da semana, âncora mensal, início/fim, limite de ocorrências, fuso horário e comportamento em horário de verão.
-4. Definir exceções por ocorrência: pular/cancelar, mover data/hora, sobrescrever dados, editar/excluir “só esta” ou “toda a série”.
-5. Definir semântica específica de Evento (duração de vários dias, custos/ingressos, tarefas e compromissos vinculados) versus Compromisso (início/fim, conflito de horários e lembretes).
-6. Garantir projeção virtual na janela solicitada, sem pré-gerar centenas de linhas; identidade estável, idempotência, histórico e ausência de duplicação.
-7. Definir como lembretes e notificações serão agendados/cancelados para ocorrências projetadas e exceções.
-8. Planejar backup/restauração/mesclagem e entrada estruturada para regras e exceções, com versionamento compatível.
-9. Criar testes unitários de regra, exceções, limites de janela, mudança de fuso/DST, idempotência, conflitos, lembretes e regressão da recorrência de tarefas.
-10. Validar em aparelho: criar série, visualizar na Agenda, editar uma ocorrência, editar a série, cancelar uma ocorrência, reiniciar o app e verificar lembretes sem duplicação.
-
-**Critério de conclusão:** um compromisso semanal real pode ser criado uma única vez como série, aparece nas datas corretas da Agenda, mantém exceções e lembretes corretos e sobrevive a backup/restauração e reabertura do app. O mesmo deve ser demonstrado para Eventos conforme regras específicas aprovadas.
-
-**Dependência da ponte:** decidir explicitamente como estender o contrato de entrada estruturada. Não alterar silenciosamente o contrato `v1` estrito nem inventar uma entidade/campo antes de aprovar o modelo.
+### Validação restante antes de encerrar em produção
+- Executar `:app:testDebugUnitTest :app:assembleDebug` no GitHub Actions ou Android Studio (container atual sem JDK/Gradle/SDK).
+- Validar `MIGRATION_6_7` em aparelho e testar criação de série semanal/anual de Compromisso e Evento, projeção na Agenda/Eventos, edição `"Só esta ocorrência"` vs `"Toda a série"`, cancelamento, ausência de transações fantasma, backup `v8` e lembretes após reinício.
+- **Dependência da ponte (`GAP-002`):** extensão do contrato `v1` da `NEXUS-INBOX` para criar regras recorrentes via JSON ficou explicitamente fora da Rodada 4.
 
 ## 2. Inconsistência documental encontrada na ponte
 
@@ -59,47 +49,24 @@
 | Arquivos | `StructuredInputModels.kt`, `StructuredInputProcessor.kt`, `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md` |
 | Problema | O contrato aceita `APPOINTMENT` e `EVENT` como registros únicos, mas não define série/regra/exceções recorrentes. Também não oferece uma operação para criar a regra de recorrência de uma nova tarefa. |
 | Consequência | A Secretária ChatGPT não consegue registrar fielmente compromissos/eventos recorrentes nem criar uma nova série de tarefas via Inbox; referenciar `recurrenceId` não cria a regra. |
-| Próximo passo | Resolver junto de `GAP-001`, definindo versão/extensão do contrato, DTOs, validação, preview, idempotência, conflitos e importação transacional. Não simular recorrência com ocorrências avulsas. |
+| Próximo passo | Agora que `GAP-001` e `GAP-003` foram implementados no aplicativo (`Room v7` / `Backup v8`), definir extensão/versão do contrato `v1`, DTOs, validação, preview, idempotência, conflitos e importação transacional para séries recorrentes. Não simular recorrência com ocorrências avulsas. |
 
 ## 4. Requisito transversal: checklist independente por ocorrência recorrente
 
 | Campo | Registro |
 |---|---|
 | ID | `GAP-003` |
-| Estado | **EM ANÁLISE — auditoria inicial identificou implementação parcial; cobertura ponta a ponta ainda não verificada** |
-| Escopo | Recorrência de tarefas, checklist/subtasks, histórico, Agenda, backup/restore/merge e Inbox |
+| Estado | **IMPLEMENTADA NO CÓDIGO (Rodada 4) — aguardando compilação Gradle/CI e validação em dispositivo** |
+| Escopo | Recorrência de tarefas, checklist/subtasks, histórico, Agenda, backup/restore/merge |
 | Origem | Necessidade de produto explicitada em 26/11/2026 |
-| Dependências | Auditoria de `TaskRecurrenceEntity`, `RecurrenceEngine`, materialização de ocorrências e modelo de subtarefas |
+| Implementação | `TaskRecurrenceEntity.templateSubtasksJson` (`Room v7` / `ADR-019`), backfill `MIGRATION_6_7` + backups `<= v7`, `RecurrenceEngine`, `NexusRepository`, `TaskEditorSheet` e `NexusRodada4RecurrenceUnitTests.kt` |
 
-### Necessidade
+### Necessidade e implementação realizada (Rodada 4)
 
-Uma tarefa recorrente pode reutilizar a mesma estrutura de checklist em cada ocorrência, mas cada ciclo precisa manter seu próprio estado de execução. Marcar os itens da semana anterior não pode fazer com que a ocorrência da semana seguinte já apareça concluída.
-
-### Exemplo de aceite
-
-Uma tarefa semanal de segunda-feira possui três itens de checklist. Na primeira semana, os três são concluídos. Na segunda semana, os mesmos três itens aparecem novamente pendentes. A ocorrência anterior permanece concluída no histórico e não é alterada. Cada ocorrência mantém identidade e estado independentes.
-
-### Evidências da primeira auditoria de código (26/11/2026)
-
-- `SubtaskEntity` contém apenas `taskId`, título, estado de conclusão e ordem. Não existe entidade própria de checklist-base ligada diretamente à série; os itens pertencem a uma tarefa específica.
-- `NexusRepository.materializeNextOccurrenceIfNeededInternal()` clona os itens da ocorrência concluída para a próxima ocorrência materializada e define `isCompleted = false`. Isso já implementa parte da independência do estado entre ocorrências nesse caminho.
-- Entretanto, `NexusRepository.openOrMaterializeRecurringOccurrence()`, chamado quando uma ocorrência virtual futura é aberta pela Agenda, cria a nova `TaskEntity` sem clonar as subtarefas da ocorrência/modelo. Portanto, o comportamento pode variar conforme o caminho de materialização.
-- Como o checklist-base não está separado do checklist de uma ocorrência, ainda não há evidência de uma fonte de verdade estável para alterações do modelo da série, ocorrências isoladas e histórico.
-- A suíte `NexusLote6RecurrenceUnitTests` cobre geração de datas, projeção virtual, exceções e materialização, mas a inspeção inicial não encontrou cobertura explícita para clonar checklist ao abrir uma ocorrência virtual nem para independência completa dos estados entre várias ocorrências.
-
-**Conclusão provisória:** GAP-003 não deve ser tratado como totalmente ausente nem como resolvido. Há reset de estado ao materializar a próxima ocorrência após conclusão, mas a abertura/materialização antecipada de uma ocorrência virtual aparenta não transportar o checklist. É necessário confirmar o fluxo de UI e criar testes focados antes de decidir a menor correção arquitetural. Nenhum código foi alterado nesta auditoria.
-
-### Auditoria e definição necessárias
-
-1. Verificar como subtasks estão ligadas à tarefa recorrente e como novas ocorrências são materializadas.
-2. Separar conceitualmente o modelo reutilizável do checklist e o estado de execução de cada ocorrência, caso o código atual não faça essa separação.
-3. Definir como alterações no modelo (adicionar, remover, renomear ou reordenar itens) afetam ocorrências futuras, já materializadas e históricas.
-4. Definir edição do modelo da série versus edição de uma ocorrência isolada.
-5. Preservar IDs, histórico, idempotência, conclusão parcial, reabertura e exceções.
-6. Conferir a projeção virtual da Agenda, backup/restauração/merge e entrada estruturada.
-7. Criar testes de regressão demonstrando que concluir uma ocorrência não altera nenhuma outra.
-
-**Regra de rigor:** ainda não foi verificado se o comportamento já existe parcialmente no código. Não registrar como defeito confirmado nem implementar uma segunda estrutura antes de auditar o motor atual. O GAP representa uma necessidade e uma verificação obrigatória de completude.
+- **Separação modelo × execução:** a estrutura reutilizável da série (títulos ordenados das subtarefas) agora fica persistida em `TaskRecurrenceEntity.templateSubtasksJson`, enquanto cada `TaskEntity` mantém suas próprias `SubtaskEntity` com estado independente `isCompleted`.
+- **Ciclo de ocorrência e retrocompatibilidade:** na conclusão (`completeTask`), a nova ocorrência é materializada com subtarefas zeradas (`isCompleted = false`) a partir do template da série, sem copiar marcações da ocorrência anterior (que permanece intacta no histórico). `MIGRATION_6_7` e o `BackupManager` (`<= v7`) preenchem automaticamente `templateSubtasksJson` para séries antigas.
+- **Controle explícito de escopo na UI:** alternar `isCompleted` grava apenas na ocorrência aberta sem tocar em `templateSubtasksJson`; alterações estruturais (adicionar, renomear, remover, reordenar) em tarefa recorrente perguntam explicitamente `"Só esta ocorrência"` vs `"Toda a série"` em `TaskEditorSheet`.
+- **Validação restante:** executar `:app:testDebugUnitTest` no CI/Gradle (incluindo `NexusRodada4RecurrenceUnitTests`) e confirmar em aparelho o cenário completo de 2 ciclos semanais.
 
 ---
 
@@ -115,7 +82,7 @@ Os itens abaixo já constam dos documentos oficiais e permanecem no inventário 
 | `REQ-012` | Listagem/criação direta de compromissos na ficha de Evento | PARCIALMENTE IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `12_RASTREABILIDADE.md` |
 | `REQ-014` | Campos avançados de Evento (`locationMode`, banner local, apresentação de taxas) | NÃO IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `10_ROADMAP.md` |
 | `REQ-026` | Backup ZIP com banners de Eventos | NÃO IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `10_ROADMAP.md` |
-| Build/dispositivo | Atualização in-place com keystore persistente, migrações Room e fluxos críticos em aparelho | NÃO VERIFICADO até validação correspondente | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
+| Build/dispositivo | Atualização in-place (`v6→v7`), `MIGRATION_6_7`, séries de Compromissos/Eventos, checklist independente entre ocorrências, `19` suítes (`145` `@Test`) e fluxos críticos em aparelho | NÃO VERIFICADO até execução Gradle/CI e validação em dispositivo | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
 
 ## 5. Erros encontrados durante a Rodada 3 — histórico e resultado
 
@@ -159,70 +126,3 @@ Não foi localizado PR aberto para essas branches. Decisão operacional: **não 
 - Rastreabilidade: `12_RASTREABILIDADE.md`
 - Entrada estruturada: `14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`
 - Histórico: `HISTORICO_DOCUMENTACAO.md`
-
-
-## 7. Validação prática da Ponte ChatGPT → NEXUS (2026-11-26)
-
-| Campo | Registro |
-|---|---|
-| Estado | **VALIDADA NO FLUXO PRINCIPAL — Rodada 3 concluída** |
-| Evidência de CI | GitHub Actions #70, run `45792119560`, na branch `main`: testes unitários e APK Debug concluídos com sucesso. Release ignorado por ausência dos secrets de assinatura. |
-| Evidência de integração | O usuário confirmou que o aplicativo funcionou no aparelho e que conseguiu importar registros pela ponte ChatGPT → repositório privado `NEXUS-INBOX` → NEXUS Android. |
-| Commit de referência | `4041611a4ef4e111c3633790d0c09babdecb2ae8` |
-| Limite da confirmação | A confirmação comprova a importação real, mas não detalha individualmente descarte sem gravação, reconsulta sem duplicidade, execução periódica em segundo plano, notificação/deep-link, reinício/rotação ou todos os cenários de segurança do token. Não marcar esses cenários como testados sem evidência específica. |
-| Próxima etapa | Rodada 4: investigação conjunta de `GAP-001` (recorrência de Compromissos/Eventos) e `GAP-003` (checklist independente por ocorrência). `GAP-002` depende da definição dos modelos e permanece aberto. |
-
-A conclusão da Rodada 3 não encerra a manutenção da ponte. Segurança do token, idempotência, sincronização periódica, notificações e recuperação de falhas continuam no gate contínuo de confiabilidade.
-
-
-## 8. Novas lacunas e requisitos capturados para completude do domínio (2026-11-26)
-
-### GAP-004 — Checklist opcional em Compromissos e Eventos
-
-| Campo | Registro |
-|---|---|
-| Estado | **CAPTURADA — PLANEJADA para Rodada 4** |
-| Requisito | `REQ-029` |
-| Escopo | Compromissos, Eventos, Agenda, editores, recorrência, backup, entrada estruturada e histórico |
-| Necessidade | Compromissos e Eventos também podem exigir preparação/etapas próprias. O checklist deve ser opcional e pertencer ao registro correspondente, sem se confundir com tarefas vinculadas. |
-| Questões | Modelo reutilizável para séries; estado independente por ocorrência; mudanças no checklist-base; ocorrências passadas/futuras/exceções; ordem; conclusão parcial; backup/merge; importação; acessibilidade; evitar gravação antes de salvar o editor. |
-| Critério inicial | Um compromisso/evento pode ter checklist próprio; marcar itens em uma ocorrência não altera outra ocorrência nem tarefas relacionadas. |
-
-### GAP-005 — Identidade contextual de Compromissos e Eventos
-
-| Campo | Registro |
-|---|---|
-| Estado | **CAPTURADA — PLANEJADA para Rodada 4/5** |
-| Requisito | `REQ-030` |
-| Escopo | Modelo de dados, categorias, Agenda, listas, fichas, widgets, backup e entrada estruturada |
-| Necessidade | Representar visualmente contextos reais (ex.: academia, corrida, consulta, viagem, show, reunião) com ícone apropriado, sem depender exclusivamente do título. |
-| Questões | Catálogo controlado de ícones/contextos, fallback, personalização, acessibilidade, contraste, representação em listas densas, tema claro/escuro e compatibilidade com registros existentes. |
-| Critério inicial | O ícone identifica o tipo/contexto do registro; não substitui status, vínculo nem controle de concluir/editar. Não permitir que o ChatGPT invente identificadores de ícones fora do catálogo suportado. |
-
-### GAP-006 — Catálogo de capacidades e estado exportável para integração bidirecional
-
-| Campo | Registro |
-|---|---|
-| Estado | **CAPTURADA — PLANEJADA para Rodada 6, após Rodadas 4 e 5** |
-| Requisitos | `REQ-031`, `REQ-032` |
-| Escopo | NEXUS-INBOX, integração Android/GitHub, privacidade, segurança de credenciais e fluxo ChatGPT |
-| Necessidade | O ChatGPT precisa conhecer tanto o que o aplicativo suporta quanto o estado atual dos dados relevantes, e o NEXUS precisa devolver recibos/alterações. |
-| Direção | Separar catálogo de capacidades (schema/ações/limitações) do snapshot do estado real e do feed de alterações. Avaliar sincronização manual bidirecional e automação periódica opcional. |
-| Segurança | Não presumir que o PAT read-only atual deve virar read/write dentro do APK. Comparar GitHub App/credenciais curtas, relay mínimo e token fine-grained isolado com escopo mínimo e expiração. Keystore protege em repouso, mas não neutraliza exposição durante uso pelo processo Android. |
-| Privacidade | Não publicar automaticamente backup completo ou dados pessoais/financeiros em excesso. Snapshot deve ser minimizado, escopado, privado e com controles de exclusão/retenção. |
-| Critério inicial | Após as Rodadas 4 e 5, o usuário pode solicitar sincronização de entrada e saída, ver prévia/resultado e manter o aplicativo funcional offline sem depender da integração. |
-
-### Guia operacional do ChatGPT — artefato planejado
-
-Arquivo previsto: `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`.
-
-O arquivo foi criado como estrutura inicial e **não deve ser tratado ainda como contrato operacional**. Depois de estabilizar o domínio, o Google AI Studio deverá completá-lo a partir dos DTOs, validadores, enums, relações e testes reais do código. Deve conter exemplos JSON executáveis e validados, incluindo:
-- tarefa simples e tarefa com checklist;
-- rotina semanal de academia com atividades em dias diferentes, horários, recorrência e checklists;
-- compromisso único e recorrente;
-- evento único e recorrente com checklist e compromissos vinculados;
-- projeto, objetivo e relações entre registros;
-- transações e despesas vinculadas, respeitando as regras financeiras;
-- criação, atualização, exceção de ocorrência, prévia, confirmação, conflitos e idempotência.
-
-O guia deverá separar claramente o que é suportado agora, o que só será suportado após Rodada 4 e o que dependerá da integração final da Rodada 6. Cada exemplo deve ser validado pelos mesmos parsers/DTOs do aplicativo. Não inferir nomes de campos, IDs de enum, ícones ou formatos.

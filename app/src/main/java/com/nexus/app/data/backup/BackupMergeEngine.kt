@@ -42,6 +42,7 @@ import com.nexus.app.domain.model.MarketPriceAlert
 import com.nexus.app.domain.model.NexusDateFormat
 import com.nexus.app.domain.model.PaymentMethod
 import com.nexus.app.domain.model.ProjectStatus
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.RecurrenceExceptionType
 import com.nexus.app.domain.model.RecurrenceFrequency
 import com.nexus.app.domain.model.ReminderCategory
@@ -53,6 +54,7 @@ import com.nexus.app.domain.model.TaskRecurrenceFrequency
 import com.nexus.app.domain.model.TaskStatus
 import com.nexus.app.domain.model.TicketStatus
 import com.nexus.app.domain.model.TransactionType
+import com.nexus.app.domain.rules.RecurrenceEngine
 
 internal object BackupMergeEngine {
 
@@ -198,7 +200,9 @@ internal object BackupMergeEngine {
                 storage.insertErrorLogs(b.errorLogs)
                 storage.insertPersonalGoals(b.personalGoals)
                 storage.insertProjects(b.projects)
-                storage.insertEvents(b.events)
+                storage.insertEvents(b.events.filter { it.recurrenceId == null })
+                storage.insertTaskRecurrences(b.taskRecurrences)
+                storage.insertEvents(b.events.filter { it.recurrenceId != null })
                 storage.insertCreditCardStatements(b.creditCardStatements)
                 storage.insertInstallmentPurchases(b.installmentPurchases)
                 storage.insertRecurringRules(b.recurringRules)
@@ -207,7 +211,6 @@ internal object BackupMergeEngine {
                 storage.insertGoalProgressLogs(b.goalProgressLogs)
                 storage.insertBudgets(b.budgets)
                 storage.insertFinancialGoals(b.financialGoals)
-                storage.insertTaskRecurrences(b.taskRecurrences)
                 storage.insertTasks(b.tasks)
                 storage.insertTransactions(b.transactions)
                 storage.insertSubtasks(b.subtasks)
@@ -691,17 +694,23 @@ internal object BackupMergeEngine {
         validProjectIds.addAll(newProjects.map { it.id })
 
         val localEvents = storage.getEvents()
+        val validParentEventIds = localEvents.filter { it.recurrenceId == null }.map { it.id }.toMutableSet()
         val validEventIds = localEvents.map { it.id }.toMutableSet()
-        val newEvents = mergeEvents(
-            dtos = payload.events,
-            localItems = localEvents,
+        val eventMergeState = createEventMergeState(
+            totalDtosCount = payload.events.size,
+            localItems = localEvents
+        )
+        mergeEventDtosIntoState(
+            state = eventMergeState,
+            dtos = payload.events.filter { it.recurrenceId.isNullOrBlank() },
             validCategoryIds = validCategoryIds,
             validCardIds = validCardIds,
+            validRecurrenceIds = emptySet(),
             now = now,
-            issues = issues,
-            perEntity = perEntity
+            issues = issues
         )
-        validEventIds.addAll(newEvents.map { it.id })
+        validParentEventIds.addAll(eventMergeState.accepted.keys)
+        validEventIds.addAll(eventMergeState.accepted.keys)
 
         val localStatements = storage.getCreditCardStatements()
         val localStatementsById = localStatements.associateBy { it.id }
@@ -717,21 +726,6 @@ internal object BackupMergeEngine {
         newStatements.forEach { allStatementsById[it.id] = it }
         val validStatementIds = allStatementsById.keys
 
-        val localPurchases = storage.getInstallmentPurchases()
-        val validPurchaseIds = localPurchases.map { it.id }.toMutableSet()
-        val newPurchases = mergeInstallmentPurchases(
-            dtos = payload.installmentPurchases,
-            localItems = localPurchases,
-            validCardIds = validCardIds,
-            validCategoryIds = validCategoryIds,
-            validEventIds = validEventIds,
-            validProjectIds = validProjectIds,
-            now = now,
-            issues = issues,
-            perEntity = perEntity
-        )
-        validPurchaseIds.addAll(newPurchases.map { it.id })
-
         val localRules = storage.getRecurringRules()
         val validRuleIds = localRules.map { it.id }.toMutableSet()
         val newRules = mergeRecurringRules(
@@ -745,20 +739,7 @@ internal object BackupMergeEngine {
         )
         validRuleIds.addAll(newRules.map { it.id })
 
-        val localAppointments = storage.getAppointments()
-        val validAppointmentIds = localAppointments.map { it.id }.toMutableSet()
-        val newAppointments = mergeAppointments(
-            dtos = payload.appointments,
-            localItems = localAppointments,
-            validCategoryIds = validCategoryIds,
-            validEventIds = validEventIds,
-            now = now,
-            issues = issues,
-            perEntity = perEntity
-        )
-        validAppointmentIds.addAll(newAppointments.map { it.id })
-
-        // 4. Level 2 — Dependências de Nível 0 & 1
+        // 4. Level 2 — Dependências de Nível 0 & 1 (Séries recorrentes antes de eventos/compromissos/tarefas recorrentes)
         val localMilestones = storage.getGoalMilestones()
         val newMilestones = mergeGoalMilestones(
             dtos = payload.goalMilestones,
@@ -806,13 +787,55 @@ internal object BackupMergeEngine {
             localItems = localRecurrences,
             validProjectIds = validProjectIds,
             validCategoryIds = validCategoryIds,
-            validEventIds = validEventIds,
+            validEventIds = validParentEventIds,
             validPersonalGoalIds = validPersonalGoalIds,
+            validCardIds = validCardIds,
             now = now,
             issues = issues,
             perEntity = perEntity
         )
         validRecurrenceIds.addAll(newRecurrences.map { it.id })
+
+        mergeEventDtosIntoState(
+            state = eventMergeState,
+            dtos = payload.events.filter { !it.recurrenceId.isNullOrBlank() },
+            validCategoryIds = validCategoryIds,
+            validCardIds = validCardIds,
+            validRecurrenceIds = validRecurrenceIds,
+            now = now,
+            issues = issues
+        )
+        val newEvents = finalizeEventMergeState(eventMergeState, localEvents, perEntity)
+        validEventIds.addAll(newEvents.map { it.id })
+
+        val localPurchases = storage.getInstallmentPurchases()
+        val validPurchaseIds = localPurchases.map { it.id }.toMutableSet()
+        val newPurchases = mergeInstallmentPurchases(
+            dtos = payload.installmentPurchases,
+            localItems = localPurchases,
+            validCardIds = validCardIds,
+            validCategoryIds = validCategoryIds,
+            validEventIds = validEventIds,
+            validProjectIds = validProjectIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validPurchaseIds.addAll(newPurchases.map { it.id })
+
+        val localAppointments = storage.getAppointments()
+        val validAppointmentIds = localAppointments.map { it.id }.toMutableSet()
+        val newAppointments = mergeAppointments(
+            dtos = payload.appointments,
+            localItems = localAppointments,
+            validCategoryIds = validCategoryIds,
+            validEventIds = validEventIds,
+            validRecurrenceIds = validRecurrenceIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+        validAppointmentIds.addAll(newAppointments.map { it.id })
 
         // 5. Level 3 — Tarefas & Transações
         val localTasks = storage.getTasks()
@@ -868,6 +891,8 @@ internal object BackupMergeEngine {
             localItems = localRecExceptions,
             validRecurrenceIds = validRecurrenceIds,
             validTaskIds = validTaskIds,
+            validAppointmentIds = validAppointmentIds,
+            validEventIds = validEventIds,
             now = now,
             issues = issues,
             perEntity = perEntity
@@ -882,6 +907,7 @@ internal object BackupMergeEngine {
             validEventIds = validEventIds,
             validTransactionIds = validTransactionIds,
             validStatementIds = validStatementIds,
+            validRecurrenceIds = validRecurrenceIds,
             now = now,
             issues = issues,
             perEntity = perEntity
@@ -1274,40 +1300,59 @@ internal object BackupMergeEngine {
         return accepted.values.toList()
     }
 
-    private fun mergeEvents(
+    private class EventMergeState(
+        val stats: TableStatsBuilder,
+        val localById: Map<String, EventEntity>,
+        val localByRecurrenceOccurrence: Map<Pair<String, String>, EventEntity>,
+        val accepted: MutableMap<String, EventEntity> = mutableMapOf(),
+        val acceptedRecurrenceKeys: MutableSet<Pair<String, String>> = mutableSetOf(),
+        val seenLocal: MutableSet<String> = mutableSetOf()
+    )
+
+    private fun createEventMergeState(
+        totalDtosCount: Int,
+        localItems: List<EventEntity>
+    ): EventMergeState = EventMergeState(
+        stats = TableStatsBuilder("events", "Eventos", totalDtosCount),
+        localById = localItems.associateBy { it.id },
+        localByRecurrenceOccurrence = localItems
+            .filter { it.recurrenceId != null && it.occurrenceDateIso != null }
+            .associateBy { it.recurrenceId!! to it.occurrenceDateIso!! }
+    )
+
+    private fun mergeEventDtosIntoState(
+        state: EventMergeState,
         dtos: List<EventBackupDto>,
-        localItems: List<EventEntity>,
         validCategoryIds: Set<String>,
         validCardIds: Set<String>,
+        validRecurrenceIds: Set<String>,
         now: Long,
-        issues: MutableList<MergeIssueItem>,
-        perEntity: MutableList<EntityMergeCounts>
-    ): List<EventEntity> {
+        issues: MutableList<MergeIssueItem>
+    ) {
         val table = "events"
-        val stats = TableStatsBuilder(table, "Eventos", dtos.size)
-        val localById = localItems.associateBy { it.id }
-        val accepted = mutableMapOf<String, EventEntity>()
-        val seenLocal = mutableSetOf<String>()
-
         dtos.forEach { dto ->
             val id = dto.id.trim()
             if (id.isEmpty() || dto.name.isBlank()) {
-                stats.invalid++
-                stats.needsReview++
+                state.stats.invalid++
+                state.stats.needsReview++
                 issues.add(MergeIssueItem(table, id.ifEmpty { "(sem id)" }, MergeIssueKind.INVALID_REJECTED, "Evento sem ID estável ou nome."))
                 return@forEach
             }
             val rawCard = dto.creditCardId?.trim()?.takeIf { it.isNotEmpty() }
             if (rawCard != null && rawCard !in validCardIds) {
-                if (id in localById) seenLocal.add(id)
-                stats.invalid++
-                stats.needsReview++
+                if (id in state.localById) state.seenLocal.add(id)
+                state.stats.invalid++
+                state.stats.needsReview++
                 issues.add(MergeIssueItem(table, id, MergeIssueKind.INVALID_REJECTED, "Evento referencia cartão de crédito inexistente ($rawCard)."))
                 return@forEach
             }
             val rawCat = dto.categoryId?.trim()?.takeIf { it.isNotEmpty() }
             val resolvedCat = rawCat?.takeIf { it in validCategoryIds }
-            val sanitizedRef = rawCat != null && resolvedCat == null
+            val rawRec = dto.recurrenceId?.trim()?.takeIf { it.isNotEmpty() }
+            val resolvedRec = rawRec?.takeIf { it in validRecurrenceIds }
+            val occIso = dto.occurrenceDateIso?.trim()?.takeIf { it.isNotEmpty() }
+            val sanitizedRef = (rawCat != null && resolvedCat == null) ||
+                (rawRec != null && resolvedRec == null)
 
             val start = if (dto.startAt > 0L) dto.startAt else now
             val end = if (dto.endAt >= start) dto.endAt else start + 3_600_000L
@@ -1337,36 +1382,60 @@ internal object BackupMergeEngine {
                 paymentMethod = PaymentMethod.fromStringOrDefault(dto.paymentMethod),
                 creditCardId = rawCard,
                 installmentsCount = dto.installmentsCount.coerceAtLeast(1),
+                recurrenceId = resolvedRec,
+                occurrenceDateIso = if (resolvedRec != null) occIso else null,
                 createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                 updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
             )
 
-            val local = localById[id]
+            val local = state.localById[id]
             if (local != null) {
-                seenLocal.add(id)
+                state.seenLocal.add(id)
                 if (local.copy(createdAt = 0L, updatedAt = 0L) == candidate.copy(createdAt = 0L, updatedAt = 0L) && !sanitizedRef) {
-                    stats.alreadyExisting++
+                    state.stats.alreadyExisting++
                 } else {
-                    stats.conflicts++
+                    state.stats.conflicts++
                     issues.add(MergeIssueItem(table, id, MergeIssueKind.CONFLICT_KEPT_LOCAL, "Evento já existe com diferenças; mantido local."))
                 }
                 return@forEach
             }
-            if (id in accepted) {
-                stats.alreadyExisting++
+            if (candidate.recurrenceId != null && candidate.occurrenceDateIso != null) {
+                val recKey = candidate.recurrenceId to candidate.occurrenceDateIso
+                val colliding = state.localByRecurrenceOccurrence[recKey]
+                if (colliding != null) {
+                    state.seenLocal.add(colliding.id)
+                    state.stats.conflicts++
+                    issues.add(MergeIssueItem(table, id, MergeIssueKind.CONFLICT_KEPT_LOCAL, "Ocorrência de evento recorrente (${recKey.second}) já existe no banco local; mantida local."))
+                    return@forEach
+                }
+                if (recKey in state.acceptedRecurrenceKeys) {
+                    state.stats.alreadyExisting++
+                    return@forEach
+                }
+                state.acceptedRecurrenceKeys.add(recKey)
+            }
+            if (id in state.accepted) {
+                state.stats.alreadyExisting++
                 return@forEach
             }
-            accepted[id] = candidate
-            stats.newRecords++
-            stats.inserted++
+            state.accepted[id] = candidate
+            state.stats.newRecords++
+            state.stats.inserted++
             if (sanitizedRef) {
-                stats.needsReview++
-                issues.add(MergeIssueItem(table, id, MergeIssueKind.REFERENCE_SANITIZED_NEEDS_REVIEW, "Categoria ($rawCat) ausente; vínculo opcional removido."))
+                state.stats.needsReview++
+                issues.add(MergeIssueItem(table, id, MergeIssueKind.REFERENCE_SANITIZED_NEEDS_REVIEW, "Referência opcional de evento não encontrada; vínculo removido."))
             }
         }
-        stats.preservedLocalOnly = localItems.count { it.id !in seenLocal }
-        perEntity.add(stats.build())
-        return accepted.values.toList()
+    }
+
+    private fun finalizeEventMergeState(
+        state: EventMergeState,
+        localItems: List<EventEntity>,
+        perEntity: MutableList<EntityMergeCounts>
+    ): List<EventEntity> {
+        state.stats.preservedLocalOnly = localItems.count { it.id !in state.seenLocal }
+        perEntity.add(state.stats.build())
+        return state.accepted.values.toList()
     }
 
     private fun mergeStatements(
@@ -1618,6 +1687,7 @@ internal object BackupMergeEngine {
         localItems: List<AppointmentEntity>,
         validCategoryIds: Set<String>,
         validEventIds: Set<String>,
+        validRecurrenceIds: Set<String>,
         now: Long,
         issues: MutableList<MergeIssueItem>,
         perEntity: MutableList<EntityMergeCounts>
@@ -1625,7 +1695,11 @@ internal object BackupMergeEngine {
         val table = "appointments"
         val stats = TableStatsBuilder(table, "Compromissos", dtos.size)
         val localById = localItems.associateBy { it.id }
+        val localByRecurrenceOccurrence = localItems
+            .filter { it.recurrenceId != null && it.occurrenceDateIso != null }
+            .associateBy { it.recurrenceId!! to it.occurrenceDateIso!! }
         val accepted = mutableMapOf<String, AppointmentEntity>()
+        val acceptedRecurrenceKeys = mutableSetOf<Pair<String, String>>()
         val seenLocal = mutableSetOf<String>()
 
         dtos.forEach { dto ->
@@ -1640,7 +1714,12 @@ internal object BackupMergeEngine {
             val resolvedCat = rawCat?.takeIf { it in validCategoryIds }
             val rawEvent = dto.eventId?.trim()?.takeIf { it.isNotEmpty() }
             val resolvedEvent = rawEvent?.takeIf { it in validEventIds }
-            val sanitizedRef = (rawCat != null && resolvedCat == null) || (rawEvent != null && resolvedEvent == null)
+            val rawRec = dto.recurrenceId?.trim()?.takeIf { it.isNotEmpty() }
+            val resolvedRec = rawRec?.takeIf { it in validRecurrenceIds }
+            val occIso = dto.occurrenceDateIso?.trim()?.takeIf { it.isNotEmpty() }
+            val sanitizedRef = (rawCat != null && resolvedCat == null) ||
+                (rawEvent != null && resolvedEvent == null) ||
+                (rawRec != null && resolvedRec == null)
 
             val start = if (dto.startAt > 0L) dto.startAt else now
             val end = if (dto.endAt >= start) dto.endAt else start + 3_600_000L
@@ -1655,6 +1734,8 @@ internal object BackupMergeEngine {
                 isAllDay = dto.isAllDay,
                 location = dto.location,
                 link = dto.link,
+                recurrenceId = resolvedRec,
+                occurrenceDateIso = if (resolvedRec != null) occIso else null,
                 createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                 updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
             )
@@ -1669,6 +1750,21 @@ internal object BackupMergeEngine {
                     issues.add(MergeIssueItem(table, id, MergeIssueKind.CONFLICT_KEPT_LOCAL, "Compromisso já existe com diferenças; mantido local."))
                 }
                 return@forEach
+            }
+            if (candidate.recurrenceId != null && candidate.occurrenceDateIso != null) {
+                val recKey = candidate.recurrenceId to candidate.occurrenceDateIso
+                val colliding = localByRecurrenceOccurrence[recKey]
+                if (colliding != null) {
+                    seenLocal.add(colliding.id)
+                    stats.conflicts++
+                    issues.add(MergeIssueItem(table, id, MergeIssueKind.CONFLICT_KEPT_LOCAL, "Ocorrência de compromisso recorrente (${recKey.second}) já existe no banco local; mantida local."))
+                    return@forEach
+                }
+                if (recKey in acceptedRecurrenceKeys) {
+                    stats.alreadyExisting++
+                    return@forEach
+                }
+                acceptedRecurrenceKeys.add(recKey)
             }
             if (id in accepted) {
                 stats.alreadyExisting++
@@ -1940,6 +2036,7 @@ internal object BackupMergeEngine {
         validCategoryIds: Set<String>,
         validEventIds: Set<String>,
         validPersonalGoalIds: Set<String>,
+        validCardIds: Set<String>,
         now: Long,
         issues: MutableList<MergeIssueItem>,
         perEntity: MutableList<EntityMergeCounts>
@@ -1956,6 +2053,14 @@ internal object BackupMergeEngine {
                 stats.invalid++
                 stats.needsReview++
                 issues.add(MergeIssueItem(table, id.ifEmpty { "(sem id)" }, MergeIssueKind.INVALID_REJECTED, "Série recorrente sem ID estável ou título."))
+                return@forEach
+            }
+            val rawCard = dto.creditCardId?.trim()?.takeIf { it.isNotEmpty() }
+            if (rawCard != null && rawCard !in validCardIds) {
+                if (id in localById) seenLocal.add(id)
+                stats.invalid++
+                stats.needsReview++
+                issues.add(MergeIssueItem(table, id, MergeIssueKind.INVALID_REJECTED, "Série recorrente referencia cartão inexistente ($rawCard)."))
                 return@forEach
             }
             val rawProj = dto.projectId?.trim()?.takeIf { it.isNotEmpty() }
@@ -1991,6 +2096,26 @@ internal object BackupMergeEngine {
                 endDateIso = dto.endDateIso?.takeIf { it.isNotBlank() },
                 maxOccurrences = dto.maxOccurrences?.takeIf { it > 0 },
                 isActive = dto.isActive,
+                domain = RecurrenceDomain.fromStringOrDefault(dto.domain),
+                isAllDay = dto.isAllDay,
+                durationMillis = dto.durationMillis.coerceAtLeast(60_000L),
+                location = dto.location,
+                link = dto.link,
+                officialLink = dto.officialLink,
+                ticketLink = dto.ticketLink,
+                locationName = dto.locationName,
+                address = dto.address,
+                city = dto.city,
+                state = dto.state,
+                eventStatus = EventLifecycleStatus.fromStringOrDefault(dto.eventStatus),
+                ticketStatus = TicketStatus.fromStringOrDefault(dto.ticketStatus),
+                ticketPriceCents = dto.ticketPriceCents,
+                ticketQuantity = dto.ticketQuantity.coerceAtLeast(1),
+                ticketFeesCents = dto.ticketFeesCents,
+                paymentMethod = PaymentMethod.fromStringOrDefault(dto.paymentMethod),
+                creditCardId = rawCard,
+                installmentsCount = dto.installmentsCount.coerceAtLeast(1),
+                templateSubtasksJson = dto.templateSubtasksJson.ifBlank { "[]" },
                 createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                 updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
             )
@@ -2425,6 +2550,8 @@ internal object BackupMergeEngine {
         localItems: List<RecurrenceExceptionEntity>,
         validRecurrenceIds: Set<String>,
         validTaskIds: Set<String>,
+        validAppointmentIds: Set<String>,
+        validEventIds: Set<String>,
         now: Long,
         issues: MutableList<MergeIssueItem>,
         perEntity: MutableList<EntityMergeCounts>
@@ -2449,7 +2576,13 @@ internal object BackupMergeEngine {
             }
             val rawTask = dto.taskId?.trim()?.takeIf { it.isNotEmpty() }
             val resolvedTask = rawTask?.takeIf { it in validTaskIds }
-            val sanitizedRef = rawTask != null && resolvedTask == null
+            val rawAppt = dto.appointmentId?.trim()?.takeIf { it.isNotEmpty() }
+            val resolvedAppt = rawAppt?.takeIf { it in validAppointmentIds }
+            val rawEvent = dto.eventId?.trim()?.takeIf { it.isNotEmpty() }
+            val resolvedEvent = rawEvent?.takeIf { it in validEventIds }
+            val sanitizedRef = (rawTask != null && resolvedTask == null) ||
+                (rawAppt != null && resolvedAppt == null) ||
+                (rawEvent != null && resolvedEvent == null)
 
             val candidate = RecurrenceExceptionEntity(
                 id = id,
@@ -2458,7 +2591,14 @@ internal object BackupMergeEngine {
                 exceptionType = RecurrenceExceptionType.fromStringOrDefault(dto.exceptionType),
                 overrideTitle = dto.overrideTitle,
                 overrideDueAt = dto.overrideDueAt,
+                overrideEndAt = dto.overrideEndAt,
+                overrideDescription = dto.overrideDescription,
+                overrideLocation = dto.overrideLocation,
+                overrideLink = dto.overrideLink,
+                overrideIsAllDay = dto.overrideIsAllDay,
                 taskId = resolvedTask,
+                appointmentId = resolvedAppt,
+                eventId = resolvedEvent,
                 createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                 updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
             )
@@ -2490,7 +2630,7 @@ internal object BackupMergeEngine {
             stats.inserted++
             if (sanitizedRef) {
                 stats.needsReview++
-                issues.add(MergeIssueItem(table, id, MergeIssueKind.REFERENCE_SANITIZED_NEEDS_REVIEW, "Tarefa vinculada à exceção ($rawTask) ausente; vínculo removido."))
+                issues.add(MergeIssueItem(table, id, MergeIssueKind.REFERENCE_SANITIZED_NEEDS_REVIEW, "Entidade vinculada à exceção não encontrada; vínculo opcional removido."))
             }
         }
         stats.preservedLocalOnly = localItems.count { it.id !in seenLocal }
@@ -2506,6 +2646,7 @@ internal object BackupMergeEngine {
         validEventIds: Set<String>,
         validTransactionIds: Set<String>,
         validStatementIds: Set<String>,
+        validRecurrenceIds: Set<String>,
         now: Long,
         issues: MutableList<MergeIssueItem>,
         perEntity: MutableList<EntityMergeCounts>
@@ -2528,10 +2669,14 @@ internal object BackupMergeEngine {
                 return@forEach
             }
             val sourceType = ReminderSourceType.fromStringOrDefault(dto.sourceType)
+            val virtualRecId = RecurrenceEngine.parseVirtualOccurrenceId(sourceId)?.first
             val sourceExists = when (sourceType) {
-                ReminderSourceType.TASK -> sourceId in validTaskIds
-                ReminderSourceType.APPOINTMENT -> sourceId in validAppointmentIds
-                ReminderSourceType.EVENT -> sourceId in validEventIds
+                ReminderSourceType.TASK -> sourceId in validTaskIds ||
+                    (virtualRecId != null && virtualRecId in validRecurrenceIds)
+                ReminderSourceType.APPOINTMENT -> sourceId in validAppointmentIds ||
+                    (virtualRecId != null && virtualRecId in validRecurrenceIds)
+                ReminderSourceType.EVENT -> sourceId in validEventIds ||
+                    (virtualRecId != null && virtualRecId in validRecurrenceIds)
                 ReminderSourceType.TRANSACTION -> sourceId in validTransactionIds
                 ReminderSourceType.STATEMENT -> sourceId in validStatementIds
                 ReminderSourceType.ROUTINE_MORNING,

@@ -1,11 +1,17 @@
 package com.nexus.app.domain.rules
 
 import com.nexus.app.core.DateTimeUtils
+import com.nexus.app.data.db.entity.AppointmentEntity
+import com.nexus.app.data.db.entity.EventEntity
 import com.nexus.app.data.db.entity.RecurrenceExceptionEntity
 import com.nexus.app.data.db.entity.TaskEntity
 import com.nexus.app.data.db.entity.TaskRecurrenceEntity
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.RecurrenceExceptionType
 import com.nexus.app.domain.model.TaskRecurrenceFrequency
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -20,9 +26,119 @@ data class RecurrenceOccurrenceProjection(
     val isOverride: Boolean = false
 )
 
+data class RecurrenceAppointmentProjection(
+    val recurrence: TaskRecurrenceEntity,
+    val scheduledDate: LocalDate,
+    val occurrenceDateIso: String,
+    val startAt: Long,
+    val endAt: Long,
+    val isAllDay: Boolean,
+    val effectiveTitle: String,
+    val effectiveDescription: String,
+    val effectiveLocation: String,
+    val effectiveLink: String,
+    val isOverride: Boolean = false
+) {
+    fun toVirtualAppointmentEntity(): AppointmentEntity = AppointmentEntity(
+        id = RecurrenceEngine.virtualOccurrenceId(recurrence.id, occurrenceDateIso),
+        title = effectiveTitle,
+        description = effectiveDescription,
+        categoryId = recurrence.categoryId,
+        eventId = recurrence.eventId,
+        startAt = startAt,
+        endAt = endAt,
+        isAllDay = isAllDay,
+        location = effectiveLocation,
+        link = effectiveLink,
+        recurrenceId = recurrence.id,
+        occurrenceDateIso = occurrenceDateIso,
+        createdAt = recurrence.createdAt,
+        updatedAt = recurrence.updatedAt
+    )
+}
+
+data class RecurrenceEventProjection(
+    val recurrence: TaskRecurrenceEntity,
+    val scheduledDate: LocalDate,
+    val occurrenceDateIso: String,
+    val startAt: Long,
+    val endAt: Long,
+    val isAllDay: Boolean,
+    val effectiveTitle: String,
+    val effectiveDescription: String,
+    val effectiveOfficialLink: String,
+    val effectiveTicketLink: String,
+    val effectiveLocationName: String,
+    val effectiveAddress: String,
+    val effectiveCity: String,
+    val effectiveState: String,
+    val isOverride: Boolean = false
+) {
+    fun toVirtualEventEntity(): EventEntity = EventEntity(
+        id = RecurrenceEngine.virtualOccurrenceId(recurrence.id, occurrenceDateIso),
+        name = effectiveTitle,
+        description = effectiveDescription,
+        categoryId = recurrence.categoryId,
+        startAt = startAt,
+        endAt = endAt,
+        isAllDay = isAllDay,
+        officialLink = effectiveOfficialLink,
+        ticketLink = effectiveTicketLink,
+        locationName = effectiveLocationName,
+        address = effectiveAddress,
+        city = effectiveCity,
+        state = effectiveState,
+        notes = recurrence.notes,
+        eventStatus = recurrence.eventStatus,
+        ticketStatus = recurrence.ticketStatus,
+        ticketPriceCents = recurrence.ticketPriceCents,
+        ticketQuantity = recurrence.ticketQuantity,
+        ticketFeesCents = recurrence.ticketFeesCents,
+        ticketTotalCents = 0L,
+        ticketPurchaseDate = null,
+        ticketDueDate = null,
+        paymentMethod = recurrence.paymentMethod,
+        creditCardId = recurrence.creditCardId,
+        installmentsCount = recurrence.installmentsCount,
+        recurrenceId = recurrence.id,
+        occurrenceDateIso = occurrenceDateIso,
+        createdAt = recurrence.createdAt,
+        updatedAt = recurrence.updatedAt
+    )
+}
+
 object RecurrenceEngine {
 
     private const val HARD_GENERATION_CAP = 1000
+    private const val VIRTUAL_ID_PREFIX = "rec::"
+    private val checklistJson = Json { ignoreUnknownKeys = true }
+
+    fun virtualOccurrenceId(recurrenceId: String, occurrenceDateIso: String): String =
+        "$VIRTUAL_ID_PREFIX$recurrenceId::$occurrenceDateIso"
+
+    fun parseVirtualOccurrenceId(rawId: String?): Pair<String, String>? {
+        if (rawId.isNullOrBlank() || !rawId.startsWith(VIRTUAL_ID_PREFIX)) return null
+        val parts = rawId.split("::")
+        if (parts.size != 3) return null
+        val recurrenceId = parts[1].trim()
+        val occurrenceDateIso = parts[2].trim()
+        if (recurrenceId.isEmpty() || occurrenceDateIso.isEmpty()) return null
+        if (parseLocalDateOrNull(occurrenceDateIso) == null) return null
+        return recurrenceId to occurrenceDateIso
+    }
+
+    fun serializeChecklistTemplate(titles: List<String>): String {
+        val cleaned = titles.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+        return checklistJson.encodeToString(ListSerializer(String.serializer()), cleaned)
+    }
+
+    fun deserializeChecklistTemplate(rawJson: String?): List<String> {
+        if (rawJson.isNullOrBlank() || rawJson.trim() == "[]") return emptyList()
+        return runCatching {
+            checklistJson.decodeFromString(ListSerializer(String.serializer()), rawJson)
+                .mapNotNull { it.trim().takeIf(String::isNotBlank) }
+        }.getOrDefault(emptyList())
+    }
 
     fun weekdayBit(dayOfWeek: DayOfWeek): Int = 1 shl (dayOfWeek.value - 1)
 
@@ -57,6 +173,18 @@ object RecurrenceEngine {
             LocalTime.of(23, 59)
         }
         return DateTimeUtils.localDateTimeToEpoch(date, time)
+    }
+
+    fun computeScheduleStartEpoch(
+        date: LocalDate,
+        isAllDay: Boolean,
+        dueTimeMinutesOfDay: Int?
+    ): Long {
+        return if (isAllDay) {
+            DateTimeUtils.startOfDayEpoch(date)
+        } else {
+            DateTimeUtils.localDateTimeToEpoch(date, timeFromMinutesOfDay(dueTimeMinutesOfDay))
+        }
     }
 
     fun parseLocalDateOrNull(iso: String?): LocalDate? {
@@ -121,6 +249,17 @@ object RecurrenceEngine {
                 }
             }
 
+            TaskRecurrenceFrequency.ANNUAL -> {
+                var step = 0L
+                while (results.size < maxCount) {
+                    // plusYears(step) em startDate preserva mês/dia âncora (ex: 29/02 -> 28/02 -> 29/02).
+                    val candidate = startDate.plusYears(step)
+                    if (candidate.isAfter(effectiveEnd)) break
+                    results.add(candidate)
+                    step++
+                }
+            }
+
             TaskRecurrenceFrequency.CUSTOM_DAYS -> {
                 val interval = recurrence.customIntervalDays.coerceAtLeast(1).toLong()
                 var cursor = startDate
@@ -150,7 +289,7 @@ object RecurrenceEngine {
     }
 
     /**
-     * Projeta ocorrências virtuais para a janela da Agenda, omitindo datas já materializadas
+     * Projeta ocorrências virtuais de tarefas para a janela da Agenda, omitindo datas já materializadas
      * na tabela `tasks` e respeitando exceções `SKIP` / `OVERRIDE` sem duplicar registros.
      */
     fun projectVirtualOccurrences(
@@ -175,7 +314,7 @@ object RecurrenceEngine {
 
         val projections = mutableListOf<RecurrenceOccurrenceProjection>()
         recurrences.forEach { recurrence ->
-            if (!recurrence.isActive) return@forEach
+            if (!recurrence.isActive || recurrence.domain != RecurrenceDomain.TASK) return@forEach
             val dates = generateScheduledDates(recurrence, window.endInclusive)
             dates.forEach { scheduledDate ->
                 val scheduledIso = scheduledDate.toString()
@@ -216,6 +355,215 @@ object RecurrenceEngine {
     }
 
     /**
+     * Projeta ocorrências virtuais de compromissos recorrentes cujo intervalo intercepta [window].
+     */
+    fun projectVirtualAppointments(
+        window: DateRange,
+        recurrences: List<TaskRecurrenceEntity>,
+        exceptions: List<RecurrenceExceptionEntity>,
+        materializedAppointments: List<AppointmentEntity>
+    ): List<RecurrenceAppointmentProjection> {
+        if (recurrences.isEmpty()) return emptyList()
+
+        val materializedKeys = buildSet {
+            materializedAppointments.forEach { appt ->
+                val recId = appt.recurrenceId ?: return@forEach
+                val occIso = appt.occurrenceDateIso
+                    ?: DateTimeUtils.toLocalDate(appt.startAt).toString()
+                add(recId to occIso)
+            }
+        }
+        val exceptionMap = exceptions.associateBy { it.recurrenceId to it.occurrenceDateIso }
+
+        val projections = mutableListOf<RecurrenceAppointmentProjection>()
+        recurrences.forEach { recurrence ->
+            if (!recurrence.isActive || recurrence.domain != RecurrenceDomain.APPOINTMENT) return@forEach
+            val dates = generateScheduledDates(recurrence, window.endInclusive.plusDays(7))
+            val baseDuration = recurrence.durationMillis.coerceAtLeast(60_000L)
+            dates.forEach { scheduledDate ->
+                val scheduledIso = scheduledDate.toString()
+                if ((recurrence.id to scheduledIso) in materializedKeys) return@forEach
+
+                val exception = exceptionMap[recurrence.id to scheduledIso]
+                if (exception?.exceptionType == RecurrenceExceptionType.SKIP) return@forEach
+
+                val isOverride = exception?.exceptionType == RecurrenceExceptionType.OVERRIDE
+                val effectiveAllDay = if (isOverride && exception?.overrideIsAllDay != null) {
+                    exception.overrideIsAllDay
+                } else {
+                    recurrence.isAllDay
+                }
+                val startAt = if (isOverride && exception?.overrideDueAt != null) {
+                    exception.overrideDueAt
+                } else {
+                    computeScheduleStartEpoch(
+                        date = scheduledDate,
+                        isAllDay = effectiveAllDay,
+                        dueTimeMinutesOfDay = recurrence.dueTimeMinutesOfDay
+                    )
+                }
+                val endAt = if (isOverride && exception?.overrideEndAt != null) {
+                    exception.overrideEndAt.coerceAtLeast(startAt + 60_000L)
+                } else if (effectiveAllDay) {
+                    DateTimeUtils.localDateToEndOfDayEpoch(DateTimeUtils.toLocalDate(startAt + baseDuration - 60_000L).coerceAtLeast(DateTimeUtils.toLocalDate(startAt)))
+                } else {
+                    startAt + baseDuration
+                }
+
+                val spanStart = DateTimeUtils.toLocalDate(startAt)
+                val spanEnd = maxOf(spanStart, DateTimeUtils.toLocalDate(endAt))
+                if (spanEnd.isBefore(window.startInclusive) || spanStart.isAfter(window.endInclusive)) {
+                    return@forEach
+                }
+
+                val effectiveTitle = if (isOverride && !exception?.overrideTitle.isNullOrBlank()) {
+                    exception!!.overrideTitle!!
+                } else {
+                    recurrence.title
+                }
+                val effectiveDesc = if (isOverride && exception?.overrideDescription != null) {
+                    exception.overrideDescription
+                } else {
+                    recurrence.description
+                }
+                val effectiveLocation = if (isOverride && exception?.overrideLocation != null) {
+                    exception.overrideLocation
+                } else {
+                    recurrence.location
+                }
+                val effectiveLink = if (isOverride && exception?.overrideLink != null) {
+                    exception.overrideLink
+                } else {
+                    recurrence.link
+                }
+
+                projections += RecurrenceAppointmentProjection(
+                    recurrence = recurrence,
+                    scheduledDate = scheduledDate,
+                    occurrenceDateIso = scheduledIso,
+                    startAt = startAt,
+                    endAt = endAt,
+                    isAllDay = effectiveAllDay,
+                    effectiveTitle = effectiveTitle,
+                    effectiveDescription = effectiveDesc,
+                    effectiveLocation = effectiveLocation,
+                    effectiveLink = effectiveLink,
+                    isOverride = isOverride
+                )
+            }
+        }
+        return projections
+    }
+
+    /**
+     * Projeta ocorrências virtuais de eventos recorrentes (inclusive multi-dia) cujo intervalo intercepta [window].
+     * Cada ocorrência mantém [occurrenceDateIso] como data-âncora da série mesmo quando abrange vários dias.
+     */
+    fun projectVirtualEvents(
+        window: DateRange,
+        recurrences: List<TaskRecurrenceEntity>,
+        exceptions: List<RecurrenceExceptionEntity>,
+        materializedEvents: List<EventEntity>
+    ): List<RecurrenceEventProjection> {
+        if (recurrences.isEmpty()) return emptyList()
+
+        val materializedKeys = buildSet {
+            materializedEvents.forEach { ev ->
+                val recId = ev.recurrenceId ?: return@forEach
+                val occIso = ev.occurrenceDateIso
+                    ?: DateTimeUtils.toLocalDate(ev.startAt).toString()
+                add(recId to occIso)
+            }
+        }
+        val exceptionMap = exceptions.associateBy { it.recurrenceId to it.occurrenceDateIso }
+
+        val projections = mutableListOf<RecurrenceEventProjection>()
+        recurrences.forEach { recurrence ->
+            if (!recurrence.isActive || recurrence.domain != RecurrenceDomain.EVENT) return@forEach
+            val dates = generateScheduledDates(recurrence, window.endInclusive.plusDays(7))
+            val baseDuration = recurrence.durationMillis.coerceAtLeast(60_000L)
+            dates.forEach { scheduledDate ->
+                val scheduledIso = scheduledDate.toString()
+                if ((recurrence.id to scheduledIso) in materializedKeys) return@forEach
+
+                val exception = exceptionMap[recurrence.id to scheduledIso]
+                if (exception?.exceptionType == RecurrenceExceptionType.SKIP) return@forEach
+
+                val isOverride = exception?.exceptionType == RecurrenceExceptionType.OVERRIDE
+                val effectiveAllDay = if (isOverride && exception?.overrideIsAllDay != null) {
+                    exception.overrideIsAllDay
+                } else {
+                    recurrence.isAllDay
+                }
+                val startAt = if (isOverride && exception?.overrideDueAt != null) {
+                    exception.overrideDueAt
+                } else {
+                    computeScheduleStartEpoch(
+                        date = scheduledDate,
+                        isAllDay = effectiveAllDay,
+                        dueTimeMinutesOfDay = recurrence.dueTimeMinutesOfDay
+                    )
+                }
+                val endAt = if (isOverride && exception?.overrideEndAt != null) {
+                    exception.overrideEndAt.coerceAtLeast(startAt + 60_000L)
+                } else if (effectiveAllDay) {
+                    val spanEndDate = DateTimeUtils.toLocalDate(startAt + baseDuration - 60_000L)
+                        .coerceAtLeast(DateTimeUtils.toLocalDate(startAt))
+                    DateTimeUtils.localDateToEndOfDayEpoch(spanEndDate)
+                } else {
+                    startAt + baseDuration
+                }
+
+                val spanStart = DateTimeUtils.toLocalDate(startAt)
+                val spanEnd = maxOf(spanStart, DateTimeUtils.toLocalDate(endAt))
+                if (spanEnd.isBefore(window.startInclusive) || spanStart.isAfter(window.endInclusive)) {
+                    return@forEach
+                }
+
+                val effectiveTitle = if (isOverride && !exception?.overrideTitle.isNullOrBlank()) {
+                    exception!!.overrideTitle!!
+                } else {
+                    recurrence.title
+                }
+                val effectiveDesc = if (isOverride && exception?.overrideDescription != null) {
+                    exception.overrideDescription
+                } else {
+                    recurrence.description
+                }
+                val effectiveLocationName = if (isOverride && exception?.overrideLocation != null) {
+                    exception.overrideLocation
+                } else {
+                    recurrence.locationName
+                }
+                val effectiveOfficialLink = if (isOverride && exception?.overrideLink != null) {
+                    exception.overrideLink
+                } else {
+                    recurrence.officialLink
+                }
+
+                projections += RecurrenceEventProjection(
+                    recurrence = recurrence,
+                    scheduledDate = scheduledDate,
+                    occurrenceDateIso = scheduledIso,
+                    startAt = startAt,
+                    endAt = endAt,
+                    isAllDay = effectiveAllDay,
+                    effectiveTitle = effectiveTitle,
+                    effectiveDescription = effectiveDesc,
+                    effectiveOfficialLink = effectiveOfficialLink,
+                    effectiveTicketLink = recurrence.ticketLink,
+                    effectiveLocationName = effectiveLocationName,
+                    effectiveAddress = recurrence.address,
+                    effectiveCity = recurrence.city,
+                    effectiveState = recurrence.state,
+                    isOverride = isOverride
+                )
+            }
+        }
+        return projections
+    }
+
+    /**
      * Calcula a próxima data de ocorrência estritamente após [afterDateInclusive]
      * mantendo a cadência original da série (mesmo se uma ocorrência foi adiada),
      * pulando ocorrências marcadas como SKIP ou já materializadas no SQLite.
@@ -225,6 +573,23 @@ object RecurrenceEngine {
         afterDateInclusive: LocalDate,
         exceptions: List<RecurrenceExceptionEntity> = emptyList(),
         materializedTasks: List<TaskEntity> = emptyList()
+    ): LocalDate? {
+        val materializedDates = materializedTasks
+            .filter { it.recurrenceId == recurrence.id }
+            .mapNotNullTo(hashSetOf()) { it.occurrenceDateIso }
+        return nextOccurrenceDateForSeries(
+            recurrence = recurrence,
+            afterDateInclusive = afterDateInclusive,
+            exceptions = exceptions,
+            materializedDates = materializedDates
+        )
+    }
+
+    fun nextOccurrenceDateForSeries(
+        recurrence: TaskRecurrenceEntity,
+        afterDateInclusive: LocalDate,
+        exceptions: List<RecurrenceExceptionEntity> = emptyList(),
+        materializedDates: Set<String> = emptySet()
     ): LocalDate? {
         if (!recurrence.isActive) return null
         val startDate = parseLocalDateOrNull(recurrence.startDateIso) ?: return null
@@ -237,6 +602,7 @@ object RecurrenceEngine {
             TaskRecurrenceFrequency.WEEKLY -> searchAnchor.plusWeeks(16)
             TaskRecurrenceFrequency.BIWEEKLY -> searchAnchor.plusWeeks(24)
             TaskRecurrenceFrequency.MONTHLY -> searchAnchor.plusMonths(24)
+            TaskRecurrenceFrequency.ANNUAL -> searchAnchor.plusYears(4)
             TaskRecurrenceFrequency.CUSTOM_DAYS -> searchAnchor.plusDays((recurrence.customIntervalDays.coerceAtLeast(1) * 16).toLong())
             TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS -> searchAnchor.plusWeeks(16)
         }
@@ -246,9 +612,6 @@ object RecurrenceEngine {
         val skippedDates = exceptions
             .filter { it.recurrenceId == recurrence.id && it.exceptionType == RecurrenceExceptionType.SKIP }
             .mapTo(hashSetOf()) { it.occurrenceDateIso }
-        val materializedDates = materializedTasks
-            .filter { it.recurrenceId == recurrence.id }
-            .mapNotNullTo(hashSetOf()) { it.occurrenceDateIso }
 
         return scheduledDates.firstOrNull { candidate ->
             val iso = candidate.toString()
@@ -273,6 +636,7 @@ object RecurrenceEngine {
             TaskRecurrenceFrequency.WEEKLY -> "Semanalmente"
             TaskRecurrenceFrequency.BIWEEKLY -> "Quinzenalmente"
             TaskRecurrenceFrequency.MONTHLY -> "Mensalmente"
+            TaskRecurrenceFrequency.ANNUAL -> "Anualmente"
             TaskRecurrenceFrequency.CUSTOM_DAYS -> "A cada ${recurrence.customIntervalDays.coerceAtLeast(1)} dias"
             TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS -> {
                 val days = weekdaysFromMask(recurrence.weekdaysMask)

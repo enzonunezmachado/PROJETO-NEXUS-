@@ -442,6 +442,11 @@ fun TaskEditorSheet(
                 (recurrenceEndMode == "COUNT" && maxOccurrencesText.trim() != init.maxOccurrencesText)
             ))
 
+    val initChecklistSignature = init.subtasks.map { it.second.trim() }
+    val currentChecklistSignature = draftSubtasks.map { it.second.trim() } +
+        listOfNotNull(newSubtaskText.trim().takeIf { it.isNotEmpty() })
+    val checklistStructureChanged = currentChecklistSignature != initChecklistSignature
+
     val templateFieldsChanged = title != init.title ||
         description != init.description ||
         notes != init.notes ||
@@ -453,7 +458,8 @@ fun TaskEditorSheet(
         dueDate != init.dueDate ||
         hasDueTime != init.hasDueTime ||
         (hasDueTime && dueTime != init.dueTime) ||
-        reminderModified
+        reminderModified ||
+        checklistStructureChanged
 
     val hasUnsavedChanges = templateFieldsChanged ||
         status != init.status ||
@@ -461,33 +467,15 @@ fun TaskEditorSheet(
         newSubtaskText.isNotBlank() ||
         recurrenceRuleChanged
 
-    fun buildRecurrenceDraft(): TaskRecurrenceDraft? {
-        val freq = recurrenceFrequency ?: return null
-        val interval = (customIntervalDaysText.toIntOrNull() ?: 1).coerceAtLeast(1)
-        val effectiveMask = if (freq == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS) {
-            weekdaysMask.takeIf { it > 0 } ?: RecurrenceEngine.weekdayBit(recurrenceStartDate.dayOfWeek)
-        } else {
-            0
-        }
-        val effectiveEndDateIso = if (recurrenceEndMode == "DATE") {
-            (recurrenceEndDate ?: recurrenceStartDate.plusMonths(1)).toString()
-        } else {
-            null
-        }
-        val effectiveMaxOccurrences = if (recurrenceEndMode == "COUNT") {
-            (maxOccurrencesText.toIntOrNull() ?: 5).coerceAtLeast(1)
-        } else {
-            null
-        }
-        return TaskRecurrenceDraft(
-            frequency = freq,
-            customIntervalDays = interval,
-            weekdaysMask = effectiveMask,
-            startDateIso = recurrenceStartDate.toString(),
-            endDateIso = effectiveEndDateIso,
-            maxOccurrences = effectiveMaxOccurrences
-        )
-    }
+    fun buildRecurrenceDraft(): TaskRecurrenceDraft? = buildTaskRecurrenceDraft(
+        recurrenceFrequency = recurrenceFrequency,
+        customIntervalDaysText = customIntervalDaysText,
+        weekdaysMask = weekdaysMask,
+        recurrenceStartDate = recurrenceStartDate,
+        recurrenceEndMode = recurrenceEndMode,
+        recurrenceEndDate = recurrenceEndDate,
+        maxOccurrencesText = maxOccurrencesText
+    )
 
     fun dispatchSaveWithScopeHandling(executeSave: (RecurringEditScope) -> Unit) {
         if (activeRecurrence == null) {
@@ -1300,9 +1288,45 @@ fun TaskEditorSheet(
     }
 }
 
+internal fun buildTaskRecurrenceDraft(
+    recurrenceFrequency: TaskRecurrenceFrequency?,
+    customIntervalDaysText: String,
+    weekdaysMask: Int,
+    recurrenceStartDate: LocalDate,
+    recurrenceEndMode: String,
+    recurrenceEndDate: LocalDate?,
+    maxOccurrencesText: String
+): TaskRecurrenceDraft? {
+    val freq = recurrenceFrequency ?: return null
+    val interval = (customIntervalDaysText.toIntOrNull() ?: 1).coerceAtLeast(1)
+    val effectiveMask = if (freq == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS) {
+        weekdaysMask.takeIf { it > 0 } ?: RecurrenceEngine.weekdayBit(recurrenceStartDate.dayOfWeek)
+    } else {
+        0
+    }
+    val effectiveEndDateIso = if (recurrenceEndMode == "DATE") {
+        (recurrenceEndDate ?: recurrenceStartDate.plusMonths(1)).toString()
+    } else {
+        null
+    }
+    val effectiveMaxOccurrences = if (recurrenceEndMode == "COUNT") {
+        (maxOccurrencesText.toIntOrNull() ?: 5).coerceAtLeast(1)
+    } else {
+        null
+    }
+    return TaskRecurrenceDraft(
+        frequency = freq,
+        customIntervalDays = interval,
+        weekdaysMask = effectiveMask,
+        startDateIso = recurrenceStartDate.toString(),
+        endDateIso = effectiveEndDateIso,
+        maxOccurrences = effectiveMaxOccurrences
+    )
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TaskRecurrenceSectionCard(
+internal fun TaskRecurrenceSectionCard(
     showMoreDetails: Boolean,
     onToggleMoreDetails: () -> Unit,
     recurrenceFrequency: TaskRecurrenceFrequency?,
@@ -1320,7 +1344,9 @@ private fun TaskRecurrenceSectionCard(
     recurrenceEndDate: LocalDate?,
     onPickRecurrenceEndDate: () -> Unit,
     maxOccurrencesText: String,
-    onMaxOccurrencesChange: (String) -> Unit
+    onMaxOccurrencesChange: (String) -> Unit,
+    subtitleWhenEmpty: String = "Repetição e opções da série",
+    infoNotice: String? = null
 ) {
     val palette = LocalNexusPalette.current
     NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
@@ -1349,8 +1375,7 @@ private fun TaskRecurrenceSectionCard(
                         color = palette.textPrimary
                     )
                     Text(
-                        text = recurrenceFrequency?.let { "Repetir: ${it.label}" }
-                            ?: "Repetição e opções da série",
+                        text = recurrenceFrequency?.let { "Repetir: ${it.label}" } ?: subtitleWhenEmpty,
                         style = MaterialTheme.typography.labelMedium,
                         color = palette.textSecondary
                     )
@@ -1545,17 +1570,30 @@ private fun TaskRecurrenceSectionCard(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+
+                if (!infoNotice.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = infoNotice,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.textSecondary
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun TaskScopeConfirmDialogs(
-    task: TaskEntity?,
+internal fun RecurringScopeConfirmDialogs(
+    entityTitle: String?,
     hasActiveRecurrence: Boolean,
-    linkedTransactionsCount: Int,
     recurrenceFrequency: TaskRecurrenceFrequency?,
+    deleteTitle: String,
+    deleteRecurringTitle: String,
+    deleteSingleMessage: String,
+    deleteRecurringMessage: String,
+    updateRecurringTitle: String,
     showDeleteConfirm: Boolean,
     onDismissDeleteConfirm: () -> Unit,
     onConfirmDelete: (RecurringEditScope) -> Unit,
@@ -1566,25 +1604,21 @@ private fun TaskScopeConfirmDialogs(
 ) {
     val palette = LocalNexusPalette.current
 
-    if (showDeleteConfirm && task != null) {
+    if (showDeleteConfirm && entityTitle != null) {
         if (hasActiveRecurrence) {
             AlertDialog(
                 onDismissRequest = onDismissDeleteConfirm,
                 containerColor = palette.surfaceElevated,
                 title = {
                     Text(
-                        text = "Excluir tarefa recorrente?",
+                        text = deleteRecurringTitle,
                         color = palette.textPrimary,
                         fontWeight = FontWeight.SemiBold
                     )
                 },
                 text = {
                     Text(
-                        text = if (linkedTransactionsCount > 0) {
-                            "\"${task.title}\" faz parte de uma série recorrente. Você pode remover só esta ocorrência ou toda a série (os $linkedTransactionsCount lançamento(s) vinculado(s) serão mantidos sem vínculo)."
-                        } else {
-                            "\"${task.title}\" faz parte de uma série recorrente. Deseja remover apenas esta ocorrência ou encerrar toda a série?"
-                        },
+                        text = deleteRecurringMessage,
                         color = palette.textSecondary
                     )
                 },
@@ -1613,14 +1647,9 @@ private fun TaskScopeConfirmDialogs(
                 }
             )
         } else {
-            val deleteMessage = if (linkedTransactionsCount > 0) {
-                "A tarefa \"${task.title}\" e suas subtarefas serão removidas permanentemente. Os $linkedTransactionsCount lançamento(s) financeiro(s) vinculado(s) serão mantidos sem vínculo."
-            } else {
-                "A tarefa \"${task.title}\" e suas subtarefas serão removidas permanentemente."
-            }
             ConfirmDangerDialog(
-                title = "Excluir tarefa?",
-                message = deleteMessage,
+                title = deleteTitle,
+                message = deleteSingleMessage,
                 onConfirm = { onConfirmDelete(RecurringEditScope.THIS_OCCURRENCE_ONLY) },
                 onDismiss = onDismissDeleteConfirm
             )
@@ -1633,7 +1662,7 @@ private fun TaskScopeConfirmDialogs(
             containerColor = palette.surfaceElevated,
             title = {
                 Text(
-                    text = "Atualizar tarefa recorrente",
+                    text = updateRecurringTitle,
                     color = palette.textPrimary,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -1690,7 +1719,7 @@ private fun TaskScopeConfirmDialogs(
             text = {
                 Text(
                     text = if (recurrenceFrequency == null) {
-                        "Remover a repetição cancelará as próximas ocorrências não concluídas de toda a série."
+                        "Remover a repetição encerrará a série recorrente, preservando registros já realizados quando aplicável."
                     } else {
                         "Alterações na frequência, dias ou período de repetição serão aplicadas a toda a série."
                     },
@@ -1720,10 +1749,58 @@ private fun TaskScopeConfirmDialogs(
     }
 }
 
+@Composable
+private fun TaskScopeConfirmDialogs(
+    task: TaskEntity?,
+    hasActiveRecurrence: Boolean,
+    linkedTransactionsCount: Int,
+    recurrenceFrequency: TaskRecurrenceFrequency?,
+    showDeleteConfirm: Boolean,
+    onDismissDeleteConfirm: () -> Unit,
+    onConfirmDelete: (RecurringEditScope) -> Unit,
+    pendingScopeSaveAction: ((RecurringEditScope) -> Unit)?,
+    onClearPendingScopeSave: () -> Unit,
+    pendingRuleChangeConfirmAction: (() -> Unit)?,
+    onClearPendingRuleChange: () -> Unit
+) {
+    val deleteSingleMessage = if (task != null && linkedTransactionsCount > 0) {
+        "A tarefa \"${task.title}\" e suas subtarefas serão removidas permanentemente. Os $linkedTransactionsCount lançamento(s) financeiro(s) vinculado(s) serão mantidos sem vínculo."
+    } else if (task != null) {
+        "A tarefa \"${task.title}\" e suas subtarefas serão removidas permanentemente."
+    } else {
+        ""
+    }
+    val deleteRecurringMessage = if (task != null && linkedTransactionsCount > 0) {
+        "\"${task.title}\" faz parte de uma série recorrente. Você pode remover só esta ocorrência ou toda a série (os $linkedTransactionsCount lançamento(s) vinculado(s) serão mantidos sem vínculo)."
+    } else if (task != null) {
+        "\"${task.title}\" faz parte de uma série recorrente. Deseja remover apenas esta ocorrência ou encerrar toda a série?"
+    } else {
+        ""
+    }
+    RecurringScopeConfirmDialogs(
+        entityTitle = task?.title,
+        hasActiveRecurrence = hasActiveRecurrence,
+        recurrenceFrequency = recurrenceFrequency,
+        deleteTitle = "Excluir tarefa?",
+        deleteRecurringTitle = "Excluir tarefa recorrente?",
+        deleteSingleMessage = deleteSingleMessage,
+        deleteRecurringMessage = deleteRecurringMessage,
+        updateRecurringTitle = "Atualizar tarefa recorrente",
+        showDeleteConfirm = showDeleteConfirm,
+        onDismissDeleteConfirm = onDismissDeleteConfirm,
+        onConfirmDelete = onConfirmDelete,
+        pendingScopeSaveAction = pendingScopeSaveAction,
+        onClearPendingScopeSave = onClearPendingScopeSave,
+        pendingRuleChangeConfirmAction = pendingRuleChangeConfirmAction,
+        onClearPendingRuleChange = onClearPendingRuleChange
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppointmentEditorSheet(
     existingAppointment: AppointmentEntity?,
+    existingRecurrence: TaskRecurrenceEntity? = null,
     categories: List<CategoryEntity>,
     events: List<EventWithDetails> = emptyList(),
     initialDate: LocalDate,
@@ -1741,9 +1818,11 @@ fun AppointmentEditorSheet(
         isAllDay: Boolean,
         location: String,
         link: String,
-        reminderMinutesBefore: Int?
+        reminderMinutesBefore: Int?,
+        recurrenceDraft: TaskRecurrenceDraft?,
+        recurringEditScope: RecurringEditScope
     ) -> Unit,
-    onDelete: (String) -> Unit,
+    onDelete: (String, RecurringEditScope) -> Unit,
     onError: (String, Throwable) -> Unit,
     onDirtyStateChange: (Boolean) -> Unit = {}
 ) {
@@ -1751,6 +1830,9 @@ fun AppointmentEditorSheet(
     val context = LocalContext.current
 
     val appointmentId: String? = existingAppointment?.id
+    val activeRecurrence = existingRecurrence?.takeIf { it.isActive }
+    val activeRecurrenceId: String? = activeRecurrence?.id
+    val activeRecurrenceUpdatedAt: Long? = activeRecurrence?.updatedAt
     val reminderId: String? = existingReminder?.id
     val reminderMinutesKey: Int? = existingReminder?.minutesBefore
     val reminderStatusKey: Any? = existingReminder?.status
@@ -1770,6 +1852,22 @@ fun AppointmentEditorSheet(
     val initReminderMinutes = remember(appointmentId, reminderId, reminderMinutesKey, reminderStatusKey) {
         ReminderRules.resolveEditorReminderMinutes(existingReminder)
     }
+    val initRecFrequency = activeRecurrence?.frequency
+    val initCustomIntervalText = (activeRecurrence?.customIntervalDays?.coerceAtLeast(1) ?: 2).toString()
+    val initWeekdaysMask = activeRecurrence?.weekdaysMask ?: 0
+    val initRecStartDate = remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt, initStartDate) {
+        RecurrenceEngine.parseLocalDateOrNull(activeRecurrence?.startDateIso) ?: initStartDate
+    }
+    val initRecEndDate = remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        RecurrenceEngine.parseLocalDateOrNull(activeRecurrence?.endDateIso)
+    }
+    val initMaxOccurrencesText = activeRecurrence?.maxOccurrences?.takeIf { it > 0 }?.toString() ?: ""
+    val initRecEndMode = when {
+        initRecEndDate != null -> "DATE"
+        activeRecurrence?.maxOccurrences != null && activeRecurrence.maxOccurrences > 0 -> "COUNT"
+        else -> "NONE"
+    }
+
     val initTitle = existingAppointment?.title ?: ""
     val initDescription = existingAppointment?.description ?: ""
     val initCategoryId = existingAppointment?.categoryId
@@ -1791,6 +1889,39 @@ fun AppointmentEditorSheet(
     var endDate by remember(appointmentId) { mutableStateOf(initEndDate) }
     var endTime by remember(appointmentId) { mutableStateOf(initEndTime) }
 
+    var recurrenceFrequency by remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(initRecFrequency)
+    }
+    var customIntervalDaysText by remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(initCustomIntervalText)
+    }
+    var weekdaysMask by remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(initWeekdaysMask)
+    }
+    var recurrenceStartDate by remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(initRecStartDate)
+    }
+    var recurrenceStartCustomized by remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(activeRecurrence != null)
+    }
+    var recurrenceEndMode by remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(initRecEndMode)
+    }
+    var recurrenceEndDate by remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(initRecEndDate)
+    }
+    var maxOccurrencesText by remember(appointmentId, activeRecurrenceId, activeRecurrenceUpdatedAt) {
+        mutableStateOf(initMaxOccurrencesText)
+    }
+    var showMoreDetails by remember(appointmentId, activeRecurrenceId) {
+        mutableStateOf(activeRecurrence != null)
+    }
+    var showRecurrenceFreqDropdown by remember { mutableStateOf(false) }
+    var showRecStartDatePicker by remember { mutableStateOf(false) }
+    var showRecEndDatePicker by remember { mutableStateOf(false) }
+    var pendingScopeSaveAction by remember { mutableStateOf<((RecurringEditScope) -> Unit)?>(null) }
+    var pendingRuleChangeConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
     var pickTarget by remember { mutableStateOf<String?>(null) }
     var showCategoryMenu by remember { mutableStateOf(false) }
     var showEventMenu by remember { mutableStateOf(false) }
@@ -1802,7 +1933,19 @@ fun AppointmentEditorSheet(
     }
     var reminderModified by remember(appointmentId, reminderId) { mutableStateOf(false) }
 
-    val hasUnsavedChanges = title != initTitle ||
+    val recurrenceRuleChanged = recurrenceFrequency != initRecFrequency ||
+        (recurrenceFrequency == TaskRecurrenceFrequency.CUSTOM_DAYS &&
+            customIntervalDaysText.trim() != initCustomIntervalText) ||
+        (recurrenceFrequency == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS &&
+            weekdaysMask != initWeekdaysMask) ||
+        (recurrenceFrequency != null && (
+            recurrenceStartDate != initRecStartDate ||
+                recurrenceEndMode != initRecEndMode ||
+                (recurrenceEndMode == "DATE" && recurrenceEndDate != initRecEndDate) ||
+                (recurrenceEndMode == "COUNT" && maxOccurrencesText.trim() != initMaxOccurrencesText)
+            ))
+
+    val templateFieldsChanged = title != initTitle ||
         description != initDescription ||
         categoryId != initCategoryId ||
         eventId != initEventId ||
@@ -1813,6 +1956,20 @@ fun AppointmentEditorSheet(
         endDate != initEndDate ||
         (!isAllDay && (startTime != initStartTime || endTime != initEndTime)) ||
         reminderModified
+
+    val hasUnsavedChanges = templateFieldsChanged || recurrenceRuleChanged
+
+    fun dispatchSaveWithScopeHandling(executeSave: (RecurringEditScope) -> Unit) {
+        if (activeRecurrence == null) {
+            executeSave(RecurringEditScope.THIS_OCCURRENCE_ONLY)
+        } else if (recurrenceRuleChanged) {
+            pendingRuleChangeConfirmAction = { executeSave(RecurringEditScope.ENTIRE_SERIES) }
+        } else if (templateFieldsChanged) {
+            pendingScopeSaveAction = executeSave
+        } else {
+            executeSave(RecurringEditScope.THIS_OCCURRENCE_ONLY)
+        }
+    }
 
     val currentIsDirty by rememberUpdatedState(hasUnsavedChanges)
     LaunchedEffect(hasUnsavedChanges) { onDirtyStateChange(hasUnsavedChanges) }
@@ -2020,6 +2177,44 @@ fun AppointmentEditorSheet(
                 )
             }
 
+            TaskRecurrenceSectionCard(
+                showMoreDetails = showMoreDetails,
+                onToggleMoreDetails = { showMoreDetails = !showMoreDetails },
+                recurrenceFrequency = recurrenceFrequency,
+                showRecurrenceFreqDropdown = showRecurrenceFreqDropdown,
+                onToggleRecurrenceFreqDropdown = { showRecurrenceFreqDropdown = it },
+                onSelectRecurrenceFrequency = { freq ->
+                    recurrenceFrequency = freq
+                    if (freq != null) {
+                        if (!recurrenceStartCustomized) {
+                            recurrenceStartDate = startDate
+                        }
+                        if (freq == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS && weekdaysMask == 0) {
+                            weekdaysMask = RecurrenceEngine.weekdayBit(startDate.dayOfWeek)
+                        }
+                    }
+                },
+                customIntervalDaysText = customIntervalDaysText,
+                onCustomIntervalChange = { customIntervalDaysText = it },
+                weekdaysMask = weekdaysMask,
+                onWeekdaysMaskChange = { weekdaysMask = it },
+                recurrenceStartDate = recurrenceStartDate,
+                onPickRecurrenceStartDate = { showRecStartDatePicker = true },
+                recurrenceEndMode = recurrenceEndMode,
+                onSelectRecurrenceEndMode = { modeKey ->
+                    recurrenceEndMode = modeKey
+                    if (modeKey == "DATE" && recurrenceEndDate == null) {
+                        recurrenceEndDate = recurrenceStartDate.plusMonths(1)
+                    } else if (modeKey == "COUNT" && maxOccurrencesText.isBlank()) {
+                        maxOccurrencesText = "5"
+                    }
+                },
+                recurrenceEndDate = recurrenceEndDate,
+                onPickRecurrenceEndDate = { showRecEndDatePicker = true },
+                maxOccurrencesText = maxOccurrencesText,
+                onMaxOccurrencesChange = { maxOccurrencesText = it }
+            )
+
             OutlinedTextField(
                 value = location,
                 onValueChange = { location = it },
@@ -2092,19 +2287,32 @@ fun AppointmentEditorSheet(
                             endTime
                         )
                     }
-                    onSave(
-                        existingAppointment?.id,
-                        title,
-                        description,
-                        categoryId,
-                        eventId,
-                        startEpoch,
-                        endEpoch,
-                        isAllDay,
-                        location,
-                        link,
-                        if (reminderModified) (reminderMinutesBefore ?: defaultReminderMinutes) else null
+                    val recDraft = buildTaskRecurrenceDraft(
+                        recurrenceFrequency = recurrenceFrequency,
+                        customIntervalDaysText = customIntervalDaysText,
+                        weekdaysMask = weekdaysMask,
+                        recurrenceStartDate = recurrenceStartDate,
+                        recurrenceEndMode = recurrenceEndMode,
+                        recurrenceEndDate = recurrenceEndDate,
+                        maxOccurrencesText = maxOccurrencesText
                     )
+                    dispatchSaveWithScopeHandling { editScope ->
+                        onSave(
+                            existingAppointment?.id,
+                            title,
+                            description,
+                            categoryId,
+                            eventId,
+                            startEpoch,
+                            endEpoch,
+                            isAllDay,
+                            location,
+                            link,
+                            if (reminderModified) (reminderMinutesBefore ?: defaultReminderMinutes) else null,
+                            recDraft,
+                            editScope
+                        )
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp),
@@ -2125,6 +2333,9 @@ fun AppointmentEditorSheet(
             onDateSelected = {
                 startDate = it
                 if (endDate < it) endDate = it
+                if (!recurrenceStartCustomized) {
+                    recurrenceStartDate = it
+                }
             },
             onDismiss = { pickTarget = null }
         )
@@ -2145,17 +2356,51 @@ fun AppointmentEditorSheet(
         )
     }
 
-    if (showDeleteConfirm && existingAppointment != null) {
-        ConfirmDangerDialog(
-            title = "Excluir compromisso?",
-            message = "O compromisso \"${existingAppointment.title}\" será excluído permanentemente.",
-            onConfirm = {
-                showDeleteConfirm = false
-                onDelete(existingAppointment.id)
+    if (showRecStartDatePicker) {
+        NexusDatePickerDialog(
+            initialDate = recurrenceStartDate,
+            onDateSelected = { picked ->
+                recurrenceStartDate = picked
+                recurrenceStartCustomized = true
             },
-            onDismiss = { showDeleteConfirm = false }
+            onDismiss = { showRecStartDatePicker = false }
         )
     }
+
+    if (showRecEndDatePicker) {
+        NexusDatePickerDialog(
+            initialDate = recurrenceEndDate ?: recurrenceStartDate.plusMonths(1),
+            onDateSelected = { picked ->
+                recurrenceEndDate = if (picked.isBefore(recurrenceStartDate)) recurrenceStartDate else picked
+            },
+            onDismiss = { showRecEndDatePicker = false }
+        )
+    }
+
+    RecurringScopeConfirmDialogs(
+        entityTitle = existingAppointment?.title,
+        hasActiveRecurrence = activeRecurrence != null,
+        recurrenceFrequency = recurrenceFrequency,
+        deleteTitle = "Excluir compromisso?",
+        deleteRecurringTitle = "Excluir compromisso recorrente?",
+        deleteSingleMessage = existingAppointment?.let {
+            "O compromisso \"${it.title}\" será excluído permanentemente."
+        }.orEmpty(),
+        deleteRecurringMessage = existingAppointment?.let {
+            "\"${it.title}\" faz parte de uma série recorrente. Deseja remover apenas esta ocorrência ou encerrar toda a série?"
+        }.orEmpty(),
+        updateRecurringTitle = "Atualizar compromisso recorrente",
+        showDeleteConfirm = showDeleteConfirm,
+        onDismissDeleteConfirm = { showDeleteConfirm = false },
+        onConfirmDelete = { deleteScope ->
+            showDeleteConfirm = false
+            existingAppointment?.let { onDelete(it.id, deleteScope) }
+        },
+        pendingScopeSaveAction = pendingScopeSaveAction,
+        onClearPendingScopeSave = { pendingScopeSaveAction = null },
+        pendingRuleChangeConfirmAction = pendingRuleChangeConfirmAction,
+        onClearPendingRuleChange = { pendingRuleChangeConfirmAction = null }
+    )
 
     if (showDiscardConfirm) {
         ConfirmDiscardChangesDialog(

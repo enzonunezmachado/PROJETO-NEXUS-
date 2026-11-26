@@ -59,6 +59,7 @@ import com.nexus.app.data.market.MarketAlertStore
 import com.nexus.app.data.market.MarketWatchlistRepository
 import com.nexus.app.data.market.MarketWatchlistStore
 import com.nexus.app.domain.model.CategoryScope
+import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.FinancialStatus
 import com.nexus.app.domain.model.MarketAlertCondition
 import com.nexus.app.domain.model.MarketAlertStatus
@@ -66,6 +67,7 @@ import com.nexus.app.domain.model.MarketAssetCatalog
 import com.nexus.app.domain.model.MarketPriceAlert
 import com.nexus.app.domain.model.PaymentMethod
 import com.nexus.app.domain.model.ProjectStatus
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.RecurrenceExceptionType
 import com.nexus.app.domain.model.RecurrenceFrequency
 import com.nexus.app.domain.model.ReminderCategory
@@ -74,7 +76,9 @@ import com.nexus.app.domain.model.StatementStatus
 import com.nexus.app.domain.model.TaskPriority
 import com.nexus.app.domain.model.TaskRecurrenceFrequency
 import com.nexus.app.domain.model.TaskStatus
+import com.nexus.app.domain.model.TicketStatus
 import com.nexus.app.domain.model.TransactionType
+import com.nexus.app.domain.rules.RecurrenceEngine
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -289,11 +293,18 @@ class BackupIncrementalMergeUnitTests {
             checkFail("events")
             val catIds = categories.map { it.id }.toSet()
             val cardIds = creditCards.map { it.id }.toSet()
+            val recIds = taskRecurrences.map { it.id }.toSet()
             items.forEach {
                 checkFk(it.categoryId, catIds, "events.categoryId")
                 checkFk(it.creditCardId, cardIds, "events.creditCardId")
+                checkFk(it.recurrenceId, recIds, "events.recurrenceId")
             }
             upsertById(events, items) { it.id }
+            val uniqueRecOcc = events.filter { it.recurrenceId != null && it.occurrenceDateIso != null }
+                .map { it.recurrenceId!! to it.occurrenceDateIso!! }
+            if (uniqueRecOcc.size != uniqueRecOcc.toSet().size) {
+                throw IllegalStateException("UNIQUE constraint failed: events(recurrenceId, occurrenceDateIso)")
+            }
         }
 
         override suspend fun insertTasks(items: List<TaskEntity>) {
@@ -329,11 +340,18 @@ class BackupIncrementalMergeUnitTests {
             checkFail("appointments")
             val catIds = categories.map { it.id }.toSet()
             val evIds = events.map { it.id }.toSet()
+            val recIds = taskRecurrences.map { it.id }.toSet()
             items.forEach {
                 checkFk(it.categoryId, catIds, "appointments.categoryId")
                 checkFk(it.eventId, evIds, "appointments.eventId")
+                checkFk(it.recurrenceId, recIds, "appointments.recurrenceId")
             }
             upsertById(appointments, items) { it.id }
+            val uniqueRecOcc = appointments.filter { it.recurrenceId != null && it.occurrenceDateIso != null }
+                .map { it.recurrenceId!! to it.occurrenceDateIso!! }
+            if (uniqueRecOcc.size != uniqueRecOcc.toSet().size) {
+                throw IllegalStateException("UNIQUE constraint failed: appointments(recurrenceId, occurrenceDateIso)")
+            }
         }
 
         override suspend fun insertCreditCards(items: List<CreditCardEntity>) {
@@ -1375,6 +1393,203 @@ class BackupIncrementalMergeUnitTests {
         }
         assertEquals(0, storage.clearAllCallsCount)
         assertEquals(2, storage.tasks.size)
+    }
+
+    @Test
+    fun `v8 backup restore and incremental merge preserve appointment and event recurrences templates exceptions and virtual reminders`() = runBlocking {
+        val storage = InMemoryBackupStorageGateway()
+        seedLocalDb(storage)
+        val manager = BackupManager(storage)
+
+        val templateJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Aquecer", "Registrar tempo"))
+        val payload = NexusBackupPayload(
+            formatVersion = NexusBackupPayload.CURRENT_FORMAT_VERSION,
+            databaseVersion = 7,
+            categories = listOf(
+                CategoryBackupDto(id = "cat-v8", name = "Rotina", colorHex = "#4C8BF5")
+            ),
+            recurrences = listOf(
+                TaskRecurrenceBackupDto(
+                    id = "rec-task-v8",
+                    title = "Treino funcional",
+                    categoryId = "cat-v8",
+                    frequency = TaskRecurrenceFrequency.ANNUAL.name,
+                    startDateIso = "2026-11-26",
+                    domain = RecurrenceDomain.TASK.name,
+                    templateSubtasksJson = templateJson
+                ),
+                TaskRecurrenceBackupDto(
+                    id = "rec-appt-v8",
+                    title = "Mentoria quinzenal",
+                    categoryId = "cat-v8",
+                    frequency = TaskRecurrenceFrequency.BIWEEKLY.name,
+                    startDateIso = "2026-11-26",
+                    domain = RecurrenceDomain.APPOINTMENT.name,
+                    isAllDay = false,
+                    durationMillis = 5_400_000L,
+                    location = "Sala 3",
+                    link = "https://meet.nexus.local/mentoria"
+                ),
+                TaskRecurrenceBackupDto(
+                    id = "rec-ev-v8",
+                    title = "Feira Anual de Tecnologia",
+                    categoryId = "cat-v8",
+                    frequency = TaskRecurrenceFrequency.ANNUAL.name,
+                    startDateIso = "2026-11-26",
+                    domain = RecurrenceDomain.EVENT.name,
+                    isAllDay = true,
+                    durationMillis = 172_800_000L,
+                    locationName = "Centro de Convenções",
+                    city = "São Paulo",
+                    state = "SP",
+                    eventStatus = EventLifecycleStatus.CONFIRMED.name,
+                    ticketStatus = TicketStatus.NOT_BOUGHT.name
+                )
+            ),
+            appointments = listOf(
+                AppointmentBackupDto(
+                    id = "appt-mat-1",
+                    title = "Mentoria quinzenal",
+                    categoryId = "cat-v8",
+                    startAt = t0,
+                    endAt = t0 + 5_400_000L,
+                    location = "Sala 3",
+                    recurrenceId = "rec-appt-v8",
+                    occurrenceDateIso = "2026-11-26"
+                )
+            ),
+            events = listOf(
+                EventBackupDto(
+                    id = "ev-mat-1",
+                    name = "Feira Anual de Tecnologia",
+                    categoryId = "cat-v8",
+                    startAt = t0,
+                    endAt = t0 + 172_800_000L,
+                    isAllDay = true,
+                    locationName = "Centro de Convenções",
+                    recurrenceId = "rec-ev-v8",
+                    occurrenceDateIso = "2026-11-26"
+                )
+            ),
+            recurrenceExceptions = listOf(
+                RecurrenceExceptionBackupDto(
+                    id = "exc-appt-ovr",
+                    recurrenceId = "rec-appt-v8",
+                    occurrenceDateIso = "2026-12-10",
+                    exceptionType = RecurrenceExceptionType.OVERRIDE.name,
+                    overrideTitle = "Mentoria Especial",
+                    overrideDueAt = t0 + 1_200_000_000L,
+                    overrideEndAt = t0 + 1_205_400_000L,
+                    overrideDescription = "Com convidado",
+                    overrideLocation = "Auditório",
+                    overrideLink = "https://meet.nexus.local/especial",
+                    overrideIsAllDay = false,
+                    appointmentId = "appt-mat-1"
+                ),
+                RecurrenceExceptionBackupDto(
+                    id = "exc-ev-ovr",
+                    recurrenceId = "rec-ev-v8",
+                    occurrenceDateIso = "2027-11-26",
+                    exceptionType = RecurrenceExceptionType.OVERRIDE.name,
+                    overrideTitle = "Feira Edição 2027",
+                    eventId = "ev-mat-1"
+                )
+            ),
+            reminders = listOf(
+                ReminderBackupDto(
+                    id = "rem-virt-appt",
+                    sourceType = ReminderSourceType.APPOINTMENT.name,
+                    sourceId = RecurrenceEngine.virtualOccurrenceId("rec-appt-v8", "2026-12-10"),
+                    category = ReminderCategory.SCHEDULE.name,
+                    title = "Mentoria Especial",
+                    triggerAt = t0 + 1_199_100_000L,
+                    minutesBefore = 15
+                ),
+                ReminderBackupDto(
+                    id = "rem-virt-ev",
+                    sourceType = ReminderSourceType.EVENT.name,
+                    sourceId = RecurrenceEngine.virtualOccurrenceId("rec-ev-v8", "2027-11-26"),
+                    category = ReminderCategory.SCHEDULE.name,
+                    title = "Feira Edição 2027",
+                    triggerAt = t0 + 2_000_000_000L,
+                    minutesBefore = 60
+                )
+            )
+        )
+
+        val mergeSummary = manager.mergeBackupAtomically(payload)
+        assertEquals(0, mergeSummary.totalInvalid)
+        assertEquals(0, mergeSummary.totalConflicts)
+        assertEquals(10, mergeSummary.totalInserted)
+
+        val mergedApptRec = storage.taskRecurrences.first { it.id == "rec-appt-v8" }
+        assertEquals(RecurrenceDomain.APPOINTMENT, mergedApptRec.domain)
+        assertEquals("Sala 3", mergedApptRec.location)
+        val mergedEvRec = storage.taskRecurrences.first { it.id == "rec-ev-v8" }
+        assertEquals(RecurrenceDomain.EVENT, mergedEvRec.domain)
+        assertEquals(TaskRecurrenceFrequency.ANNUAL, mergedEvRec.frequency)
+        assertEquals("São Paulo", mergedEvRec.city)
+        val mergedTaskRec = storage.taskRecurrences.first { it.id == "rec-task-v8" }
+        assertEquals(listOf("Aquecer", "Registrar tempo"), RecurrenceEngine.deserializeChecklistTemplate(mergedTaskRec.templateSubtasksJson))
+
+        val mergedApptExc = storage.recurrenceExceptions.first { it.id == "exc-appt-ovr" }
+        assertEquals("Auditório", mergedApptExc.overrideLocation)
+        assertEquals("Com convidado", mergedApptExc.overrideDescription)
+        assertEquals("appt-mat-1", mergedApptExc.appointmentId)
+
+        // Export -> validate -> full restore round-trip must preserve everything without FK violations
+        val exportedJson = manager.exportToJson()
+        val parsed = manager.validateAndParse(exportedJson) as BackupValidationResult.Valid
+        assertEquals(NexusBackupPayload.CURRENT_FORMAT_VERSION, parsed.preview.formatVersion)
+
+        val restoreStorage = InMemoryBackupStorageGateway()
+        val restoreManager = BackupManager(restoreStorage)
+        val restoreSummary = restoreManager.restoreAtomically(parsed.preview.payload)
+        assertEquals(3, restoreSummary.recurrencesRestored)
+        assertEquals(2, restoreSummary.recurrenceExceptionsRestored)
+        assertTrue(restoreStorage.events.any { it.id == "ev-mat-1" && it.recurrenceId == "rec-ev-v8" })
+        assertTrue(restoreStorage.appointments.any { it.id == "appt-mat-1" && it.recurrenceId == "rec-appt-v8" })
+    }
+
+    @Test
+    fun `restoring legacy v7 task recurrence without templateSubtasksJson backfills template from subtasks`() = runBlocking {
+        val storage = InMemoryBackupStorageGateway()
+        val manager = BackupManager(storage)
+
+        val legacyV7Payload = NexusBackupPayload(
+            formatVersion = 7,
+            databaseVersion = 6,
+            recurrences = listOf(
+                TaskRecurrenceBackupDto(
+                    id = "rec-legacy-v7",
+                    title = "Fechamento semanal",
+                    startDateIso = "2026-11-20",
+                    templateSubtasksJson = "[]"
+                )
+            ),
+            tasks = listOf(
+                TaskBackupDto(
+                    id = "t-legacy-occ",
+                    title = "Fechamento semanal",
+                    status = TaskStatus.NOT_STARTED.name,
+                    recurrenceId = "rec-legacy-v7",
+                    occurrenceDateIso = "2026-11-20",
+                    createdAt = t0,
+                    updatedAt = t0
+                )
+            ),
+            subtasks = listOf(
+                SubtaskBackupDto(id = "sub-v7-1", taskId = "t-legacy-occ", title = "Conferir extrato", sortOrder = 0),
+                SubtaskBackupDto(id = "sub-v7-2", taskId = "t-legacy-occ", title = "Arquivar comprovantes", sortOrder = 1)
+            )
+        )
+
+        manager.restoreAtomically(legacyV7Payload)
+        val restoredRec = storage.taskRecurrences.single()
+        assertEquals(
+            listOf("Conferir extrato", "Arquivar comprovantes"),
+            RecurrenceEngine.deserializeChecklistTemplate(restoredRec.templateSubtasksJson)
+        )
     }
 
     private fun LoanBackupDtoFixture() = com.nexus.app.data.backup.LoanBackupDto(
