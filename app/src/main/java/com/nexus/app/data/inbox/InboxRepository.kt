@@ -331,14 +331,22 @@ class InboxRepository(
             val parseErrors = mutableListOf<String>()
 
             for (file in candidateFiles) {
-                val raw = remoteDataSource.downloadFileRawContent(currentConfig, file, token).getOrElse { err ->
-                    parseErrors.add("${file.name}: ${err.message ?: "erro ao baixar"}")
+                val downloadResult = remoteDataSource.downloadFileRawContent(currentConfig, file, token)
+                if (downloadResult.isFailure) {
+                    val err = downloadResult.exceptionOrNull()
+                    parseErrors.add("${file.name}: ${err?.message ?: "erro ao baixar"}")
                     continue
                 }
-                val parsed = parseEnvelopeStrictly(raw).getOrElse { err ->
-                    parseErrors.add("${file.name}: ${err.message ?: "JSON incompatível com o contrato"}")
+                val raw = downloadResult.getOrThrow()
+
+                val parseResult = parseEnvelopeStrictly(raw)
+                if (parseResult.isFailure) {
+                    val err = parseResult.exceptionOrNull()
+                    parseErrors.add("${file.name}: ${err?.message ?: "JSON incompatível com o contrato"}")
                     continue
                 }
+                val parsed = parseResult.getOrThrow()
+
                 downloadedValid.add(
                     InboxDownloadedFile(
                         file = file,
