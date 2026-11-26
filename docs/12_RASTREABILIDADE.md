@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Matriz Principal (`REQ-001` a `REQ-027`)
+## 1. Matriz Principal (`REQ-001` a `REQ-028`)
 
 | REQ | Funcionalidade | Módulo | Componentes / Arquivos Principais | Persistência (Tabela / Store) | Fluxo (`05_*`) | Testes & ADRs |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -34,7 +34,8 @@
 | `REQ-024` | Busca Global unificada com detecção de conflitos em todo o conjunto de compromissos | 12 — Busca | `MoreSettingsBackupDiagnosticsScreens.kt` (`GlobalSearchScreen`), `NexusRepository.kt` (`observeGlobalSearch`) | Lê todas as principais tabelas de domínio | §7 | `NexusPhase1UnitTests` |
 | `REQ-025` | Backup JSON `v7` transacional via SAF (`v1..v7`), Modo 1 (restauração completa com diálogo/checkbox destrutivo) e Modo 2 (prévia dry-run `previewMerge` + mesclagem incremental idempotente), rollback Room ↔ Mercado, CSV 15 colunas, Diagnóstico e verificação de assinatura `apksigner` SHA-256 no CI | 13 — Backup/Diag. | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `MoreSettingsBackupDiagnosticsScreens.kt`, `GlobalErrorHandler.kt`, `.github/workflows/android-build.yml` | 27 tabelas Room + `marketConfig` (`SharedPreferences` + JSON alertas) + `error_logs` | §7 | `NexusPhase6UnitTests`, `NexusStage2UnitTests`, `MarketBackupIntegrationUnitTests`, `BackupIncrementalMergeUnitTests` (`13` `@Test`) · `ADR-004`, `ADR-013`, `ADR-015`, `ADR-016` |
 | `REQ-026` | Backup completo `.zip` (`data.json` + `banners/`) *(não implementada)* | 13 — Backup | Planejado no Roadmap (§2 item 1 de `10_ROADMAP.md`) | — | — | — |
-| `REQ-027` | Camada interna de entrada estruturada (`contractVersion = 1`, `TASK`/`APPOINTMENT`/`EVENT`/`PROJECT`/`PERSONAL_GOAL`/`TRANSACTION`, sem sync externo ainda) para integração da Etapa 3 | 14 — Ingestão Interna | `StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt`, `NexusRepository.kt` (`processStructuredInputJson` / `processStructuredInputEnvelope`) | Tabelas oficiais Room `v6` (`tasks`, `appointments`, `events`, `projects`, `personal_goals`, `transactions`) + `audit_history` (`STRUCTURED_INPUT_OP`) | `14_CONTRATO_*` | `StructuredInputUnitTests` (`7` `@Test`) · `ADR-017` |
+| `REQ-027` | Camada de entrada estruturada (`contractVersion = 1`: `TASK` + `subtasks`, `CHECKLIST`, `APPOINTMENT`, `EVENT`, `PROJECT`, `PERSONAL_GOAL`, `TRANSACTION`, ações `CREATE`/`UPDATE`/`UPSERT`, `previewEnvelope` dry-run) | 14 — Ingestão Interna | `StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt`, `NexusRepository.kt` (`previewStructuredInput*` / `processStructuredInput*`) | Tabelas oficiais Room `v6` (`tasks`, `subtasks`, `appointments`, `events`, `projects`, `personal_goals`, `transactions`) + `audit_history` (`STRUCTURED_INPUT_OP`) | `14_CONTRATO_*` | `StructuredInputUnitTests` (`10` `@Test`) · `ADR-017`, `ADR-018` |
+| `REQ-028` | Ponte opcional ChatGPT → `NEXUS-INBOX` (GitHub privado somente-leitura, PAT em Keystore `AES/GCM`, prévia obrigatória, confirmação manual, resumo sem categorias vazias e `InboxSyncWorker` opcional) | 15 — Ponte Inbox | `InboxModels.kt`, `InboxStores.kt`, `GitHubInboxRemoteDataSource.kt`, `InboxRepository.kt`, `InboxSyncWorker.kt`, `NexusInboxScreen.kt`, `MoreSettingsBackupDiagnosticsScreens.kt`, `MainActivity.kt` (`SubRoute.InboxBridge`) | `SharedPreferences` (`nexus_inbox_config_prefs`, `nexus_inbox_secret_prefs` + Keystore `AES/GCM`) + `audit_history` (`INBOX_IMPORT_LOG`) + tabelas Room via `REQ-027` | `14_CONTRATO_*` | `InboxBridgeUnitTests` (`3` `@Test`) · `ADR-018` |
 
 
 ---

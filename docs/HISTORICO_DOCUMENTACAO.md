@@ -247,5 +247,34 @@ A execução `#45733193619` (`commit fc7a4d6752cab01d05fcd5bdb1f63130fcdd526f`) 
 ### Próximo passo
 Fazer push da correção para `main` e executar o workflow `NEXUS Android Build` no GitHub Actions para confirmar a instalação de `platform-tools` + `build-tools;35.0.0`, os testes unitários e o build/assinatura do APK.
 
+---
+
+## 2026-11-26 — Rodada 3: Ponte ChatGPT → `NEXUS-INBOX` → NEXUS Android (`ADR-018`)
+
+**Tipo:** evolução funcional implementada no código Android + atualização sincronizada de `/docs/` e artefatos do Google AI Studio.
+
+### Motivação e evidência
+Entregar a primeira versão funcional ponta a ponta da integração **ChatGPT → `NEXUS-INBOX` (repositório GitHub privado) → NEXUS Android** sobre a camada `data/ingestion/` (`contractVersion = 1`) e o banco Room único `v6`, mantendo acesso discreto em `"Mais"`, segurança criptográfica da credencial no aparelho e controle explícito do usuário antes de qualquer escrita.
+
+### Mudanças implementadas e documentadas
+1. **Extensão retrocompatível da entrada estruturada (`data/ingestion/` + `NexusDaos.kt` + `NexusRepository.kt`):**
+   - Adicionado `StructuredEntityType.CHECKLIST`, suporte a `subtasks` inline em `TASK`, ações explícitas `CREATE`/`UPDATE`/`UPSERT` preservando `createdAt` em atualizações, estado `UPDATED` e simulação dry-run `previewJson`/`previewEnvelope` via `PreviewOverlayGateway` (zero gravações no banco, suportando vínculos intra-lote como `TASK` → `CHECKLIST` e `TASK` → `TRANSACTION`).
+   - Expandido `NexusDaos.kt` (`SubtaskDao.getById` / `getByTaskId`, `AuditHistoryDao.observeLatestByEntityType`) sem alterar `DATABASE_VERSION = 6`, e adicionado `AUDIT_ENTITY_INBOX_IMPORT_LOG = "INBOX_IMPORT_LOG"` + `observeInboxImportLogs()` + implementação de `InboxIngestionPort` em `NexusRepository.kt`.
+   - Expandido `StructuredInputUnitTests.kt` de `7` para `10` `@Test`.
+2. **Conector `data/inbox/` + Worker + Notificações + UI (`SubRoute.InboxBridge`):**
+   - Criados `InboxModels.kt`, `InboxStores.kt` (`InboxInputValidator`, `SharedPrefsInboxConfigStorage`, `AndroidKeystoreInboxTokenStore` com `AES/GCM/NoPadding`), `GitHubInboxRemoteDataSource.kt` (`HttpsURLConnection` `GET` somente leitura, sem redirects, limite `2 MB`, zero credenciais hardcoded), `InboxRepository.kt` (`InboxSummaryFormatter` omitindo categorias sem alteração real, dry-run `checkInboxNow`, confirmação explícita `confirmAndImportPending` e deduplicação por `path::sha`) e `InboxSyncWorker.kt` (`WorkManager` opcional `>= 15 min`, nunca auto-importa).
+   - Adicionados `showInboxPendingNotification` + `EXTRA_OPEN_INBOX` (`NexusNotificationScheduler.kt`), instanciação lazy em `AppContainer` (`NexusApplication.kt`), estados/ações em `NexusViewModel.kt`, tela `NexusInboxScreen.kt`, entrada discreta em `MoreSettingsBackupDiagnosticsScreens.kt` (`"NEXUS-INBOX (Ponte ChatGPT)"`) e rota `SubRoute.InboxBridge` + deep-link em `MainActivity.kt`.
+   - Criada a suíte `InboxBridgeUnitTests.kt` (`3` `@Test`), elevando o total do projeto para `18` arquivos e `137` `@Test`.
+3. **Documentação e artefatos sincronizados:**
+   - Atualizados `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`, `docs/03_ARQUITETURA_ENGENHARIA.md`, `docs/07_ESTADO_ATUAL.md`, `docs/08_QUALIDADE_SEGURANCA.md`, `docs/10_ROADMAP.md`, `docs/11_DECISOES_ADRS.md` (`ADR-018`), `docs/12_RASTREABILIDADE.md` (`REQ-027`, `REQ-028`), `docs/HISTORICO_DOCUMENTACAO.md`, além dos artefatos `NEXUS_CURRENT_STATE.md`, `NEXUS_CONTINUIDADE.md` e `NEXUS_IMPLEMENTATION_ROADMAP.md`.
+
+### Limites e itens não alterados
+- **Compilação Kotlin/Gradle e testes JUnit NÃO EXECUTADOS localmente:** este container não possui JDK, Gradle, Android SDK (`keytool`/`apksigner`/`adb`) nem emulador; os `18` arquivos de teste (`137` `@Test`) permanecem como `NÃO EXECUTADO` localmente até execução no GitHub Actions ou Android Studio.
+- **`applicationId = "com.nexus.app"`, `versionCode = 8`, `versionName = "5.3.0"`, `DATABASE_VERSION = 6`, `NexusMigrations.kt`, `CURRENT_FORMAT_VERSION = 7` e `web-mirror-pilot/`** permaneceram inalterados. `BUG-001` segue em aberto.
+
+### Próximo passo
+Rodar `.github/workflows/android-build.yml` no GitHub Actions (ou `:app:testDebugUnitTest :app:assembleDebug` com JDK 17 + Android SDK), criar o repositório privado `NEXUS-INBOX` no GitHub com Fine-Grained PAT (`Contents: Read-only`), configurar em **Mais → NEXUS-INBOX** no app e testar o fluxo completo com JSON gerado pelo ChatGPT.
+
+
 
 

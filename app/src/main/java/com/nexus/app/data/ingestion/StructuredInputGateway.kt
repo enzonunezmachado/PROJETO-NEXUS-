@@ -8,6 +8,7 @@ import com.nexus.app.data.db.entity.CreditCardStatementEntity
 import com.nexus.app.data.db.entity.EventEntity
 import com.nexus.app.data.db.entity.PersonalGoalEntity
 import com.nexus.app.data.db.entity.ProjectEntity
+import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
 import com.nexus.app.data.db.entity.TransactionEntity
 import java.util.UUID
@@ -28,12 +29,22 @@ interface StructuredInputGateway {
     suspend fun personalGoalExists(id: String): Boolean
     suspend fun eventExists(id: String): Boolean
     suspend fun taskExists(id: String): Boolean
+    suspend fun subtaskExists(id: String): Boolean
     suspend fun appointmentExists(id: String): Boolean
     suspend fun transactionExists(id: String): Boolean
     suspend fun taskRecurrenceExists(id: String): Boolean
     suspend fun creditCardExists(id: String): Boolean
     suspend fun installmentPurchaseExists(id: String): Boolean
     suspend fun recurringRuleExists(id: String): Boolean
+
+    suspend fun getTaskById(id: String): TaskEntity?
+    suspend fun getSubtaskById(id: String): SubtaskEntity?
+    suspend fun getSubtasksByTaskId(taskId: String): List<SubtaskEntity>
+    suspend fun getAppointmentById(id: String): AppointmentEntity?
+    suspend fun getEventById(id: String): EventEntity?
+    suspend fun getProjectById(id: String): ProjectEntity?
+    suspend fun getPersonalGoalById(id: String): PersonalGoalEntity?
+    suspend fun getTransactionById(id: String): TransactionEntity?
 
     suspend fun getTaskByRecurrenceAndDate(recurrenceId: String, occurrenceDateIso: String): TaskEntity?
     suspend fun getStatementById(id: String): CreditCardStatementEntity?
@@ -42,6 +53,8 @@ interface StructuredInputGateway {
     suspend fun getTransactionsByInstallmentPurchase(purchaseId: String): List<TransactionEntity>
 
     suspend fun insertTask(entity: TaskEntity)
+    suspend fun insertSubtask(entity: SubtaskEntity)
+    suspend fun insertSubtasks(entities: List<SubtaskEntity>)
     suspend fun insertAppointment(entity: AppointmentEntity)
     suspend fun insertEvent(entity: EventEntity)
     suspend fun insertProject(entity: ProjectEntity)
@@ -61,6 +74,7 @@ internal class RoomStructuredInputGateway(
             entry.entityType == AUDIT_ENTITY_TYPE &&
                 entry.entityId == operationId &&
                 (entry.action == StructuredProcessingState.APPLIED.name ||
+                    entry.action == StructuredProcessingState.UPDATED.name ||
                     entry.action == StructuredProcessingState.CONFLICT_PRESERVED_LOCAL.name)
         } ?: return null
         return runCatching { StructuredProcessingState.valueOf(committed.action) }.getOrNull()
@@ -73,6 +87,7 @@ internal class RoomStructuredInputGateway(
         occurredAt: Long
     ) {
         if (state != StructuredProcessingState.APPLIED &&
+            state != StructuredProcessingState.UPDATED &&
             state != StructuredProcessingState.CONFLICT_PRESERVED_LOCAL
         ) {
             return
@@ -106,6 +121,9 @@ internal class RoomStructuredInputGateway(
     override suspend fun taskExists(id: String): Boolean =
         database.taskDao().getById(id) != null
 
+    override suspend fun subtaskExists(id: String): Boolean =
+        database.subtaskDao().getById(id) != null
+
     override suspend fun appointmentExists(id: String): Boolean =
         database.appointmentDao().getById(id) != null
 
@@ -123,6 +141,30 @@ internal class RoomStructuredInputGateway(
 
     override suspend fun recurringRuleExists(id: String): Boolean =
         database.recurringRuleDao().getById(id) != null
+
+    override suspend fun getTaskById(id: String): TaskEntity? =
+        database.taskDao().getById(id)
+
+    override suspend fun getSubtaskById(id: String): SubtaskEntity? =
+        database.subtaskDao().getById(id)
+
+    override suspend fun getSubtasksByTaskId(taskId: String): List<SubtaskEntity> =
+        database.subtaskDao().getByTaskId(taskId)
+
+    override suspend fun getAppointmentById(id: String): AppointmentEntity? =
+        database.appointmentDao().getById(id)
+
+    override suspend fun getEventById(id: String): EventEntity? =
+        database.eventDao().getById(id)
+
+    override suspend fun getProjectById(id: String): ProjectEntity? =
+        database.projectDao().getById(id)
+
+    override suspend fun getPersonalGoalById(id: String): PersonalGoalEntity? =
+        database.personalGoalDao().getById(id)
+
+    override suspend fun getTransactionById(id: String): TransactionEntity? =
+        database.transactionDao().getById(id)
 
     override suspend fun getTaskByRecurrenceAndDate(
         recurrenceId: String,
@@ -145,6 +187,16 @@ internal class RoomStructuredInputGateway(
 
     override suspend fun insertTask(entity: TaskEntity) {
         database.taskDao().upsert(entity)
+    }
+
+    override suspend fun insertSubtask(entity: SubtaskEntity) {
+        database.subtaskDao().upsert(entity)
+    }
+
+    override suspend fun insertSubtasks(entities: List<SubtaskEntity>) {
+        if (entities.isNotEmpty()) {
+            database.subtaskDao().insertAll(entities)
+        }
     }
 
     override suspend fun insertAppointment(entity: AppointmentEntity) {

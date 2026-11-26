@@ -1,17 +1,19 @@
 # 08 — Qualidade, Segurança, Confiabilidade e Testes
 
-> **Base verificada:** `AndroidManifest.xml`, `app/build.gradle.kts`, `keystore.properties.example`, `GlobalErrorHandler.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `data/ingestion/StructuredInput*.kt`, `NexusRepository.kt`, `FileMarketAlertStore.kt`, `MarketQuoteRemoteDataSource.kt`, `MarketHistoryRemoteDataSource.kt`, `.github/workflows/android-build.yml`, `MoreSettingsBackupDiagnosticsScreens.kt` e os `17` arquivos em `app/src/test/java/com/nexus/app/`.
+> **Base verificada:** `AndroidManifest.xml`, `app/build.gradle.kts`, `keystore.properties.example`, `GlobalErrorHandler.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt`, `data/ingestion/StructuredInput*.kt`, `data/inbox/*`, `NexusRepository.kt`, `FileMarketAlertStore.kt`, `MarketQuoteRemoteDataSource.kt`, `MarketHistoryRemoteDataSource.kt`, `.github/workflows/android-build.yml`, `MoreSettingsBackupDiagnosticsScreens.kt`, `NexusInboxScreen.kt` e os `18` arquivos em `app/src/test/java/com/nexus/app/`.
 
 ---
 
 ## 1. Postura de Segurança e Privacidade (Offline-First)
 
 1. **Soberania local dos dados:** todo dado pessoal, financeiro e de produtividade reside exclusivamente no aparelho (`nexus_local.db`, `SharedPreferences` privadas e `filesDir`).
-2. **Zero backend / zero login / zero telemetria:** não há conta de usuário, Firebase, analytics, rastreamento ou envio de transações/tarefas pela rede.
+2. **Zero backend proprietário / zero login / zero telemetria:** não há conta de usuário NEXUS, Firebase, analytics ou rastreamento; o núcleo funciona integralmente offline.
 3. **`android:allowBackup="false"` (`AndroidManifest.xml:13`):** bloqueia backup automático não controlado via nuvem do Google Drive; backups são iniciados apenas pelo usuário via **SAF** (`ActivityResultContracts.CreateDocument` / `OpenDocument`).
-4. **Sem segredos embutidos ou trafegados:**
+4. **Sem segredos embutidos no repositório:**
    - Provedores de Mercado utilizam exclusivamente APIs públicas sem necessidade de API key pessoal obrigatória.
-   - `NetworkSecurity`: conexões do Mercado usam HTTPS (`HttpsURLConnection`) com timeouts explícitos e leitura somente-pública de ativos financeiros (nenhum dado do usuário é enviado).
+   - `NetworkSecurity`: conexões do Mercado e da ponte opcional `NEXUS-INBOX` usam HTTPS (`HttpsURLConnection`) com timeouts explícitos e somente método `GET` (no caso da `NEXUS-INBOX`, com `instanceFollowRedirects = false`, checagem de host `https://api.github.com`, validação estrita de `owner`/`repo`/`branch`/`pathPrefix` contra path traversal e teto de `2 MB` por JSON).
+   - O Fine-Grained PAT da `NEXUS-INBOX` é informado apenas pelo usuário em tempo de execução, armazenado criptografado localmente via **Android Keystore (`AES/GCM/NoPadding`)** (`AndroidKeystoreInboxTokenStore`), jamais registrado em logs, mensagens de erro, `audit_history` ou backups.
+   - Nenhuma alteração recebida pela `NEXUS-INBOX` é aplicada automaticamente em segundo plano: é exigida prévia dry-run e confirmação explícita do usuário.
 5. **Privacidade em erros:** `GlobalErrorHandler` e `DiagnosticsScreen` gravam apenas localmente em `error_logs` (máx. últimos 50 exibidos na UI, truncando `stackTrace` em `4000` chars), sem envio remoto.
 
 ---
@@ -20,9 +22,9 @@
 
 | Permissão | Tipo | Finalidade Exclusiva | Degradação se Negada |
 | --- | --- | --- | --- |
-| `INTERNET` | Normal | Consultas HTTPS do Módulo Mercado (cotações e séries históricas) | Núcleo do NEXUS opera 100%; Mercado mantém cache local |
-| `ACCESS_NETWORK_STATE` | Normal | Verificação prévia de conectividade e restrição `NetworkType.CONNECTED` no `MarketQuoteSyncWorker` | Mercado evita tentativas desnecessárias e exibe status offline |
-| `POST_NOTIFICATIONS` | Runtime (Android 13+) | Entrega de lembretes, briefings e alertas de preço de mercado | Lembretes e alertas são registrados/avaliados localmente sem postar na bandeja do SO |
+| `INTERNET` | Normal | Consultas HTTPS somente-leitura do Módulo Mercado e da ponte opcional `NEXUS-INBOX` (GitHub REST API `GET`) | Núcleo do NEXUS opera 100%; Mercado e Inbox mantêm dados/cache locais |
+| `ACCESS_NETWORK_STATE` | Normal | Verificação prévia de conectividade e restrição `NetworkType.CONNECTED` no `MarketQuoteSyncWorker` e `InboxSyncWorker` | Evita tentativas sem rede e mantém estado offline seguro |
+| `POST_NOTIFICATIONS` | Runtime (Android 13+) | Entrega de lembretes, briefings, alertas de preço de mercado e aviso opcional de novidades pendentes na `NEXUS-INBOX` | Lembretes, alertas e checagem seguem gravados/avaliados sem postar notificação |
 | `RECEIVE_BOOT_COMPLETED` | Normal | `NexusBootReceiver` restaura alarmes, workers e widgets após boot / troca de data/fuso / atualização do pacote | Reconciliado apenas na próxima abertura do app ou ciclo do `WorkManager` |
 | `SCHEDULE_EXACT_ALARM` | Especial (Android 12+) | `AlarmManager.setExactAndAllowWhileIdle` para lembretes pontuais | Faz fallback automático para `setAndAllowWhileIdle` quando `!canScheduleExactAlarms()` |
 
@@ -68,9 +70,9 @@ Arquivo: `/.github/workflows/android-build.yml` (`NEXUS Android Build`)
 
 ---
 
-## 5. Cobertura Atual de Testes (`17` Arquivos JUnit, `131` `@Test`)
+## 5. Cobertura Atual de Testes (`18` Arquivos JUnit, `137` `@Test`)
 
-> **Aviso de honestidade:** todos os `17` arquivos existem em `app/src/test/java/com/nexus/app/`, totalizando **131** casos `@Test` em JUnit 4 puro (JVM). Neste container sem JDK/Gradle/Android SDK, **nenhum deles foi compilado ou executado localmente** (apenas a sintaxe bash dos blocos de script do workflow `.github/workflows/android-build.yml` foi validada via `bash -n`).
+> **Aviso de honestidade:** todos os `18` arquivos existem em `app/src/test/java/com/nexus/app/`, totalizando **137** casos `@Test` em JUnit 4 puro (JVM). Neste container sem JDK/Gradle/Android SDK, **nenhum deles foi compilado ou executado localmente** (apenas a sintaxe bash dos blocos de script do workflow `.github/workflows/android-build.yml` foi validada via `bash -n`).
 
 | Arquivo de Teste | `@Test` | Escopo Principal Coberto |
 | --- | --- | --- |
@@ -90,7 +92,8 @@ Arquivo: `/.github/workflows/android-build.yml` (`NEXUS Android Build`)
 | `MarketAlertUnitTests.kt` | `5` | `MarketAlertRules`: avaliação acima/abaixo, prevenção de duplicidade (`awaitingConditionReset`, timestamp), rearme e validação de moeda/unidade |
 | `MarketBackupIntegrationUnitTests.kt` | `5` | Exportação/restauração Backup `v7` com `marketConfig`, retrocompatibilidade `null` vs `[]`, sanitização de alertas inválidos e rollback Room ↔ Mercado |
 | `BackupIncrementalMergeUnitTests.kt` | `13` | Suíte transacional (`InMemoryBackupStorageGateway`) cobrindo Modo 1 vs Modo 2: mesclagem idempotente sem `deleteAll`, preservação de conflitos/singletons, ordem topológica, FKs obrigatórias vs opcionais (`NEEDS_REVIEW`), coerência cartão/fatura/parcela/recorrência e bloqueio anti-dupla despesa, versões `v1..v7`/incompatíveis, rollback Room ↔ Mercado, paridade estrita do dry-run `previewMerge` (zero gravações) e separação explícita de modos |
-| `StructuredInputUnitTests.kt` | `7` | Suíte transacional (`InMemoryStructuredInputGateway`) cobrindo contrato `v1`, JSON estrito (`ignoreUnknownKeys = false`), enums inválidos, validação de FKs entre entidades (`TASK`, `APPOINTMENT`, `EVENT`, `PROJECT`, `PERSONAL_GOAL`, `TRANSACTION`), bloqueio financeiro (`PAID` / dupla despesa), preservação local em conflito, idempotência por `operationId`, rollback completo de `atomicBatch` e retentativa limpa após `FAILED_ROLLED_BACK` |
+| `StructuredInputUnitTests.kt` | `10` | Suíte transacional (`InMemoryStructuredInputGateway`) cobrindo contrato `v1`, JSON estrito (`ignoreUnknownKeys = false`), enums inválidos, validação de FKs entre entidades (`TASK`, `CHECKLIST`, `APPOINTMENT`, `EVENT`, `PROJECT`, `PERSONAL_GOAL`, `TRANSACTION`), subtarefas inline e checklist avulso, ações `CREATE`/`UPDATE`/`UPSERT` preservando `createdAt`, bloqueio financeiro (`PAID` / dupla despesa), prévia dry-run `previewEnvelope` sem escritas (com vínculos intra-lote), idempotência por `operationId`, rollback completo de `atomicBatch` e retentativa limpa após `FAILED_ROLLED_BACK` |
+| `InboxBridgeUnitTests.kt` | `3` | Validação `InboxInputValidator`, fluxo completo `checkInboxNow` (dry-run) → confirmação explícita (`confirmAndImportPending`) → persistência real (`EVENT`, `TASK`, `CHECKLIST`, `TRANSACTION`) + omissão de categorias vazias no resumo + deduplicação por `(path::sha)` em reconsulta, e segurança do check em segundo plano / erro de rede sem importação automática |
 
 ### Lacunas de Teste Identificadas
 - **`0` testes em `app/src/androidTest/`:** não há testes instrumentados de:

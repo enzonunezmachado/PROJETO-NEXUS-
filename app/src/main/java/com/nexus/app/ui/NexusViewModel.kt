@@ -25,6 +25,12 @@ import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
+import com.nexus.app.data.inbox.InboxConfig
+import com.nexus.app.data.inbox.InboxConnectionTestResult
+import com.nexus.app.data.inbox.InboxPendingCheckResult
+import com.nexus.app.data.inbox.InboxRepository
+import com.nexus.app.data.inbox.InboxSummaryFormatter
+import com.nexus.app.data.inbox.InboxUpdateLogEntry
 import com.nexus.app.data.market.MarketAlertRepository
 import com.nexus.app.data.market.MarketHistoryRepository
 import com.nexus.app.data.market.MarketQuoteRepository
@@ -169,11 +175,30 @@ class NexusViewModel(
     private val marketQuoteRepository: MarketQuoteRepository? = null,
     private val marketHistoryRepository: MarketHistoryRepository? = null,
     private val marketWatchlistRepository: MarketWatchlistRepository? = null,
-    private val marketAlertRepository: MarketAlertRepository? = null
+    private val marketAlertRepository: MarketAlertRepository? = null,
+    private val inboxRepository: InboxRepository? = null
 ) : ViewModel() {
 
     private val _snackbarEvents = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val snackbarEvents: SharedFlow<String> = _snackbarEvents.asSharedFlow()
+
+    val inboxConfig: StateFlow<InboxConfig> =
+        inboxRepository?.config ?: MutableStateFlow(InboxConfig())
+
+    val inboxHasToken: StateFlow<Boolean> =
+        inboxRepository?.hasSavedToken ?: MutableStateFlow(false)
+
+    val inboxIsBusy: StateFlow<Boolean> =
+        inboxRepository?.isBusy ?: MutableStateFlow(false)
+
+    val inboxPendingCheck: StateFlow<InboxPendingCheckResult?> =
+        inboxRepository?.pendingCheck ?: MutableStateFlow(null)
+
+    val inboxLastConnectionTest: StateFlow<InboxConnectionTestResult?> =
+        inboxRepository?.lastConnectionTest ?: MutableStateFlow(null)
+
+    val inboxLastUpdateLog: StateFlow<InboxUpdateLogEntry?> =
+        inboxRepository?.lastUpdateLog ?: MutableStateFlow(null)
 
     val usdBrlQuoteState: StateFlow<MarketQuoteUiState> =
         marketQuoteRepository?.usdBrlState ?: MutableStateFlow(MarketQuoteUiState())
@@ -252,6 +277,10 @@ class NexusViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val auditHistory: StateFlow<List<AuditHistoryEntity>> = repository.observeAuditHistory()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val inboxUpdateLogs: StateFlow<List<InboxUpdateLogEntry>> = repository.observeInboxImportLogs()
+        .map { entries -> entries.mapNotNull { InboxSummaryFormatter.decodeAuditEntry(it) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val routineSettings: StateFlow<RoutineAssistantSettingsEntity> = repository.observeRoutineSettings()
@@ -1763,6 +1792,88 @@ class NexusViewModel(
         }
     }
 
+    fun saveInboxConfig(
+        owner: String,
+        repo: String,
+        branch: String,
+        pathPrefix: String,
+        autoCheckEnabled: Boolean,
+        newTokenInput: String?
+    ) {
+        val inboxRepo = inboxRepository ?: return
+        inboxRepo.saveConfig(
+            owner = owner,
+            repo = repo,
+            branch = branch,
+            pathPrefix = pathPrefix,
+            autoCheckEnabled = autoCheckEnabled,
+            newTokenInput = newTokenInput
+        ).onSuccess {
+            emitMessage("Configuração da NEXUS-INBOX salva com segurança")
+        }.onFailure { err ->
+            emitMessage(err.message ?: "Não foi possível salvar a configuração da NEXUS-INBOX")
+        }
+    }
+
+    fun clearInboxToken() {
+        val inboxRepo = inboxRepository ?: return
+        inboxRepo.clearToken()
+        emitMessage("Token da NEXUS-INBOX removido do dispositivo")
+    }
+
+    fun testInboxConnection(pendingTokenOverride: String? = null) {
+        val inboxRepo = inboxRepository ?: return
+        viewModelScope.launch {
+            when (val res = inboxRepo.testConnection(pendingTokenOverride)) {
+                is InboxConnectionTestResult.Success ->
+                    emitMessage("Conexão OK: ${res.repoFullName} (${res.jsonFilesFound} JSON)")
+                is InboxConnectionTestResult.Failure ->
+                    emitMessage(res.message)
+            }
+        }
+    }
+
+    fun checkInboxNow() {
+        val inboxRepo = inboxRepository ?: return
+        viewModelScope.launch {
+            inboxRepo.checkInboxNow(fromBackgroundWorker = false)
+                .onSuccess { res ->
+                    if (res.hasNewActionableItems) {
+                        val total = res.combinedPreview.willCreateCount + res.combinedPreview.willUpdateCount
+                        emitMessage("$total operação(ões) pronta(s) para revisão")
+                    } else if (res.fileParseErrors.isNotEmpty()) {
+                        emitMessage("Verificação concluída com ${res.fileParseErrors.size} alerta(s) de leitura")
+                    } else {
+                        emitMessage("Nenhuma operação nova pendente na NEXUS-INBOX")
+                    }
+                }
+                .onFailure { err ->
+                    emitMessage(err.message ?: "Não foi possível consultar a NEXUS-INBOX")
+                }
+        }
+    }
+
+    fun confirmInboxImport() {
+        val inboxRepo = inboxRepository ?: return
+        viewModelScope.launch {
+            inboxRepo.confirmAndImportPending()
+                .onSuccess { entry ->
+                    emitMessage(entry.summaryHeadline)
+                }
+                .onFailure { err ->
+                    emitMessage(err.message ?: "Erro ao aplicar alterações da NEXUS-INBOX")
+                }
+        }
+    }
+
+    fun discardInboxPreview() {
+        inboxRepository?.discardPendingPreview()
+    }
+
+    fun dismissInboxLastSummary() {
+        inboxRepository?.clearLastUpdateLogBanner()
+    }
+
     fun emitMessage(message: String) {
         _snackbarEvents.tryEmit(message)
     }
@@ -1772,7 +1883,8 @@ class NexusViewModel(
         private val marketQuoteRepository: MarketQuoteRepository? = null,
         private val marketHistoryRepository: MarketHistoryRepository? = null,
         private val marketWatchlistRepository: MarketWatchlistRepository? = null,
-        private val marketAlertRepository: MarketAlertRepository? = null
+        private val marketAlertRepository: MarketAlertRepository? = null,
+        private val inboxRepository: InboxRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1781,7 +1893,8 @@ class NexusViewModel(
                 marketQuoteRepository = marketQuoteRepository,
                 marketHistoryRepository = marketHistoryRepository,
                 marketWatchlistRepository = marketWatchlistRepository,
-                marketAlertRepository = marketAlertRepository
+                marketAlertRepository = marketAlertRepository,
+                inboxRepository = inboxRepository
             ) as T
         }
     }

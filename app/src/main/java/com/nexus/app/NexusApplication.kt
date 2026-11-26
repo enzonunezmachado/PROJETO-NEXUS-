@@ -4,6 +4,11 @@ import android.app.Application
 import com.nexus.app.core.GlobalErrorHandler
 import com.nexus.app.data.backup.BackupManager
 import com.nexus.app.data.db.NexusDatabase
+import com.nexus.app.data.inbox.AndroidKeystoreInboxTokenStore
+import com.nexus.app.data.inbox.GitHubInboxRemoteDataSource
+import com.nexus.app.data.inbox.InboxRepository
+import com.nexus.app.data.inbox.InboxSyncScheduler
+import com.nexus.app.data.inbox.SharedPrefsInboxConfigStorage
 import com.nexus.app.data.market.MarketAlertRepository
 import com.nexus.app.data.market.MarketHistoryRepository
 import com.nexus.app.data.market.MarketQuoteRepository
@@ -62,6 +67,19 @@ class AppContainer(application: Application) {
             onDataChanged = { NexusWidgetUpdater.updateAllWidgets(application) }
         )
     }
+
+    val inboxRepository: InboxRepository by lazy {
+        InboxRepository(
+            nexusRepository = repository,
+            configStorage = SharedPrefsInboxConfigStorage(application),
+            tokenStore = AndroidKeystoreInboxTokenStore(application),
+            remoteDataSource = GitHubInboxRemoteDataSource(),
+            notificationScheduler = notificationScheduler,
+            onAutoCheckPreferenceChanged = { enabled ->
+                InboxSyncScheduler.syncSchedule(application, enabled)
+            }
+        )
+    }
 }
 
 class NexusApplication : Application() {
@@ -74,6 +92,10 @@ class NexusApplication : Application() {
         container = AppContainer(this)
         container.notificationScheduler.enqueuePeriodicSyncWorker()
         MarketQuoteSyncScheduler.enqueuePeriodicSync(this)
+        val inboxCfg = container.inboxRepository.config.value
+        if (inboxCfg.autoCheckEnabled && inboxCfg.isConfigured && container.inboxRepository.hasSavedToken.value) {
+            InboxSyncScheduler.syncSchedule(this, enabled = true)
+        }
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler(
             GlobalErrorHandler(

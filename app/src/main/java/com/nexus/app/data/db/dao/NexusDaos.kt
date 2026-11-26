@@ -260,6 +260,12 @@ interface SubtaskDao {
     @Query("SELECT * FROM subtasks ORDER BY sortOrder ASC, createdAt ASC")
     suspend fun getAllOnce(): List<SubtaskEntity>
 
+    @Query("SELECT * FROM subtasks WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): SubtaskEntity?
+
+    @Query("SELECT * FROM subtasks WHERE taskId = :taskId ORDER BY sortOrder ASC, createdAt ASC")
+    suspend fun getByTaskId(taskId: String): List<SubtaskEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(subtask: SubtaskEntity)
 
@@ -608,6 +614,9 @@ interface FinancialGoalDao {
 interface AuditHistoryDao {
     @Query("SELECT * FROM audit_history ORDER BY occurredAt DESC LIMIT 100")
     fun observeLatest(): Flow<List<AuditHistoryEntity>>
+
+    @Query("SELECT * FROM audit_history WHERE entityType = :entityType ORDER BY occurredAt DESC LIMIT :limit")
+    fun observeLatestByEntityType(entityType: String, limit: Int = 50): Flow<List<AuditHistoryEntity>>
 
     @Query("SELECT * FROM audit_history ORDER BY occurredAt DESC")
     suspend fun getAllOnce(): List<AuditHistoryEntity>

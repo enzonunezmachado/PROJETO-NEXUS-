@@ -88,6 +88,7 @@ import com.nexus.app.ui.screens.LoanPaymentDialog
 import com.nexus.app.ui.screens.MarketAssetDetailScreen
 import com.nexus.app.ui.screens.MarketScreen
 import com.nexus.app.ui.screens.MoreScreen
+import com.nexus.app.ui.screens.NexusInboxScreen
 import com.nexus.app.ui.screens.PlanningGoalsScreen
 import com.nexus.app.ui.screens.ProjectEditorSheet
 import com.nexus.app.ui.screens.QuickAddChooserSheet
@@ -129,6 +130,7 @@ sealed interface SubRoute {
     data object GlobalSearch : SubRoute
     data object Settings : SubRoute
     data object Backup : SubRoute
+    data object InboxBridge : SubRoute
     data object Diagnostics : SubRoute
     data class RoutineAssistant(val initialTabIndex: Int = 0) : SubRoute
     data class Planning(val initialGoalId: String? = null) : SubRoute
@@ -151,6 +153,7 @@ private fun SubRoute.toBackSubRouteKind(): BackSubRouteKind = when (this) {
     SubRoute.WidgetsHub,
     SubRoute.Settings,
     SubRoute.Backup,
+    SubRoute.InboxBridge,
     SubRoute.Diagnostics -> BackSubRouteKind.MORE_CHILD_SUBROUTE
 }
 
@@ -196,7 +199,8 @@ class MainActivity : ComponentActivity() {
                     marketQuoteRepository = appContainer.marketQuoteRepository,
                     marketHistoryRepository = appContainer.marketHistoryRepository,
                     marketWatchlistRepository = appContainer.marketWatchlistRepository,
-                    marketAlertRepository = appContainer.marketAlertRepository
+                    marketAlertRepository = appContainer.marketAlertRepository,
+                    inboxRepository = appContainer.inboxRepository
                 )
             )
             val incomingIntent by incomingIntentFlow.collectAsStateWithLifecycle()
@@ -265,6 +269,13 @@ private fun NexusAppRoot(
     val allPersonalGoals by viewModel.allPersonalGoals.collectAsStateWithLifecycle()
     val filteredPersonalGoals by viewModel.filteredPersonalGoals.collectAsStateWithLifecycle()
     val goalsFilter by viewModel.goalsFilter.collectAsStateWithLifecycle()
+    val inboxConfig by viewModel.inboxConfig.collectAsStateWithLifecycle()
+    val inboxHasToken by viewModel.inboxHasToken.collectAsStateWithLifecycle()
+    val inboxIsBusy by viewModel.inboxIsBusy.collectAsStateWithLifecycle()
+    val inboxPendingCheck by viewModel.inboxPendingCheck.collectAsStateWithLifecycle()
+    val inboxLastConnectionTest by viewModel.inboxLastConnectionTest.collectAsStateWithLifecycle()
+    val inboxLastUpdateLog by viewModel.inboxLastUpdateLog.collectAsStateWithLifecycle()
+    val inboxUpdateLogs by viewModel.inboxUpdateLogs.collectAsStateWithLifecycle()
 
     NexusTheme(darkTheme = settings.darkTheme) {
         val palette = LocalNexusPalette.current
@@ -358,6 +369,7 @@ private fun NexusAppRoot(
         LaunchedEffect(incomingIntent) {
             val extrasIntent = incomingIntent ?: return@LaunchedEffect
             val openRoutine = extrasIntent.getBooleanExtra(NexusNotificationScheduler.EXTRA_OPEN_ROUTINE, false)
+            val openInbox = extrasIntent.getBooleanExtra(NexusNotificationScheduler.EXTRA_OPEN_INBOX, false)
             val marketAssetCode = extrasIntent.getStringExtra(NexusNotificationScheduler.EXTRA_MARKET_ASSET_CODE)
             val sourceTypeRaw = extrasIntent.getStringExtra(NexusNotificationScheduler.EXTRA_SOURCE_TYPE)
             val sourceId = extrasIntent.getStringExtra(NexusNotificationScheduler.EXTRA_SOURCE_ID)
@@ -378,7 +390,12 @@ private fun NexusAppRoot(
             val widgetRecordId = extrasIntent.getStringExtra(NexusWidgetNavigation.EXTRA_WIDGET_RECORD_ID) ?: widgetRecordFromUri
             val widgetDateIso = extrasIntent.getStringExtra(NexusWidgetNavigation.EXTRA_WIDGET_DATE_ISO) ?: widgetDateFromUri
 
-            if (!marketAssetCode.isNullOrBlank() && MarketAssetCatalog.findByCode(marketAssetCode) != null) {
+            if (openInbox) {
+                navigateToSubRoute(SubRoute.None)
+                navigateToSubRoute(SubRoute.MoreMenu)
+                navigateToSubRoute(SubRoute.InboxBridge)
+                onIntentConsumed()
+            } else if (!marketAssetCode.isNullOrBlank() && MarketAssetCatalog.findByCode(marketAssetCode) != null) {
                 navigateToSubRoute(SubRoute.None)
                 navigateToSubRoute(SubRoute.Market)
                 navigateToSubRoute(SubRoute.MarketAssetDetail(marketAssetCode))
@@ -580,6 +597,7 @@ private fun NexusAppRoot(
                     onOpenSearch = { navigateToSubRoute(SubRoute.GlobalSearch) },
                     onOpenSettings = { navigateToSubRoute(SubRoute.Settings) },
                     onOpenBackup = { navigateToSubRoute(SubRoute.Backup) },
+                    onOpenInboxBridge = { navigateToSubRoute(SubRoute.InboxBridge) },
                     onOpenDiagnostics = { navigateToSubRoute(SubRoute.Diagnostics) },
                     onBack = popSubRoute,
                     modifier = contentModifier
@@ -748,6 +766,24 @@ private fun NexusAppRoot(
                     onConfirmMerge = viewModel::confirmMergeBackup,
                     onDismissDialogs = viewModel::dismissBackupDialogs,
                     onLogError = viewModel::logUiError,
+                    modifier = contentModifier
+                )
+                SubRoute.InboxBridge -> NexusInboxScreen(
+                    config = inboxConfig,
+                    hasSavedToken = inboxHasToken,
+                    isBusy = inboxIsBusy,
+                    pendingCheck = inboxPendingCheck,
+                    lastConnectionTest = inboxLastConnectionTest,
+                    lastUpdateLog = inboxLastUpdateLog,
+                    updateLogs = inboxUpdateLogs,
+                    onBack = popSubRoute,
+                    onSaveConfig = viewModel::saveInboxConfig,
+                    onClearToken = viewModel::clearInboxToken,
+                    onTestConnection = viewModel::testInboxConnection,
+                    onCheckInboxNow = viewModel::checkInboxNow,
+                    onConfirmImport = viewModel::confirmInboxImport,
+                    onDiscardPreview = viewModel::discardInboxPreview,
+                    onDismissLastSummary = viewModel::dismissInboxLastSummary,
                     modifier = contentModifier
                 )
                 SubRoute.Diagnostics -> DiagnosticsScreen(

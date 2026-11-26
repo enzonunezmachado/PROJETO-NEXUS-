@@ -326,6 +326,51 @@ class NexusNotificationScheduler(private val context: Context) {
         return true
     }
 
+    @SuppressLint("MissingPermission")
+    fun showInboxPendingNotification(
+        pendingNewCount: Int,
+        pendingUpdateCount: Int,
+        filesCount: Int
+    ): Boolean {
+        if (!hasNotificationPermission()) return false
+        val total = pendingNewCount + pendingUpdateCount
+        if (total <= 0) return false
+        NexusNotificationChannels.ensureChannelsCreated(appContext)
+        val openIntent = Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_INBOX, true)
+        }
+        val contentPendingIntent = PendingIntent.getActivity(
+            appContext,
+            INBOX_NOTIFICATION_ID,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val parts = buildList {
+            if (pendingNewCount > 0) add("$pendingNewCount novo(s)")
+            if (pendingUpdateCount > 0) add("$pendingUpdateCount atualização(ões)")
+        }.joinToString(" e ")
+        val bodyText = "NEXUS-INBOX tem $parts em $filesCount arquivo(s) aguardando sua confirmação."
+
+        val notification = NotificationCompat.Builder(
+            appContext,
+            NexusNotificationChannels.CHANNEL_ROUTINE
+        )
+            .setSmallIcon(R.drawable.ic_notification_nexus)
+            .setContentTitle("NEXUS-INBOX • Nova atualização pendente")
+            .setContentText(bodyText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setAutoCancel(true)
+            .setContentIntent(contentPendingIntent)
+            .build()
+
+        NotificationManagerCompat.from(appContext).notify(INBOX_NOTIFICATION_ID, notification)
+        return true
+    }
+
     fun enqueuePeriodicSyncWorker() {
         val workRequest = PeriodicWorkRequestBuilder<NexusReminderSyncWorker>(
             15,
@@ -392,12 +437,14 @@ class NexusNotificationScheduler(private val context: Context) {
         const val EXTRA_OPEN_ROUTINE = "extra_open_routine"
         const val EXTRA_BRIEFING_TYPE = "extra_briefing_type"
         const val EXTRA_MARKET_ASSET_CODE = "extra_market_asset_code"
+        const val EXTRA_OPEN_INBOX = "extra_open_inbox"
 
         const val ROUTINE_MORNING_SOURCE_ID = "nexus_routine_morning"
         const val ROUTINE_NIGHT_SOURCE_ID = "nexus_routine_night"
 
         private const val WORK_NAME_PERIODIC_SYNC = "nexus_offline_reminder_sync"
         private const val TEST_NOTIFICATION_ID = 900_999
+        private const val INBOX_NOTIFICATION_ID = 901_001
 
         fun requestCodeFor(id: String): Int = (id.hashCode() and 0x7FFFFFFF)
         fun notificationIdFor(id: String): Int = ((id.hashCode() and 0x00FFFFFF) + 1000)

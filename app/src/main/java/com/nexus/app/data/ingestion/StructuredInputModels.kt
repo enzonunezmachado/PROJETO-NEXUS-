@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonObject
 
 enum class StructuredEntityType {
     TASK,
+    CHECKLIST,
     APPOINTMENT,
     EVENT,
     PROJECT,
@@ -17,14 +18,37 @@ enum class StructuredEntityType {
     }
 }
 
+enum class StructuredOperationAction {
+    CREATE,
+    UPDATE,
+    UPSERT;
+
+    companion object {
+        fun fromRawOrNull(raw: String?): StructuredOperationAction? {
+            val clean = raw?.trim().orEmpty()
+            if (clean.isEmpty()) return CREATE
+            return entries.firstOrNull { it.name.equals(clean, ignoreCase = true) }
+        }
+    }
+}
+
 enum class StructuredProcessingState {
     PENDING,
     VALIDATED,
     APPLIED,
+    UPDATED,
     DUPLICATE_IGNORED,
     CONFLICT_PRESERVED_LOCAL,
     REJECTED,
     FAILED_ROLLED_BACK
+}
+
+enum class StructuredPreviewOutcome {
+    WILL_CREATE,
+    WILL_UPDATE,
+    DUPLICATE_IGNORED,
+    CONFLICT_PRESERVED_LOCAL,
+    REJECTED
 }
 
 @Serializable
@@ -43,6 +67,7 @@ data class StructuredInputEnvelope(
 data class StructuredInputOperation(
     val operationId: String = "",
     val entityType: String = "",
+    val action: String = "CREATE",
     val data: JsonObject? = null,
     val contractVersion: Int = StructuredInputEnvelope.CURRENT_CONTRACT_VERSION,
     val createdAt: Long = 0L,
@@ -50,6 +75,14 @@ data class StructuredInputOperation(
     val processingState: StructuredProcessingState = StructuredProcessingState.PENDING,
     val resultDetail: String? = null,
     val rejectionReason: String? = null
+)
+
+@Serializable
+data class StructuredSubtaskItem(
+    val id: String? = null,
+    val title: String = "",
+    val isCompleted: Boolean = false,
+    val sortOrder: Int? = null
 )
 
 @Serializable
@@ -68,7 +101,18 @@ data class StructuredTaskData(
     val notes: String = "",
     val completedAt: Long? = null,
     val recurrenceId: String? = null,
-    val occurrenceDateIso: String? = null
+    val occurrenceDateIso: String? = null,
+    val subtasks: List<StructuredSubtaskItem> = emptyList()
+)
+
+@Serializable
+data class StructuredChecklistData(
+    val id: String? = null,
+    val taskId: String = "",
+    val title: String? = null,
+    val isCompleted: Boolean = false,
+    val sortOrder: Int? = null,
+    val items: List<StructuredSubtaskItem> = emptyList()
 )
 
 @Serializable
@@ -176,7 +220,10 @@ data class StructuredOperationReceipt(
     val createdAt: Long,
     val processingState: StructuredProcessingState,
     val resultDetail: String? = null,
-    val rejectionReason: String? = null
+    val rejectionReason: String? = null,
+    val entityTitle: String? = null,
+    val checklistItemsCount: Int = 0,
+    val actionTaken: String = "CREATE"
 ) {
     fun toOperationStatusCopy(original: StructuredInputOperation): StructuredInputOperation =
         original.copy(
@@ -197,8 +244,44 @@ data class StructuredBatchResult(
     val rejectedCount: Int,
     val failedRolledBackCount: Int,
     val receipts: List<StructuredOperationReceipt>,
-    val envelopeError: String? = null
+    val envelopeError: String? = null,
+    val updatedCount: Int = 0
 ) {
+    val totalAppliedCount: Int
+        get() = appliedCount + updatedCount
+
     val hasFailures: Boolean
         get() = envelopeError != null || rejectedCount > 0 || failedRolledBackCount > 0
+}
+
+data class StructuredPreviewItem(
+    val operationId: String,
+    val entityTypeRaw: String,
+    val entityType: StructuredEntityType?,
+    val targetEntityId: String?,
+    val displayTitle: String,
+    val outcome: StructuredPreviewOutcome,
+    val detail: String,
+    val checklistItemsCount: Int = 0,
+    val source: String = "",
+    val createdAt: Long = 0L
+)
+
+data class StructuredBatchPreview(
+    val contractVersion: Int,
+    val source: String,
+    val totalOperations: Int,
+    val willCreateCount: Int,
+    val willUpdateCount: Int,
+    val duplicateIgnoredCount: Int,
+    val conflictPreservedLocalCount: Int,
+    val rejectedCount: Int,
+    val items: List<StructuredPreviewItem>,
+    val envelopeError: String? = null
+) {
+    val hasActionableChanges: Boolean
+        get() = willCreateCount > 0 || willUpdateCount > 0
+
+    val hasErrors: Boolean
+        get() = envelopeError != null || rejectedCount > 0
 }

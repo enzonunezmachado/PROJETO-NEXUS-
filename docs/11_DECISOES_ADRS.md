@@ -171,4 +171,16 @@
 - **Alternativas:** criar banco SQLite paralelo de staging, migrar `DATABASE_VERSION` para `7` adicionando tabela de inbox antes da Etapa 3 ou já acoplar sincronização HTTP/GitHub na Etapa 2.
 - **Consequências:** zero impacto de migração em instalações existentes, compatibilidade imediata com Backup `v7` e Widgets/Agenda, e fronteira limpa e testável (`StructuredInputUnitTests`) pronta para o conector da Etapa 3.
 
+---
+
+### `ADR-018` — Ponte Opcional ChatGPT → `NEXUS-INBOX` (GitHub Privado Somente-Leitura, Keystore PAT e Confirmação Prévia)
+- **Status:** Aceita e Ativa (`data/inbox/*`, `data/ingestion/*`, `NexusRepository.kt`, `NexusInboxScreen.kt`, `InboxSyncWorker.kt`, `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`).
+- **Contexto:** após a criação da camada interna `data/ingestion/` (`ADR-017`), tornou-se necessário conectar o fluxo prático *"ChatGPT → `NEXUS-INBOX` (repositório GitHub privado) → NEXUS Android"* mantendo Room `v6` intocado, zero credenciais embutidas no código e controle total do usuário antes de alterar seus dados locais.
+- **Decisão:**
+  1. **Transporte GitHub somente-leitura isolado:** `GitHubInboxRemoteDataSource` realiza exclusivamente `HttpsURLConnection` `GET` contra `https://api.github.com` (com `instanceFollowRedirects = false`, teto de `2 MB` por arquivo, validação estrita de `owner`/`repo`/`branch`/`pathPrefix` e sem nenhum token ou repositório hardcoded).
+  2. **Proteção local da credencial:** o Fine-Grained PAT (`Contents: Read-only`) informado pelo usuário é criptografado via **Android Keystore (`AES/GCM/NoPadding`)** (`AndroidKeystoreInboxTokenStore`) e nunca entra em backups JSON, `audit_history` ou mensagens de erro.
+  3. **Prévia dry-run obrigatória e confirmação explícita:** `InboxRepository.checkInboxNow` consulta arquivos `.json` novos ou alterados (`path::sha`), executa `previewInboxEnvelope` (`PreviewOverlayGateway`) sem gravar nada no Room, e só persiste via `NexusRepository.applyInboxEnvelope` após ação explícita do usuário (`"Confirmar importação"`). `InboxSyncWorker` (opcional, `>= 15 min`, `NetworkType.CONNECTED`, bateria não baixa) apenas notifica com deep-link (`EXTRA_OPEN_INBOX`), nunca auto-importando.
+  4. **Extensão retrocompatível do contrato `v1` e histórico filtrado:** adicionar `CHECKLIST` (`subtasks`), `subtasks` inline em `TASK`, `action` (`CREATE`/`UPDATE`/`UPSERT` preservando `createdAt`) e estado `UPDATED`, gravando o log consolidado em `audit_history` (`INBOX_IMPORT_LOG`) somente com categorias que sofreram alteração real no banco.
+- **Alternativas:** criar servidor backend próprio com webhook/OAuth ou auto-importar arquivos em segundo plano sem prévia.
+- **Consequências:** mantém o NEXUS 100% operacional offline-first e sem infraestrutura própria de servidor, protege contra gravações indesejadas e reaproveita integralmente `Backup v7` (`audit_history` preservada) e `DATABASE_VERSION = 6`.
 

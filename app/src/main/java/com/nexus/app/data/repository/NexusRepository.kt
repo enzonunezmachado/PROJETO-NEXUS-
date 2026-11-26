@@ -7,7 +7,9 @@ import com.nexus.app.data.backup.BackupValidationResult
 import com.nexus.app.data.backup.MergeSummary
 import com.nexus.app.data.backup.NexusBackupPayload
 import com.nexus.app.data.backup.RestoreSummary
+import com.nexus.app.data.inbox.InboxIngestionPort
 import com.nexus.app.data.ingestion.RoomStructuredInputGateway
+import com.nexus.app.data.ingestion.StructuredBatchPreview
 import com.nexus.app.data.ingestion.StructuredBatchResult
 import com.nexus.app.data.ingestion.StructuredInputEnvelope
 import com.nexus.app.data.ingestion.StructuredInputProcessor
@@ -134,7 +136,7 @@ class NexusRepository(
     private val backupManager: BackupManager,
     private val notificationScheduler: NexusNotificationScheduler? = null,
     private val onDataChanged: (suspend () -> Unit)? = null
-) {
+) : InboxIngestionPort {
     private val settingsDao = database.settingsDao()
     private val categoryDao = database.categoryDao()
     private val projectDao = database.projectDao()
@@ -389,6 +391,9 @@ class NexusRepository(
     fun observeFinancialGoals(): Flow<List<FinancialGoalEntity>> = financialGoalDao.observeAll()
 
     fun observeAuditHistory(): Flow<List<AuditHistoryEntity>> = auditHistoryDao.observeLatest()
+
+    fun observeInboxImportLogs(): Flow<List<AuditHistoryEntity>> =
+        auditHistoryDao.observeLatestByEntityType(AUDIT_ENTITY_INBOX_IMPORT_LOG, limit = 50)
 
     fun observeMonthlyFinanceDashboard(monthFlow: Flow<YearMonth>): Flow<MonthlyFinanceDashboardData> =
         combine(
@@ -2757,7 +2762,19 @@ class NexusRepository(
             summary
         }
 
-    // --- Camada interna de entrada estruturada (Etapa 2) ---
+    // --- Camada interna de entrada estruturada (Etapa 2 / Rodada 3) ---
+
+    suspend fun previewStructuredInputJson(rawJson: String): Result<StructuredBatchPreview> =
+        safeDbCall("Entrada Estruturada (Prévia JSON)") {
+            structuredInputProcessor.previewJson(rawJson)
+        }
+
+    suspend fun previewStructuredInputEnvelope(
+        envelope: StructuredInputEnvelope
+    ): Result<StructuredBatchPreview> =
+        safeDbCall("Entrada Estruturada (Prévia)") {
+            structuredInputProcessor.previewEnvelope(envelope)
+        }
 
     suspend fun processStructuredInputJson(
         rawJson: String,
@@ -2765,7 +2782,7 @@ class NexusRepository(
     ): Result<StructuredBatchResult> =
         safeDbCall("Entrada Estruturada (JSON)") {
             val result = structuredInputProcessor.processJson(rawJson, atomicBatch = atomicBatch)
-            if (result.appliedCount > 0) {
+            if (result.totalAppliedCount > 0) {
                 rescheduleAllRemindersInternal()
                 notifyWidgetsChanged()
             }
@@ -2778,11 +2795,29 @@ class NexusRepository(
     ): Result<StructuredBatchResult> =
         safeDbCall("Entrada Estruturada") {
             val result = structuredInputProcessor.processEnvelope(envelope, atomicBatch = atomicBatch)
-            if (result.appliedCount > 0) {
+            if (result.totalAppliedCount > 0) {
                 rescheduleAllRemindersInternal()
                 notifyWidgetsChanged()
             }
             result
+        }
+
+    override suspend fun previewInboxEnvelope(
+        envelope: StructuredInputEnvelope
+    ): Result<StructuredBatchPreview> = previewStructuredInputEnvelope(envelope)
+
+    override suspend fun applyInboxEnvelope(
+        envelope: StructuredInputEnvelope
+    ): Result<StructuredBatchResult> = processStructuredInputEnvelope(envelope, atomicBatch = false)
+
+    override suspend fun recordInboxImportLog(batchId: String, serializedSummaryJson: String): Result<Unit> =
+        safeDbCall("Histórico NEXUS-INBOX") {
+            recordAudit(
+                entityType = AUDIT_ENTITY_INBOX_IMPORT_LOG,
+                entityId = batchId,
+                action = "IMPORT_CONFIRMED",
+                summary = serializedSummaryJson
+            )
         }
 
     // --- Acoes do Assistente de Rotina e Notificacoes (Fase 4) ---
@@ -4352,6 +4387,8 @@ class NexusRepository(
     )
 
     companion object {
+        const val AUDIT_ENTITY_INBOX_IMPORT_LOG = "INBOX_IMPORT_LOG"
+
         private val compactJson = Json {
             ignoreUnknownKeys = true
             coerceInputValues = true

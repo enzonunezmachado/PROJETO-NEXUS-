@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.DashboardCustomize
@@ -113,6 +114,7 @@ fun MoreScreen(
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenBackup: () -> Unit,
+    onOpenInboxBridge: () -> Unit = {},
     onOpenDiagnostics: () -> Unit,
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -208,6 +210,14 @@ fun MoreScreen(
                     title = "Backup e Restauração",
                     subtitle = "Exportar ou restaurar banco e configurações do Mercado (v1 a v${NexusBackupPayload.CURRENT_FORMAT_VERSION}) em JSON via SAF",
                     onClick = onOpenBackup
+                )
+            }
+            item {
+                MoreMenuItem(
+                    icon = Icons.Outlined.CloudDownload,
+                    title = "NEXUS-INBOX (Ponte ChatGPT)",
+                    subtitle = "Consultar atualizações enviadas pelo ChatGPT, revisar prévia e ver histórico",
+                    onClick = onOpenInboxBridge
                 )
             }
             item {

@@ -10,6 +10,7 @@ import com.nexus.app.data.db.entity.InstallmentPurchaseEntity
 import com.nexus.app.data.db.entity.PersonalGoalEntity
 import com.nexus.app.data.db.entity.ProjectEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
+import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
 import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.data.db.entity.TransactionEntity
@@ -19,6 +20,7 @@ import com.nexus.app.data.ingestion.StructuredInputEnvelope
 import com.nexus.app.data.ingestion.StructuredInputGateway
 import com.nexus.app.data.ingestion.StructuredInputOperation
 import com.nexus.app.data.ingestion.StructuredInputProcessor
+import com.nexus.app.data.ingestion.StructuredPreviewOutcome
 import com.nexus.app.data.ingestion.StructuredProcessingState
 import com.nexus.app.domain.model.CategoryScope
 import com.nexus.app.domain.model.EventLifecycleStatus
@@ -34,6 +36,8 @@ import com.nexus.app.domain.model.TaskStatus
 import com.nexus.app.domain.model.TicketStatus
 import com.nexus.app.domain.model.TransactionType
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -51,6 +55,7 @@ class StructuredInputUnitTests {
         val personalGoals = mutableListOf<PersonalGoalEntity>()
         val events = mutableListOf<EventEntity>()
         val tasks = mutableListOf<TaskEntity>()
+        val subtasks = mutableListOf<SubtaskEntity>()
         val appointments = mutableListOf<AppointmentEntity>()
         val transactions = mutableListOf<TransactionEntity>()
         val taskRecurrences = mutableListOf<TaskRecurrenceEntity>()
@@ -68,6 +73,7 @@ class StructuredInputUnitTests {
             val personalGoals: List<PersonalGoalEntity>,
             val events: List<EventEntity>,
             val tasks: List<TaskEntity>,
+            val subtasks: List<SubtaskEntity>,
             val appointments: List<AppointmentEntity>,
             val transactions: List<TransactionEntity>,
             val auditHistory: List<AuditHistoryEntity>
@@ -78,6 +84,7 @@ class StructuredInputUnitTests {
             personalGoals = personalGoals.toList(),
             events = events.toList(),
             tasks = tasks.toList(),
+            subtasks = subtasks.toList(),
             appointments = appointments.toList(),
             transactions = transactions.toList(),
             auditHistory = auditHistory.toList()
@@ -88,6 +95,7 @@ class StructuredInputUnitTests {
             personalGoals.apply { clear(); addAll(s.personalGoals) }
             events.apply { clear(); addAll(s.events) }
             tasks.apply { clear(); addAll(s.tasks) }
+            subtasks.apply { clear(); addAll(s.subtasks) }
             appointments.apply { clear(); addAll(s.appointments) }
             transactions.apply { clear(); addAll(s.transactions) }
             auditHistory.apply { clear(); addAll(s.auditHistory) }
@@ -108,6 +116,7 @@ class StructuredInputUnitTests {
                 it.entityType == RoomStructuredInputGateway.AUDIT_ENTITY_TYPE &&
                     it.entityId == operationId &&
                     (it.action == StructuredProcessingState.APPLIED.name ||
+                        it.action == StructuredProcessingState.UPDATED.name ||
                         it.action == StructuredProcessingState.CONFLICT_PRESERVED_LOCAL.name)
             } ?: return null
             return runCatching { StructuredProcessingState.valueOf(entry.action) }.getOrNull()
@@ -123,6 +132,7 @@ class StructuredInputUnitTests {
                 throw IllegalStateException("Simulated SQLite audit_history write failure")
             }
             if (state != StructuredProcessingState.APPLIED &&
+                state != StructuredProcessingState.UPDATED &&
                 state != StructuredProcessingState.CONFLICT_PRESERVED_LOCAL
             ) {
                 return
@@ -146,12 +156,23 @@ class StructuredInputUnitTests {
         override suspend fun personalGoalExists(id: String): Boolean = personalGoals.any { it.id == id }
         override suspend fun eventExists(id: String): Boolean = events.any { it.id == id }
         override suspend fun taskExists(id: String): Boolean = tasks.any { it.id == id }
+        override suspend fun subtaskExists(id: String): Boolean = subtasks.any { it.id == id }
         override suspend fun appointmentExists(id: String): Boolean = appointments.any { it.id == id }
         override suspend fun transactionExists(id: String): Boolean = transactions.any { it.id == id }
         override suspend fun taskRecurrenceExists(id: String): Boolean = taskRecurrences.any { it.id == id }
         override suspend fun creditCardExists(id: String): Boolean = creditCards.any { it.id == id }
         override suspend fun installmentPurchaseExists(id: String): Boolean = installmentPurchases.any { it.id == id }
         override suspend fun recurringRuleExists(id: String): Boolean = recurringRules.any { it.id == id }
+
+        override suspend fun getTaskById(id: String): TaskEntity? = tasks.firstOrNull { it.id == id }
+        override suspend fun getSubtaskById(id: String): SubtaskEntity? = subtasks.firstOrNull { it.id == id }
+        override suspend fun getSubtasksByTaskId(taskId: String): List<SubtaskEntity> =
+            subtasks.filter { it.taskId == taskId }.sortedWith(compareBy<SubtaskEntity> { it.sortOrder }.thenBy { it.createdAt })
+        override suspend fun getAppointmentById(id: String): AppointmentEntity? = appointments.firstOrNull { it.id == id }
+        override suspend fun getEventById(id: String): EventEntity? = events.firstOrNull { it.id == id }
+        override suspend fun getProjectById(id: String): ProjectEntity? = projects.firstOrNull { it.id == id }
+        override suspend fun getPersonalGoalById(id: String): PersonalGoalEntity? = personalGoals.firstOrNull { it.id == id }
+        override suspend fun getTransactionById(id: String): TransactionEntity? = transactions.firstOrNull { it.id == id }
 
         override suspend fun getTaskByRecurrenceAndDate(
             recurrenceId: String,
@@ -182,6 +203,18 @@ class StructuredInputUnitTests {
             }
             tasks.removeAll { it.id == entity.id }
             tasks.add(entity)
+        }
+
+        override suspend fun insertSubtask(entity: SubtaskEntity) {
+            if (failOnEntityInsert == StructuredEntityType.CHECKLIST) {
+                throw IllegalStateException("Simulated SQLite insert failure for CHECKLIST")
+            }
+            subtasks.removeAll { it.id == entity.id }
+            subtasks.add(entity)
+        }
+
+        override suspend fun insertSubtasks(entities: List<SubtaskEntity>) {
+            entities.forEach { insertSubtask(it) }
         }
 
         override suspend fun insertAppointment(entity: AppointmentEntity) {
@@ -859,5 +892,215 @@ class StructuredInputUnitTests {
         val duplicateAfterSuccess = processor.processEnvelope(singleOpEnvelope, atomicBatch = false)
         assertEquals(1, duplicateAfterSuccess.duplicateIgnoredCount)
         assertEquals(1, gateway.appointments.size)
+    }
+
+    @Test
+    fun `task with inline subtasks and standalone CHECKLIST operations persist linked subtasks`() = runBlocking {
+        val gateway = InMemoryStructuredInputGateway()
+        seedLocalContext(gateway)
+        val processor = StructuredInputProcessor(gateway) { t0 }
+
+        val createResult = processor.processEnvelope(
+            StructuredInputEnvelope(
+                contractVersion = 1,
+                source = "chatgpt_inbox",
+                createdAt = t0,
+                operations = listOf(
+                    StructuredInputOperation(
+                        operationId = "op-task-subtasks",
+                        entityType = "TASK",
+                        data = buildJsonObject {
+                            put("id", "task-checklist-1")
+                            put("title", "Organizar viagem")
+                            put("subtasks", buildJsonArray {
+                                addJsonObject {
+                                    put("title", "Reservar hotel")
+                                    put("isCompleted", false)
+                                }
+                                addJsonObject {
+                                    put("title", "Comprar passagem")
+                                    put("isCompleted", true)
+                                }
+                            })
+                        }
+                    ),
+                    StructuredInputOperation(
+                        operationId = "op-checklist-add-update",
+                        entityType = "CHECKLIST",
+                        action = "UPSERT",
+                        data = buildJsonObject {
+                            put("taskId", "task-checklist-1")
+                            put("items", buildJsonArray {
+                                addJsonObject {
+                                    put("title", "Reservar hotel")
+                                    put("isCompleted", true)
+                                }
+                                addJsonObject {
+                                    put("title", "Separar documentos")
+                                    put("isCompleted", false)
+                                }
+                            })
+                        }
+                    )
+                )
+            )
+        )
+
+        assertFalse(createResult.hasFailures)
+        assertEquals(1, createResult.appliedCount)
+        assertEquals(1, createResult.updatedCount)
+        assertEquals(2, createResult.totalAppliedCount)
+        val subs = gateway.getSubtasksByTaskId("task-checklist-1")
+        assertEquals(3, subs.size)
+        assertTrue(subs.first { it.title == "Reservar hotel" }.isCompleted)
+        assertTrue(subs.any { it.title == "Separar documentos" })
+    }
+
+    @Test
+    fun `UPDATE and UPSERT preserve createdAt while CREATE preserves local conflict`() = runBlocking {
+        val gateway = InMemoryStructuredInputGateway()
+        seedLocalContext(gateway)
+        gateway.tasks.add(
+            TaskEntity(
+                id = "task-existing",
+                title = "Título original",
+                status = TaskStatus.NOT_STARTED,
+                createdAt = t0 - 50_000L,
+                updatedAt = t0 - 10_000L
+            )
+        )
+        val processor = StructuredInputProcessor(gateway) { t0 }
+
+        val res = processor.processEnvelope(
+            StructuredInputEnvelope(
+                contractVersion = 1,
+                source = "chatgpt_inbox",
+                createdAt = t0,
+                operations = listOf(
+                    StructuredInputOperation(
+                        operationId = "op-create-conflict",
+                        entityType = "TASK",
+                        action = "CREATE",
+                        data = buildJsonObject {
+                            put("id", "task-existing")
+                            put("title", "Não sobrescrever no CREATE")
+                        }
+                    ),
+                    StructuredInputOperation(
+                        operationId = "op-update-missing",
+                        entityType = "TASK",
+                        action = "UPDATE",
+                        data = buildJsonObject {
+                            put("id", "task-inexistente")
+                            put("title", "Não existe")
+                        }
+                    ),
+                    StructuredInputOperation(
+                        operationId = "op-update-existing",
+                        entityType = "TASK",
+                        action = "UPDATE",
+                        data = buildJsonObject {
+                            put("id", "task-existing")
+                            put("title", "Título atualizado")
+                            put("status", "COMPLETED")
+                        }
+                    )
+                )
+            )
+        )
+
+        assertEquals(1, res.conflictPreservedLocalCount)
+        assertEquals(1, res.rejectedCount)
+        assertEquals(1, res.updatedCount)
+        val updated = gateway.getTaskById("task-existing")!!
+        assertEquals("Título atualizado", updated.title)
+        assertEquals(TaskStatus.COMPLETED, updated.status)
+        assertEquals(t0 - 50_000L, updated.createdAt)
+        assertEquals(t0, updated.updatedAt)
+    }
+
+    @Test
+    fun `previewEnvelope performs zero DB writes while validating intra-batch links`() = runBlocking {
+        val gateway = InMemoryStructuredInputGateway()
+        seedLocalContext(gateway)
+        gateway.tasks.add(
+            TaskEntity(
+                id = "task-local-update",
+                title = "Revisar contas",
+                createdAt = t0 - 5_000L,
+                updatedAt = t0 - 5_000L
+            )
+        )
+        val processor = StructuredInputProcessor(gateway) { t0 }
+
+        val preview = processor.previewEnvelope(
+            StructuredInputEnvelope(
+                contractVersion = 1,
+                source = "chatgpt_inbox",
+                createdAt = t0,
+                operations = listOf(
+                    StructuredInputOperation(
+                        operationId = "op-p1",
+                        entityType = "TASK",
+                        data = buildJsonObject {
+                            put("id", "task-batch-new")
+                            put("title", "Pagar inscrição")
+                        }
+                    ),
+                    StructuredInputOperation(
+                        operationId = "op-p2",
+                        entityType = "TRANSACTION",
+                        data = buildJsonObject {
+                            put("id", "tx-batch-linked")
+                            put("type", "EXPENSE")
+                            put("description", "Taxa de inscrição")
+                            put("amountCents", 12000)
+                            put("occurredAt", t0)
+                            put("taskId", "task-batch-new")
+                        }
+                    ),
+                    StructuredInputOperation(
+                        operationId = "op-p3",
+                        entityType = "CHECKLIST",
+                        action = "UPSERT",
+                        data = buildJsonObject {
+                            put("taskId", "task-local-update")
+                            put("title", "Conferir extrato")
+                            put("isCompleted", false)
+                        }
+                    ),
+                    StructuredInputOperation(
+                        operationId = "op-p4",
+                        entityType = "TASK",
+                        data = buildJsonObject {
+                            put("id", "task-local-update")
+                            put("title", "Conflito esperado")
+                        }
+                    ),
+                    StructuredInputOperation(
+                        operationId = "op-p5",
+                        entityType = "TRANSACTION",
+                        data = buildJsonObject {
+                            put("type", "EXPENSE")
+                            put("description", "Valor inválido")
+                            put("amountCents", 0)
+                            put("occurredAt", t0)
+                        }
+                    )
+                )
+            )
+        )
+
+        assertEquals(2, preview.willCreateCount)
+        assertEquals(1, preview.willUpdateCount)
+        assertEquals(1, preview.conflictPreservedLocalCount)
+        assertEquals(1, preview.rejectedCount)
+        assertEquals(StructuredPreviewOutcome.WILL_CREATE, preview.items[1].outcome)
+        assertEquals(StructuredPreviewOutcome.WILL_UPDATE, preview.items[2].outcome)
+        // Zero mutations occurred during dry-run preview
+        assertEquals(1, gateway.tasks.size)
+        assertTrue(gateway.transactions.isEmpty())
+        assertTrue(gateway.subtasks.isEmpty())
+        assertTrue(gateway.auditHistory.isEmpty())
     }
 }
