@@ -1,6 +1,6 @@
 # 07 — Estado Real do Sistema (Auditoria Factual do Código)
 
-> **Data de referência da inspeção de código:** 2026-11-26 (Rodada 3 — Ponte ChatGPT → `NEXUS-INBOX` → NEXUS Android sobre Contrato `v1` + Extensões `CHECKLIST` / `UPDATE` / Dry-Run)  
+> **Data de referência da inspeção de código:** 2026-11-26 (Rodada 3 — Ponte ChatGPT → `NEXUS-INBOX` → NEXUS Android; CI #70 verde na `main` e importação real confirmada pelo usuário)  
 > **Histórico recente preservado:** relato de uso de 2026-11-22 sobre `BUG-001` mantido em aberto na Seção 4.  
 > **Escopo auditado:** inspeção direta de todos os arquivos-fonte `.kt`, `.xml`, `.kts`, `.toml` e `.yml` do repositório ativo.  
 > **Princípio absoluto:** nenhum item é marcado como aprovado em compilação/runtime sem execução real.
@@ -30,7 +30,7 @@
 | **Mercado** | **12 ativos**, Lotes `01–09` implementados (cotações, histórico, gráficos, watchlist, alertas, backup v7) | `data/market/*`, `ui/market/*`, `MarketScreen.kt` |
 | **Permissões Manifest** | `INTERNET`, `ACCESS_NETWORK_STATE`, `POST_NOTIFICATIONS`, `RECEIVE_BOOT_COMPLETED`, `SCHEDULE_EXACT_ALARM`; `allowBackup="false"` | `AndroidManifest.xml` |
 | **Testes JUnit no repo** | **18 arquivos** (`138` `@Test`) em `app/src/test/java/com/nexus/app/` (`0` `androidTest`) | `app/src/test/` |
-| **CI GitHub Actions** | `setup-android@v4` (`platform-tools`) + `sdkmanager "platform-tools" "build-tools;35.0.0"` com validação de `adb` e `apksigner`, `keytool` (`-storepass:env`), `gradle :app:testDebugUnitTest :app:assembleDebug` + `:app:assembleRelease` condicional, `apksigner verify --verbose --print-certs` (SHA-256), `$GITHUB_STEP_SUMMARY` & `NEXUS-Signing-Verification-Report` | `.github/workflows/android-build.yml` |
+| **CI GitHub Actions** | Workflow executado com sucesso na `main` pela Actions #70 (run `45792119560`): testes unitários e APK Debug concluídos; Release ignorado por ausência dos secrets de assinatura. | `.github/workflows/android-build.yml` |
 | **Pasta `app/schemas/` e `gradlew`** | Ausentes no disco (`app/schemas/` gerada pelo KSP em build; CI usa `setup-gradle@v4`) | Raiz / `app/` |
 
 ---
@@ -75,14 +75,16 @@
 
 ---
 
-## 5. Itens Não Verificados Neste Ambiente (`NÃO VERIFICADO`)
+## 5. Validação externa e itens ainda não verificados
 
-Por ausência de **JDK, Gradle, Android SDK, emulador/dispositivo físico Android** neste container:
-1. Compilação Kotlin/Compose/KSP (`:app:kspDebugKotlin`, `:app:compileDebugKotlin`, `:app:compileDebugUnitTestKotlin`, `:app:assembleDebug`, `:app:assembleRelease`) — incluindo as evoluções visuais/adaptativas, Rodada 1, Etapa 2 e Rodada 3 (`data/inbox/*`, `NexusInboxScreen.kt`, extensões de `data/ingestion/*`, `InboxSyncWorker`) após a reaplicação das correções de compilação/teste nesta linha de código.
-2. Execução real das `18` suítes de teste JUnit (`138` `@Test`) em `:app:testDebugUnitTest` na `main` (incluindo `BackupIncrementalMergeUnitTests` com `13` `@Test`, `StructuredInputUnitTests` com `10` `@Test`, `InboxBridgeUnitTests` com `4` `@Test`, `NexusLote6RecurrenceUnitTests` e os `6` arquivos `Market*UnitTests`). Apenas inspeção estática e checagem estrutural de código foram executadas neste container.
-3. Geração de `app/schemas/` e testes reais de migração SQLite `1→2→3→4→5→6`.
-4. Validação em dispositivo Android real e tablet/emulador: atualização in-place via `adb install -r` com verificação `apksigner verify --verbose --print-certs` após provisionamento de keystore persistente, prévia dry-run e mesclagem incremental de backup real, consulta real da `NEXUS-INBOX` com repositório privado GitHub e PAT no Keystore + notificação/deep-link em segundo plano, tema Grafite Suave, bordas proporcionais, widgets sem bordas, Agenda em 7 colunas vs deslizável e 2 painéis, ícone N-1, SAF, Doze, `BootReceiver`, notificações + deep-links e HTTP real.
+A compilação e os testes unitários da versão atual foram executados pela GitHub Actions #70 na `main`, com sucesso; o APK Debug foi gerado. A integração principal da Inbox também foi exercitada em aparelho real: o usuário confirmou que conseguiu importar registros pelo fluxo ChatGPT → `NEXUS-INBOX` → Android.
 
+Permanecem não verificados ou sem evidência individual nesta atualização:
+1. Testes reais de migração SQLite `1→2→3→4→5→6` e geração/versionamento de `app/schemas/`.
+2. Atualização in-place com keystore persistente e assinatura consistente entre versões.
+3. Cenários específicos da Inbox: descarte sem gravação, reconsulta sem duplicidade, sincronização periódica em segundo plano, notificações/deep-links, recuperação após reinício e testes abrangentes de segurança/armazenamento do token. A importação principal está confirmada; não extrapolar essa evidência para todos os cenários.
+4. Validações em tablet/emulador, SAF, Doze, `BootReceiver`, notificações Android 13+, deep-links e HTTP real nos demais fluxos.
+5. Cobertura instrumentada `androidTest` (atualmente não há testes instrumentados no repositório).
 
 ## 6. Referência ao inventário consolidado
 
