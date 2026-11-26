@@ -8,7 +8,7 @@
 
 Ensinar o ChatGPT a converter pedidos em linguagem natural em operações estruturadas que o NEXUS realmente aceite, sem inventar campos ou simular recursos ausentes.
 
-O guia é um manual de uso do contrato, não uma especificação independente. O código e os testes são a fonte de verdade. Sempre indicar a versão mínima do aplicativo e do contrato compatível.
+O guia é um manual de uso do contrato, não uma especificação independente. O código e os testes são a fonte de verdade. Sempre indicar a versão mínima do aplicativo e do contrato compatível. O Google AI Studio trabalha somente no workspace local disponível: não acessa GitHub, não faz Pull/Push nem executa GitHub Actions. O usuário sincroniza manualmente o workspace com o repositório; o ChatGPT pode então verificar os arquivos e a CI no GitHub.
 
 ## 2. Regras obrigatórias para quem prepara entradas
 
