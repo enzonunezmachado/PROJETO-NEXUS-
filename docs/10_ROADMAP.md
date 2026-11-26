@@ -24,6 +24,21 @@
   - *Frente B (Entrada Estruturada Interna `contractVersion = 1`):* pacote `data/ingestion/` (`StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt`) integrado ao `NexusRepository` (`processStructuredInputJson` / `processStructuredInputEnvelope`) sobre Room `v6` + `audit_history` (`STRUCTURED_INPUT_OP`), com JSON estrito, FKs e regras financeiras, rollback seguro e `StructuredInputUnitTests` (`7` `@Test`), **sem transporte externo ainda** (contrato documentado em [`14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`](./14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md)).
   - *Frente C (Pipeline de Assinatura & Verificação `apksigner`):* `app/build.gradle.kts` falha rapidamente em configurações parciais (`1..3/4`) e bloqueia `assembleRelease`/`bundleRelease`/`packageRelease` sem assinatura `release`; `.github/workflows/android-build.yml` adiciona `build-tools;35.0.0`, valida keystores via `keytool -list -v` (`-storepass:env`), verifica APKs via `apksigner verify --verbose --print-certs` comparando o SHA-256 real com o keystore e publica `NEXUS-Signing-Verification-Report` + `$GITHUB_STEP_SUMMARY`.
 
+### 1.1.3 Rodada 3 — Ponte ChatGPT → NEXUS-INBOX → Android (**EM ANDAMENTO**)
+
+A primeira implementação da ponte foi produzida no AI Studio e passou por correções em branches isoladas. O escopo inclui repositório GitHub privado, consulta read-only, token protegido por Android Keystore, sincronização manual/periódica, prévia e confirmação explícita antes da importação.
+
+**Situação de integração:** as correções finais ainda não foram incorporadas à `main`. A branch `fix/inbox-build-47-kotlin-compile` passou na GitHub Actions #50 (run `45748189511`), mas está divergente da `main` (4 commits à frente / 9 atrás na comparação de 26/11/2026). Não fazer merge integral dessa branch. Reaplicar as correções necessárias no estado atual da `main` com o AI Studio, executar CI na `main` e validar a sincronização real no aparelho.
+
+**Critérios para encerrar a Rodada 3:**
+1. Correções de compilação e teste da Inbox reproduzidas no código atual da `main`.
+2. GitHub Actions verde na `main`, com testes unitários e APK Debug.
+3. Repositório privado `NEXUS-INBOX` configurado no aplicativo, token read-only protegido pelo Android Keystore e teste de conexão real concluído.
+4. Arquivo suportado pela versão atual do contrato aparece na prévia, pode ser confirmado e é importado sem duplicação; descarte não altera dados.
+5. Documentação técnica, espelho `GOOGLE_IA/docs/` e artefatos internos do AI Studio coerentes.
+
+A extensão da Inbox para regras recorrentes novas será concluída junto da Rodada 4, depois da definição do modelo de recorrência (`GAP-001`/`GAP-002`).
+
 ### 1.2 Módulo Mercado Financeiro (`Lotes 01 a 09` — Módulo Concluído e Encerrado)
 - **Lotes 01–02:** infraestrutura offline-first em `SharedPreferences`, roteamento e fallback de provedores públicos sem token para `USD-BRL`, `EUR-BRL`, `BTC-BRL`, `ETH-BRL`, `SOL-BRL`.
 - **Lote 03:** área própria `MarketScreen` + detalhe `MarketAssetDetailScreen` + `MarketPresentationMapper`.
@@ -36,18 +51,48 @@
 
 ---
 
-## 2. Planejado / Pendente (Funcionalidades Ainda Não Iniciadas)
+## 2. Sequência revisada de desenvolvimento
 
-> A ordem abaixo segue o contexto histórico do projeto, mas depende de priorização explícita antes da execução de cada lote.
+> **Reorganização de 26/11/2026.** As Rodadas 1 e 2 permanecem concluídas; a Rodada 3 continua sendo a etapa atual. A antiga Rodada 4 (aplicar a proposta Claude) deixa de ser a próxima execução: primeiro será concluída a base funcional e as lacunas de domínio. A evolução da experiência passa a ser a Rodada 5, baseada na documentação conceitual atualizada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/`, não na adoção automática da proposta original do Claude.
 
-| Prioridade Sugerida | Entrega Planejada | Mudança Principal Prevista | Impacto em Schema / Backup |
-| --- | --- | --- | --- |
-| **1** | **Eventos Evoluídos + Backup `.ZIP`** *(antiga Etapa 5 / Lote 4)* | `events.locationMode` (`IN_PERSON`, `ONLINE`, `TBD`), ocultar/opcionalizar `ticketFeesCents` por padrão, banner local JPEG (`PickVisualMedia` → `filesDir/event_banners/<id>.jpg`), listagem/criação direta de compromissos vinculados (`appointments.eventId`) na ficha do evento e pacote `.zip` (`data.json` + `banners/`) | Requer `DATABASE_VERSION = 7` (`MIGRATION_6_7`) + `ZipBackupArchiver` (mantendo `.json` funcional) |
-| **2** | **Splash Screen Nativa + Refino do `QuickAddChooser`** | `androidx.core:core-splashscreen` (`Theme.NEXUS.Splash`) reaproveitando o símbolo N-1 já implementado e padronização do `QuickAddChooser` (descrições enxutas + colapso `"Mais detalhes"` nos editores) | Sem mudança de Room (adiciona `core-splashscreen` no Gradle) |
-| **3 — prioridade alta a reavaliar na próxima priorização** | **Recorrência de Compromissos e Eventos** (`REQ-009`, `GAP-001`) | Completar o domínio de séries para `appointments` e `events`, com exceções, projeção virtual na `AgendaEngine`, lembretes e integração com backup/entrada estruturada. Primeiro fechar especificação e modelo; depois implementar e validar ponta a ponta. | Decidir generalização ou tabelas/colunas aditivas após auditoria do modelo atual; compatibilidade de backup e contrato Inbox devem fazer parte do desenho. |
-| **4** | **Melhorias Opcionais Pós-Mercado** *(somente se solicitadas)* | Bloco configurável `DashboardBlockType.MARKET` na `HomeScreen`, alertas por variação percentual, ou migração opcional de watchlist/alertas de mercado para Room | Somente se explicitamente aprovado em lote futuro |
+| Etapa | Estado | Objetivo e entregas |
+|---|---|---|
+| **Rodada 1 — Atualização e proteção dos dados** | **CONCLUÍDA** | Atualização in-place, assinatura configurável, backup incremental, merge transacional e testes unitários. Validações em aparelho e keystore persistente continuam no gate de release. |
+| **Rodada 2 — Importação e entrada estruturada** | **CONCLUÍDA** | Prévia dry-run, restauração/mesclagem separadas, contrato estruturado v1, validação, idempotência e rollback. |
+| **Rodada 3 — Ponte ChatGPT → GitHub → Android** | **EM ANDAMENTO — etapa atual** | Estabilizar as correções da Inbox sobre a `main`, executar CI e validar o ciclo real de sincronização, prévia, confirmação, descarte e importação no aparelho. Não integrar branches antigas integralmente. |
+| **Rodada 4 — Completar o sistema funcional e fechar lacunas de domínio** | **PRÓXIMA — prioridade** | Concluir funcionalidades importantes iniciadas ou especificadas, começando por recorrência de Compromissos e Eventos (`REQ-009`, `GAP-001`) e extensão versionada da Inbox (`GAP-002`). Depois fechar pendências de Eventos/backup, consistência da Agenda, estado de edição/navegação e demais requisitos prioritários do inventário. |
+| **Rodada 5 — Arquitetura da informação e evolução da experiência** | **POSTERIOR — EM ANÁLISE** | Auditar o aplicativo funcional completo; mapear entidades e relações; decidir arquitetura de informação; definir linguagem visual; especificar componentes, fichas e interações; prototipar e validar; só então implementar em lotes pequenos. A proposta Claude permanece referência, não especificação aprovada. |
 
----
+### 2.1 Escopo da Rodada 4 — completar o núcleo funcional
+
+A ordem interna inicial recomendada é:
+
+1. **Recorrência de Compromissos e Eventos (`REQ-009` / `GAP-001`):** auditar o motor atual de tarefas; definir modelo de séries, frequências, exceções, edição “só esta/toda a série”, projeção virtual, fuso horário, lembretes, backup e migrações; implementar e testar sem regredir recorrência de tarefas.
+2. **Ponte e contrato de entrada (`GAP-002`):** após aprovar o modelo, estender/versionar o contrato para criar e atualizar regras e exceções recorrentes com prévia, idempotência, validação e rollback. Não simular séries com registros únicos.
+3. **Completar Eventos e seus dados associados:** resolver `REQ-012` (gestão de compromissos vinculados), `REQ-014` (campos avançados e banner) e `REQ-026` (backup ZIP com banners), respeitando migrações e compatibilidade.
+4. **Consistência funcional e técnica:** resolver `INT-01` (motor legado da Agenda), `INT-03` (rascunho de checklist) e `BUG-001` (preservação de rota/rascunhos), após confirmar o comportamento atual e os testes necessários.
+5. **Auditoria de completude:** percorrer requisitos e rastreabilidade, identificar funcionalidades parcialmente implementadas ou não verificadas, classificar por impacto e decidir explicitamente o que precisa ser concluído antes da reformulação. Não transformar cada item opcional/baixo impacto em bloqueio artificial.
+
+Cada item deve ter especificação, implementação, testes automatizados adequados e validação no aplicativo real quando depender de Android/Room/WorkManager/UI. O registro `15_REGISTRO_LACUNAS_E_FALHAS.md` mantém as evidências e o estado de cada pendência.
+
+### 2.2 Escopo da Rodada 5 — reformulação da experiência
+
+A Rodada 5 não é “implementar o Claude” nem fazer redesign de uma vez. Seguir a sequência de investigação registrada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/05_PLANO_DE_EVOLUCAO_E_QUESTOES_ABERTAS.md`:
+
+1. Auditoria da experiência e implementação atual.
+2. Modelo mental, mapa de entidades e relações.
+3. Arquitetura da informação e decisão humana sobre destinos/navegação.
+4. Linguagem visual, semântica, cores, símbolos e proporções.
+5. Componentes, cards, fichas especializadas e contratos de interação.
+6. Protótipos e validação de fluxos em celular/tablet.
+7. Planejamento técnico aprovado e implementação incremental.
+8. Refinamento, acessibilidade, desempenho e validação contínua.
+
+A atualização conceitual posterior ao documento original do Claude refinou pontos importantes: fichas especializadas, consulta separada de edição, componentes proporcionais, relações sem duplicar registros e navegação ainda em análise. A arquitetura de cinco destinos do Claude não está aprovada. Preservar a navegação atual até decisão formal.
+
+### 2.3 Gate contínuo de confiabilidade e release
+
+Não é uma rodada isolada: acompanha todas as etapas. Inclui keystore persistente, atualização in-place, migrações Room, backup/restauração/merge, testes de regressão, segurança do token, notificações, desempenho e validação em aparelho. Build verde não substitui validação prática.
 
 ## 3. Dívidas Técnicas e Manutenção Recomendada
 
