@@ -36,7 +36,7 @@ A ponte foi implementada no código Android, corrigida e integrada à `main`. O 
 
 **Limites da evidência:** a confirmação comprova a importação real. Não registrar como individualmente testados descarte sem gravação, reconsulta sem duplicidade, execução periódica em segundo plano, notificações/deep-links, reinício/rotação ou todos os cenários de segurança do token sem confirmação específica. Esses cenários permanecem no gate contínuo de confiabilidade.
 
-**Critérios de encerramento atendidos:** correções na `main`, CI verde e importação real no aparelho. A extensão da Inbox para regras recorrentes continua planejada para a Rodada 4, após definição dos modelos (`GAP-001`/`GAP-002`).
+**Critérios de encerramento atendidos:** correções na `main`, CI verde e importação real no aparelho. A versão atual da Inbox permanece funcional como ponte de entrada v1. A ampliação do contrato para recorrências e a integração bidirecional definitiva foram adiadas para a Rodada 6, depois que o domínio do aplicativo e sua experiência estiverem estabilizados.
 
 ### 1.2 Módulo Mercado Financeiro (`Lotes 01 a 09` — Módulo Concluído e Encerrado)
 - **Lotes 01–02:** infraestrutura offline-first em `SharedPreferences`, roteamento e fallback de provedores públicos sem token para `USD-BRL`, `EUR-BRL`, `BTC-BRL`, `ETH-BRL`, `SOL-BRL`.
@@ -59,7 +59,7 @@ A ponte foi implementada no código Android, corrigida e integrada à `main`. O 
 | **Rodada 1 — Atualização e proteção dos dados** | **CONCLUÍDA** | Atualização in-place, assinatura configurável, backup incremental, merge transacional e testes unitários. Validações em aparelho e keystore persistente continuam no gate de release. |
 | **Rodada 2 — Importação e entrada estruturada** | **CONCLUÍDA** | Prévia dry-run, restauração/mesclagem separadas, contrato estruturado v1, validação, idempotência e rollback. |
 | **Rodada 3 — Ponte ChatGPT → GitHub → Android** | **CONCLUÍDA (2026-11-26)** | Correções integradas à `main`, GitHub Actions #70 verde e importação real confirmada pelo usuário no aplicativo. Cenários adicionais de confiabilidade permanecem no gate contínuo. |
-| **Rodada 4 — Completar o sistema funcional e fechar lacunas de domínio** | **EM ANDAMENTO — próxima etapa** | Concluir funcionalidades importantes iniciadas ou especificadas, começando por recorrência de Compromissos e Eventos (`REQ-009`, `GAP-001`), checklist independente por ocorrência de tarefa recorrente (`GAP-003`) e extensão versionada da Inbox (`GAP-002`). Depois fechar pendências de Eventos/backup, consistência da Agenda, estado de edição/navegação e demais requisitos prioritários do inventário. |
+| **Rodada 4 — Completar o sistema funcional e fechar lacunas de domínio** | **EM ANDAMENTO — etapa atual** | Completar o domínio: recorrência de Compromissos/Eventos, checklist independente por ocorrência, checklists opcionais em Compromissos/Eventos, identidade contextual, demais lacunas de Eventos, consistência transversal e auditoria de completude. A expansão da ponte fica para a Rodada 6. |
 | **Rodada 5 — Arquitetura da informação e evolução da experiência** | **POSTERIOR — EM ANÁLISE** | Auditar o aplicativo funcional completo; mapear entidades e relações; decidir arquitetura de informação; definir linguagem visual; especificar componentes, fichas e interações; prototipar e validar; só então implementar em lotes pequenos. A proposta Claude permanece referência, não especificação aprovada. |
 
 ### 2.1 Escopo da Rodada 4 — completar o núcleo funcional
@@ -68,10 +68,11 @@ A ordem interna inicial recomendada é:
 
 1. **Recorrência de Compromissos e Eventos (`REQ-009` / `GAP-001`):** auditar o motor atual de tarefas; definir modelo de séries, frequências, exceções, edição “só esta/toda a série”, projeção virtual, fuso horário, lembretes, backup e migrações; implementar e testar sem regredir recorrência de tarefas.
 2. **Checklist independente por ocorrência (`GAP-003`):** auditar o motor de recorrência de tarefas e a associação de subtasks; garantir que cada ocorrência reutilize o checklist-base, mas mantenha estado de conclusão independente e histórico próprio. Não copiar marcações da ocorrência anterior.
-3. **Ponte e contrato de entrada (`GAP-002`):** após aprovar os modelos de recorrência, estender/versionar o contrato para criar e atualizar regras, exceções e checklists recorrentes com prévia, idempotência, validação e rollback. Não simular séries com registros únicos.
+3. **Checklists e completude dos registros:** especificar e implementar checklists opcionais em Compromissos e Eventos (`REQ-029`), além do checklist independente por ocorrência (`GAP-003`). Definir também metadados de identidade contextual/ícones (`REQ-030`) sem confundir tipo de registro com ação.
 4. **Completar Eventos e seus dados associados:** resolver `REQ-012` (gestão de compromissos vinculados), `REQ-014` (campos avançados e banner) e `REQ-026` (backup ZIP com banners), respeitando migrações e compatibilidade.
 5. **Consistência funcional e técnica:** resolver `INT-01` (motor legado da Agenda), `INT-03` (rascunho de checklist) e `BUG-001` (preservação de rota/rascunhos), após confirmar o comportamento atual e os testes necessários.
-6. **Auditoria de completude:** percorrer requisitos e rastreabilidade, identificar funcionalidades parcialmente implementadas ou não verificadas, classificar por impacto e decidir explicitamente o que precisa ser concluído antes da reformulação. Não transformar cada item opcional/baixo impacto em bloqueio artificial.
+6. **Auditoria de completude:** percorrer requisitos e rastreabilidade, identificar funcionalidades parcialmente implementadas ou não verificadas, classificar por impacto e decidir explicitamente o que precisa ser concluído antes da reformulação. Incluir casos reais combinando recorrência, checklists, relações, ícones/contexto, notificações, backup e histórico. Não transformar cada item opcional/baixo impacto em bloqueio artificial.
+7. **Guia operacional para o ChatGPT (`docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`):** depois que os modelos e fluxos de domínio estiverem estáveis, solicitar ao Google AI Studio que gere e valide o guia a partir do código real. O guia deverá ensinar como transformar pedidos em operações JSON válidas, com exemplos de tarefas, checklists, rotina semanal de academia, compromissos, eventos, recorrências, vínculos, finanças e atualizações. Não publicar exemplos fictícios ou incompatíveis com os DTOs; manter o guia sincronizado quando o contrato mudar.
 
 Cada item deve ter especificação, implementação, testes automatizados adequados e validação no aplicativo real quando depender de Android/Room/WorkManager/UI. O registro `15_REGISTRO_LACUNAS_E_FALHAS.md` mantém as evidências e o estado de cada pendência.
 
@@ -135,3 +136,26 @@ Uma ideia anteriormente rejeitada, descartada ou não planejada pode voltar à p
 
 
 > **Rastreabilidade de pendências:** consultar também [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md), que consolida lacunas funcionais, defeitos, inconsistências documentais e falhas observadas em CI. A posição de prioridade na tabela é sugestão para reavaliação; não autoriza, isoladamente, alteração de schema ou implementação.
+
+
+### 2.2 Rodada 6 — finalização da integração bidirecional ChatGPT ↔ NEXUS
+
+A ponte da Rodada 3 permanece funcional para entrada de registros pelo contrato v1. Ela não será expandida agora. A finalização da integração será feita **somente depois da Rodada 4 (domínio completo) e da Rodada 5 (experiência estabilizada)**, para evitar construir contratos e sincronizações em cima de modelos que ainda vão mudar.
+
+Entregas planejadas:
+1. **Guia operacional oficial:** concluir `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` com base no código real e exemplos validados. O ChatGPT deve consultar esse guia antes de criar JSON; o Google AI Studio é responsável por gerar/atualizar a documentação técnica a partir da implementação.
+2. **Catálogo de capacidades:** exportar um documento/JSON versionado que informe entidades, campos, relações, operações suportadas, limitações, enumerações e versão do contrato. É a descrição do que o NEXUS sabe fazer, não os dados pessoais do usuário.
+3. **Snapshot de estado:** exportar uma representação compacta e selecionável do estado atual do NEXUS (agenda, tarefas, compromissos, eventos, pendências e relações necessárias), com data/hora, versão e escopo. Não usar o backup completo como contexto padrão; evitar publicar dados financeiros ou pessoais além do necessário.
+4. **Retorno de alterações:** registrar recibos/resultado das importações e operações, e mudanças relevantes feitas no NEXUS desde a última sincronização. Avaliar feed incremental de mudanças em vez de reescrever o estado inteiro a cada execução.
+5. **Sincronização manual de mão dupla:** uma ação clara de sincronizar pode executar, em ordem segura, leitura de comandos pendentes, prévia/validação e confirmação de importação, seguida de envio do snapshot/recibos atualizados. A interface deve informar o que entrou, o que saiu, conflitos e falhas.
+6. **Automação opcional:** avaliar envio periódico (por exemplo, madrugada) e consulta de entrada em segundo plano. WorkManager é best-effort e pode atrasar por Doze, bateria e rede; não prometer execução exata às 00h ou 05h. O usuário mantém controle para pausar/desativar.
+7. **Segurança e privacidade:** não ampliar automaticamente o PAT de leitura atual para leitura/escrita dentro do APK. Comparar GitHub App com credenciais curtas, serviço intermediário mínimo e token fine-grained separado, restrito ao único repositório e com expiração. Android Keystore protege armazenamento em repouso, mas não elimina o risco de um segredo de escrita disponível ao processo do aplicativo. Nunca versionar token, enviar token em JSON, backup ou logs.
+8. **Arquitetura local-first:** a integração é opcional; NEXUS deve continuar plenamente utilizável sem GitHub/ChatGPT. Definir conflito, idempotência, exclusão, tombstones, concorrência e fonte de verdade antes de sincronizar alterações em ambos os sentidos.
+
+**Separação obrigatória de artefatos:**
+- `capabilities.json` (ou equivalente): o que a versão do aplicativo suporta; muda quando a implementação/contrato muda.
+- `state_snapshot.json` (ou equivalente): o que existe agora no aplicativo; muda quando os dados mudam.
+- `inbox/*.json`: comandos/entradas preparados pelo ChatGPT para o NEXUS.
+- `receipts/` ou `changes/`: resultados e alterações produzidas pelo NEXUS para consumo posterior do ChatGPT.
+
+Esses nomes são propostas de organização, não caminhos ou contratos já implementados. A estrutura final será decidida na especificação da Rodada 6.
