@@ -911,7 +911,10 @@ class StructuredInputProcessor(
             )
         }
 
-        val isUpdate = updatedExistingCount > 0 || opAction == StructuredOperationAction.UPDATE
+        // A checklist operation always changes the checklist of an existing parent task.
+        // Even when every item is new, the affected domain entity is the existing task,
+        // so previews and processing history must classify this as an update.
+        val isUpdate = true
         val label = if (resolvedEntities.size == 1) {
             "${resolvedEntities.first().title} (${parentTask.title})"
         } else {
