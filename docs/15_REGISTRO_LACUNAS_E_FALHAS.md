@@ -83,6 +83,19 @@ Os itens abaixo já constam dos documentos oficiais e permanecem no inventário 
 | GitHub Actions #48 — run `45747309389` | Um teste falhou: `StructuredInputUnitTests > previewEnvelope performs zero DB writes while validating intra-batch links`; a classificação de CHECKLIST como criação/atualização estava incorreta | Corrigido o cálculo semântico em `prepareAndApplyChecklist` para classificar checklist de tarefa existente como atualização. |
 | GitHub Actions #50 — run `45748189511` | Reexecução após correção | **Build job SUCCESS**; testes unitários e APK Debug concluíram com sucesso. Release foi ignorado por ausência de secrets de assinatura Release. Isso valida o workflow dessa execução, não os testes em aparelho, migrações reais ou atualização in-place. |
 
+### 5.1 Branches de correção e decisão de integração (26/11/2026)
+
+As branches abaixo foram criadas para isolar as tentativas de correção da ponte/Inbox e validar o pipeline. Elas não devem ser tratadas como código errado nem integradas integralmente sem revisão.
+
+| Branch | Situação na comparação com `main` em 26/11/2026 | Evidência |
+|---|---|---|
+| `fix/inbox-build-47-kotlin-compile` | Divergente: 4 commits à frente e 9 atrás | Inclui a correção do teste de CHECKLIST; commit conhecido `30ee1453713fc648d0688fb12615161933e6778b`; GitHub Actions #50 / run `45748189511` passou. |
+| `fix/inbox-kotlin-compile` | Divergente: 3 commits à frente e 9 atrás | Tentativa intermediária; manter como histórico, sem integração integral. |
+
+Não foi localizado PR aberto para essas branches. Decisão operacional: **não fazer merge integral**. Manter as branches e seus commits como evidência; reaplicar as correções necessárias no código atual da `main` com o Google AI Studio, revisar o diff e exigir nova CI verde na `main`. Isso evita trazer histórico divergente de uma branch de teste para a linha principal.
+
+A execução #50 teve job `build` com conclusão `success`; a etapa Release foi `skipped` por ausência de secrets. Isso confirma testes unitários e APK Debug naquela branch/commit, não a integração real no aparelho nem a atualização in-place. A #47 registrou erros de compilação; a #48 registrou um teste falho posteriormente corrigido; a #49 foi tentativa intermediária. Preservar todas como histórico.
+
 ## 6. Regras de manutenção deste registro
 
 1. Ao descobrir falha, registrar sintoma, evidência, ambiente, commit/run, causa (somente quando confirmada), correção, estado e validação pendente.
