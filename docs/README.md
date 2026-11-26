@@ -1,7 +1,7 @@
 # NEXUS — Documentação Oficial de Produto e Engenharia
 
 > **Entrada principal da documentação do repositório ativo `PROJETO-NEXUS-`.**  
-> **Última revisão documental:** 2026-11-26 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 6`, Backup `CURRENT_FORMAT_VERSION = 7`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX` em revisão/fechamento da Rodada 3, `18` suítes / `138` `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
+> **Última revisão documental:** 2026-11-26 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 6`, Backup `CURRENT_FORMAT_VERSION = 7`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX` (Rodada 3 concluída; integração bidirecional final planejada na Rodada 6), `18` suítes / `138` `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
 
 ---
 
@@ -16,7 +16,7 @@ Esta suíte documental em `/docs/` constitui a **planta completa de produto, arq
 Antes de qualquer leitura técnica ou execução, leia [`00_ORIENTACAO_E_AUTORIDADE.md`](./00_ORIENTACAO_E_AUTORIDADE.md). Para fatos de implementação, em caso de dúvida entre documentos ou registros históricos, siga rigorosamente esta ordem de precedência:
 
 1. **Código-fonte real em `app/src/` e configuração Gradle/Manifest (`build.gradle.kts`, `AndroidManifest.xml`)** — fonte máxima do que existe hoje em execução/estrutura.
-2. **Documentação técnica vigente em `/docs/*.md` (documentos `01` a `14` e histórico metodológico)** — retrato consolidado e auditado do sistema atual.
+2. **Documentação técnica vigente em `/docs/*.md` (documentos `01` a `16` e histórico metodológico)** — retrato consolidado e auditado do sistema atual.
 3. **Documento de continuidade nos artefatos do AI Studio (`NEXUS_CONTINUIDADE.md`)** — sincronizado com `/docs/`.
 4. **Documentos históricos em `/docs/archive/`** — preservam contexto de origem, especificações anteriores (`v4`/`v5`) e diagnósticos pontuais; **não devem ser tratados como retrato do estado atual** sem conferência no código.
 
@@ -67,3 +67,6 @@ Quando o projeto for continuado dentro do Google AI Studio, os artefatos da sess
 
 ### Registro consolidado de pendências
 - [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md) — inventário rastreável de lacunas funcionais, defeitos, inconsistências documentais, falhas de CI e validações pendentes.
+
+
+- [`16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`](./16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md): estrutura inicial do guia futuro; não usar para gerar JSON até validação.
