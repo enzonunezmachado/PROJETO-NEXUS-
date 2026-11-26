@@ -65,6 +65,7 @@ Open Finance, sincronização, serviços externos, IA local/remota e outras inte
 - `11_DECISOES_ADRS.md`: decisões arquiteturais e seus estados.
 - `13_GOVERNANCA_DOCUMENTAL.md`: processo normativo.
 - `HISTORICO_DOCUMENTACAO.md`: alterações documentais relevantes.
+- `15_REGISTRO_LACUNAS_E_FALHAS.md`: inventário consolidado de lacunas, defeitos, inconsistências documentais e validações pendentes.
 - `NEXUS-DOCUMENTACAO/CHATGPT/`: visão, decisões, ideias, pesquisas e propostas; não substitui especificação técnica nem autoriza implementação.
 - `NEXUS-DOCUMENTACAO/GOOGLE_IA/`: espelho técnico; a origem é `PROJETO-NEXUS-/docs/`.
 
