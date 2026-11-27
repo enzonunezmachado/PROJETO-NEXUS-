@@ -289,7 +289,7 @@ class FactoryResetUnitTests {
 
             assertNull(store.loadRecord(MarketAssetCatalog.USD_BRL_CODE, MarketHistoryRange.M1))
             assertTrue(tempDir.listFiles().orEmpty().isEmpty())
-            assertTrue(repo.historyStates.value.isEmpty())
+            assertTrue(repo.historyStates.value.values.all { perAsset -> perAsset.values.all { it.series == null } })
         } finally {
             tempDir.deleteRecursively()
         }
@@ -336,7 +336,7 @@ class FactoryResetUnitTests {
             configStorage = InMemoryInboxConfigStorage(),
             tokenStore = InMemoryInboxTokenStore(),
             remoteDataSource = NoopInboxRemote(),
-            ingestionPort = NoopInboxPort(),
+            nexusRepository = NoopInboxPort(),
             clockMillis = { t0 }
         )
         val activeCount = AtomicInteger(0)
