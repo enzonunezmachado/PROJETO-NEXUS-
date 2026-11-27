@@ -1301,18 +1301,19 @@ class StructuredInputProcessor(
         if (dto.customIntervalDays < 1) {
             return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "customIntervalDays deve ser >= 1.", title)
         }
-        val weekdaysMask = if (dto.weekdays.isNotEmpty()) {
-            try {
-                RecurrenceEngine.parseWeekdaysStrict(dto.weekdays)
-            } catch (ex: IllegalArgumentException) {
-                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, ex.message ?: "Dias da semana inválidos.", title)
-            }
-        } else {
-            val rawMask = dto.weekdaysMask ?: 0
-            if (rawMask < 0) {
-                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "weekdaysMask inválido ($rawMask).", title)
-            }
-            rawMask
+        val weekdaysMask = RecurrenceEngine.parseWeekdaysStrict(
+            weekdays = dto.weekdays,
+            rawMask = dto.weekdaysMask
+        ).getOrElse { ex ->
+            return rejectReceipt(
+                opId,
+                operation,
+                StructuredEntityType.RECURRENCE,
+                effectiveSource,
+                effectiveCreatedAt,
+                ex.message ?: "Dias da semana inválidos.",
+                title
+            )
         }
         if (frequency == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS && weekdaysMask == 0) {
             return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Para SPECIFIC_WEEKDAYS informe 'weekdays' ou 'weekdaysMask' válido.", title)
@@ -1326,7 +1327,11 @@ class StructuredInputProcessor(
             return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "dueTimeMinutesOfDay deve estar entre 0 e 1439.", title)
         }
         val effectiveIsAllDay = if (domain == RecurrenceDomain.TASK) false else dto.isAllDay
-        val effectiveDueMinutes = if (effectiveIsAllDay) null else (parsedStartTime ?: dto.dueTimeMinutesOfDay)
+        val effectiveDueMinutes: Int? = if (effectiveIsAllDay) {
+            null
+        } else {
+            parsedStartTime ?: dto.dueTimeMinutesOfDay
+        }
         val effectiveHasDueTime = if (effectiveIsAllDay) {
             false
         } else if (domain == RecurrenceDomain.TASK) {
@@ -1495,10 +1500,16 @@ class StructuredInputProcessor(
                 installmentsCount = dto.installmentsCount,
                 updatedAt = now
             )
-            RecurrenceEngine.buildUpdatedChecklistTemplate(
-                existing = baseUpdated,
-                newTemplateItems = cleanTemplateChecklist,
-                effectiveFromDateIso = effectiveFromIso
+            val (templateSubtasksJson, templateVersion, templateHistoryJson) =
+                RecurrenceEngine.buildUpdatedChecklistTemplate(
+                    existing = baseUpdated,
+                    newTitles = cleanTemplateChecklist,
+                    effectiveFromDateIso = effectiveFromIso
+                )
+            baseUpdated.copy(
+                templateSubtasksJson = templateSubtasksJson,
+                checklistTemplateVersion = templateVersion,
+                templateHistoryJson = templateHistoryJson
             )
         }
 
