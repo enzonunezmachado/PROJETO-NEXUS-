@@ -251,7 +251,7 @@ class FactoryResetUnitTests {
                 quoteCurrency = "BRL",
                 modality = QuoteModality.COMMERCIAL,
                 price = 5.65,
-                trend = QuoteTrend.STABLE,
+                trend = QuoteTrend.FLAT,
                 sourceName = "Test",
                 sourceTimestampEpochMs = t0,
                 fetchedAtEpochMs = t0
