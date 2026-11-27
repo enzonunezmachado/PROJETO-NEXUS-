@@ -90,3 +90,28 @@ O processamento de `startTime` agora desempacota o resultado com `getOrElse`. Em
 ### Validação pendente
 
 A nova execução do GitHub Actions para esse commit ainda precisa concluir `:app:testDebugUnitTest :app:assembleDebug`. A correção do erro de tipo foi aplicada, mas ainda não está validada por build/testes nem por dispositivo físico.
+
+
+## Quarta falha encontrada — testes unitários incompatíveis com as APIs atuais
+
+Na execução do CI do commit `f469b1295528f2ea384220e0a49084a5eda5deff`, a compilação do código principal avançou, mas `:app:compileDebugUnitTestKotlin` falhou. Os erros estavam concentrados em testes introduzidos/atualizados na rodada e apontavam nomes de campos, assinaturas e propriedades que não correspondem às APIs atuais do repositório.
+
+### Ajustes realizados
+
+- `OccurrenceChecklistIsolationUnitTests.kt`: alinhados os nomes dos campos de template à entidade real (`templateSubtasksJson`), o snapshot ao tipo top-level `ChecklistTemplateSnapshot`, a chamada de atualização à assinatura `newTitles`, a ordem do `Triple` retornado pelo engine e o nome da coleção de recorrências do backup (`recurrences`).
+- `StructuredInputUnitTests.kt`: substituído o método inexistente `previewEnvelopeJson` por `previewJson` e alinhado o campo do template.
+- `FactoryResetUnitTests.kt`: corrigidos o pacote de `MarketAssetCatalog`, os campos/enumerações atuais de histórico de mercado, a assinatura do construtor de `InboxRepository` e o retorno booleano de `resetLocalTrackingPreservingCredentials`. A asserção do estado do histórico agora considera o mapa inicial de ativos, verificando que todas as séries foram removidas.
+- `InboxBridgeUnitTests.kt`: alinhados o construtor e os métodos atuais de `InboxRepository`, a leitura dos itens de prévia, a confirmação da importação e o retorno booleano da limpeza de rastreamento.
+
+Esses ajustes mantêm os cenários de teste e os alinham às interfaces efetivamente implementadas, em vez de alterar as APIs de produção apenas para satisfazer testes desatualizados.
+
+### Commits das correções de testes
+
+- `c49c9b850424aed3d404628288555b4577914019` — testes de isolamento/backup de recorrências.
+- `217a7e150b63af5cac06c31f9cb280baa38dc5be` — testes de entrada estruturada.
+- `aedf7032f34d7c0ab1a5049cb66d28d4edd454fb` e `49bd3b8c051c70cc235a04afaf680081e0d32999` — testes de restauração de fábrica.
+- `8698cb96f2f57ce10aa4ab91b9c864b6a818e2e2` e `37adecd31ed8391edd8bb93f356feaa54b7bdb85` — testes da ponte Inbox/recorrência e ajuste final de backup.
+
+### Validação atual
+
+O GitHub Actions foi disparado para o commit final `37adecd31ed8391edd8bb93f356feaa54b7bdb85` (execução `46065813592`). Na última consulta, a etapa `:app:testDebugUnitTest :app:assembleDebug` ainda estava em execução. Portanto, a compatibilidade dos testes foi corrigida no código, mas a validação integral do CI continua pendente.
