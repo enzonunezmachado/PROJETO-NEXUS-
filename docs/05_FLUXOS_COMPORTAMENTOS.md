@@ -39,20 +39,21 @@
 
 ---
 
-## 4. Fluxo de Tarefa Recorrente (`RecurrenceEngine` + `AgendaEngine`)
+## 4. Fluxo de Recorrência Multi-Domínio e Checklists (`RecurrenceEngine` + `AgendaEngine`)
 
 ```mermaid
 flowchart TD
-    A["Usuário ativa 'Repetir' em TaskEditorSheet"] --> B["Salva TaskRecurrenceEntity (recurrences) + 1ª TaskEntity (tasks)"]
-    B --> C["AgendaEngine.expand(window)"]
-    C --> D["RecurrenceEngine.projectVirtualOccurrences<br/>omite datas já materializadas e SKIPs,<br/>aplica OVERRIDEs, sem gravar cópias no SQLite"]
-    B --> E["Usuário conclui tarefa atual (COMPLETED)"]
-    E --> F["RecurrenceEngine.nextOccurrenceDateAfter<br/>preserva cadência mesmo se tarefa atrasou/adiou"]
-    F --> G["Insere próxima TaskEntity com UNIQUE(recurrenceId, occurrenceDateIso)"]
+    A["Usuário ativa 'Repetir' em Task/Appointment/EventEditorSheet"] --> B["Salva TaskRecurrenceEntity (recurrences, domain + templateSubtasksJson) + 1ª instância"]
+    B --> C["AgendaEngine / EventsScreen (expand)"]
+    C --> D["RecurrenceEngine projeta ocorrências virtuais ('rec::...')<br/>omite datas materializadas e SKIPs, aplica OVERRIDEs"]
+    B --> E["Tarefa recorrente concluída (COMPLETED)"]
+    E --> F["RecurrenceEngine.nextOccurrenceDateAfter<br/>preserva cadência mesmo com atraso"]
+    F --> G["Insere próxima TaskEntity com UNIQUE(recurrenceId, occurrenceDateIso)<br/>e subtarefas zeradas a partir de templateSubtasksJson"]
 ```
 
-- **Editar/Excluir ocorrência:** `TaskScopeConfirmDialogs` pergunta `"Só esta ocorrência"` (cria `RecurrenceExceptionEntity` `OVERRIDE` ou `SKIP`) vs `"Toda a série"` (atualiza/desativa `TaskRecurrenceEntity`).
-- **Materialização sob demanda na Agenda:** tocar em uma ocorrência virtual na `AgendaScreen` dispara `onOpenVirtualRecurringTask(recurrenceId, occurrenceDateIso)` que materializa/abre aquela ocorrência específica.
+- **Editar/Excluir ocorrência (`Só esta ocorrência` vs `Toda a série`):** diálogos de confirmação em Tarefas, Compromissos e Eventos permitem criar `RecurrenceExceptionEntity` (`OVERRIDE` ou `SKIP`) apenas para a data escolhida ou atualizar/desativar a série em `recurrences` (preservando e desvinculando ocorrências de Eventos com `ATTENDED` ou ingresso `PAID` / transação `SETTLED`).
+- **Materialização sob demanda na Agenda/Eventos:** tocar em uma ocorrência virtual (`"rec::<recurrenceId>::<occurrenceDateIso>"`) materializa/abre aquela ocorrência específica sem gerar obrigações financeiras automáticas (`TransactionEntity`) em Eventos.
+- **Independência de checklists (`GAP-003`):** alterações de marcação (`isCompleted`) afetam apenas a ocorrência aberta; edições estruturais na checklist de uma tarefa recorrente perguntam `"Só esta ocorrência"` vs `"Toda a série"` (`templateSubtasksJson`).
 
 ---
 

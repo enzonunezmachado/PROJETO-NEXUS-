@@ -9,6 +9,7 @@ import com.nexus.app.data.backup.BudgetBackupDto
 import com.nexus.app.data.backup.CategoryBackupDto
 import com.nexus.app.data.backup.CreditCardBackupDto
 import com.nexus.app.data.backup.CreditCardStatementBackupDto
+import com.nexus.app.data.backup.EventBackupDto
 import com.nexus.app.data.backup.GoalMilestoneBackupDto
 import com.nexus.app.data.backup.InstallmentPurchaseBackupDto
 import com.nexus.app.data.backup.MarketBackupConfigDto

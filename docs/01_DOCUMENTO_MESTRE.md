@@ -1,7 +1,7 @@
 # 01 — Documento Mestre do Projeto NEXUS
 
 > **Natureza:** Visão geral executiva e técnica do projeto.  
-> **Baseline verificada:** `com.nexus.app` · `versionCode = 7` · `versionName = "5.2.0"` · Room `v6` (`27` entidades) · Backup JSON `v7`.
+> **Baseline verificada no código:** `com.nexus.app` · `versionCode = 8` · `versionName = "5.3.0"` · Room `v7` (`27` entidades) · Backup JSON `v8` *(Rodada 3 concluída via CI #70; código parcial da Rodada 4 aguardando CI e dispositivo)*.
 
 ---
 
@@ -14,7 +14,7 @@ Em vez de espalhar tarefas, calendário, projetos, objetivos, eventos, contas a 
 ### Problema que resolve
 - **Fragmentação de rotina e finanças pessoais:** reduz o atrito entre saber *o que precisa ser feito* (tarefas/compromissos/projetos/objetivos), *quando acontece* (agenda unificada) e *quanto custa* (despesas, cartões, faturas, eventos).
 - **Duplicação de lançamentos e prazos:** elimina a necessidade de cadastrar duas vezes um boleto no calendário e no controle financeiro, ou de somar compra no cartão e pagamento de fatura como dupla despesa.
-- **Dependência de internet e contas em nuvem:** o usuário mantém soberania integral dos dados em SQLite local, com backup portável JSON (`v1..v7`) via Storage Access Framework (SAF).
+- **Dependência de internet e contas em nuvem:** o usuário mantém soberania integral dos dados em SQLite local, com backup portável JSON (`v1..v8`) via Storage Access Framework (SAF).
 
 ---
 
@@ -26,7 +26,7 @@ Os itens abaixo descrevem a orientação técnica atualmente adotada, não um co
 2. **Registrar uma vez, ver em vários lugares:** integrações são feitas por chaves estrangeiras opcionais (`ON DELETE SET NULL`), projeções puras (`AgendaEngine`, `FinanceRules`, `RecurrenceEngine`) e reatividade via `Flow`.
 3. **Zero dados fictícios:** o app nunca inventa cotações, taxas/juros de eventos, frases motivacionais embutidas ou lançamentos de exemplo; estados vazios ou sem histórico são exibidos com clareza.
 4. **Zero servidor proprietário, login ou rastreamento:** não há backend próprio, Firebase, contas de usuário ou coleta remota (`android:allowBackup="false"`).
-5. **Integridade de dados inegociável:** `fallbackToDestructiveMigration()` é estritamente proibido; evoluções de schema usam `Migration` aditiva explícita e backups legados (`v1..v6`) continuam legíveis.
+5. **Integridade de dados inegociável:** `fallbackToDestructiveMigration()` é estritamente proibido; evoluções de schema usam `Migration` aditiva explícita e backups legados (`v1..v7`) continuam legíveis.
 6. **Mercado informativo e sem chave obrigatória:** cotações, gráficos históricos, lista de acompanhamento e alertas de preço operam sobre APIs públicas gratuitas com fallback, exibindo aviso de caráter meramente informativo.
 
 ---
@@ -50,12 +50,12 @@ Os princípios desta seção descrevem compromissos estruturais vigentes, mas n�
 - **Objetivos Pessoais (`PlanningGoalsScreen`):** objetivos com progresso automático (`AUTO` agregando marcos, tarefas e projetos vinculados) ou manual (`MANUAL`) e histórico de evolução.
 - **Assistente de Rotina e Notificações (`RoutineAssistantScreen`):** Briefing Diário, Revisão Noturna com adiamento de pendências em 1 toque, histórico persistido (`briefing_history`), 5 canais de notificação, agendamentos via `AlarmManager` + `WorkManager`, ações rápidas em notificação e restauração no boot.
 - **Widgets Android (`widgets/*`):** 4 widgets em Jetpack Glance (`Meu Dia`, `Minhas Tarefas`, `Financeiro`, `Resumo NEXUS`) responsivos (`SMALL`, `MEDIUM`, `LARGE`), configuráveis por instância e adaptados aos temas claro e escuro (`DayNightColorProvider`).
-- **Módulo Mercado (`Lotes 01–09` concluídos no código):** acompanhamento de **12 ativos** (`USD-BRL`, `EUR-BRL`, `BTC-BRL`, `ETH-BRL`, `SOL-BRL`, `IBOV`, `SPX`, `IXIC`, `PETR4`, `VALE3`, `ITUB4`, `MELI`), tela dedicada `MarketScreen` + detalhe `MarketAssetDetailScreen`, provedores públicos gratuitos com fallback por categoria, histórico gráfico offline/online (`MarketHistoryChartCard`), favoritos (*Acompanhamento*), alertas locais de preço com notificação + deep-link e persistência de preferências no Backup JSON `v7`.
-- **Backup, Diagnóstico e Busca Global:** busca unificada em tempo real, temas Claro/Escuro, biblioteca de frases local (TXT/JSON), registro automático de exceções não tratadas (`GlobalErrorHandler` → `error_logs`), contagens ao vivo das 27 tabelas e backup JSON transacional `v7` (retrocompatível com `v1..v6`).
+- **Módulo Mercado (`Lotes 01–09` concluídos no código):** acompanhamento de **12 ativos** (`USD-BRL`, `EUR-BRL`, `BTC-BRL`, `ETH-BRL`, `SOL-BRL`, `IBOV`, `SPX`, `IXIC`, `PETR4`, `VALE3`, `ITUB4`, `MELI`), tela dedicada `MarketScreen` + detalhe `MarketAssetDetailScreen`, provedores públicos gratuitos com fallback por categoria, histórico gráfico offline/online (`MarketHistoryChartCard`), favoritos (*Acompanhamento*), alertas locais de preço com notificação + deep-link e persistência de preferências no Backup JSON `v8` (desde `v7`).
+- **Backup, Entrada Estruturada, `NEXUS-INBOX`, Diagnóstico e Busca Global:** busca unificada em tempo real, temas Claro/Escuro, biblioteca de frases local (TXT/JSON), registro automático de exceções não tratadas (`GlobalErrorHandler` → `error_logs`), contagens ao vivo das 27 tabelas, backup JSON transacional `v8` (retrocompatível com `v1..v7`, Modo 1 restauração + Modo 2 mesclagem incremental com prévia dry-run) e ponte opcional `NEXUS-INBOX` (`contractVersion = 1` + GitHub privado somente-leitura com PAT em Keystore e confirmação explícita).
 
 ### Fora do Escopo / Planejado e Pendente
-- **Planejado ainda não implementado:** Eventos com `locationMode` (`IN_PERSON`, `ONLINE`, `TBD`), banner JPEG via `PickVisualMedia` e empacotamento `.zip` (`data.json` + `banners/`); dependência oficial `androidx.core:core-splashscreen`; extensão versionada da ponte `NEXUS-INBOX` para séries recorrentes (`GAP-002`); eventual bloco Mercado opcional na `HomeScreen`. *(Recorrência de Compromissos/Eventos `REQ-009` / `GAP-001` e independência de checklists `GAP-003` já implementadas no código na Rodada 4, aguardando Gradle/CI e dispositivo.)*
-- **Restrições e decisões vigentes:** login, backend próprio e sincronização obrigatória em nuvem não fazem parte da arquitetura offline-first atual; múltiplos usuários e troca do Room/navegação por estado para NavHost não estão planejados. IA local/remota e leitura automática de documentos/extratos não estão aprovadas como funcionalidades; qualquer possibilidade deve passar por pesquisa, análise de compatibilidade e aprovação conforme 13_GOVERNANCA_DOCUMENTAL.md. Integrações financeiras reais exigem avaliação específica de segurança, privacidade, regulamentação e viabilidade.
+- **Planejado ainda não implementado:** Eventos com `locationMode` (`IN_PERSON`, `ONLINE`, `TBD`), banner JPEG via `PickVisualMedia` e empacotamento `.zip` (`data.json` + `banners/`); dependência oficial `androidx.core:core-splashscreen`; checklist opcional próprio em Compromissos e Eventos (`REQ-029` / `GAP-004`, Rodada 4); identidade visual contextual controlada para Compromissos e Eventos (`REQ-030` / `GAP-005`, Rodada 4/5); extensão versionada da ponte `NEXUS-INBOX` para séries recorrentes (`GAP-002`); conclusão do guia operacional [`16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`](./16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md) após estabilização pós-Rodada 4; eventual bloco Mercado opcional na `HomeScreen`; e, na **Rodada 6** (após Rodadas 4 e 5), catálogo versionado de capacidades + sincronização bidirecional manual e automação periódica best-effort opcional (`REQ-031`, `REQ-032`, `GAP-006`). *(Recorrência de Compromissos/Eventos `REQ-009` / `GAP-001` e independência de checklists `GAP-003` já implementadas no código na Rodada 4, aguardando Gradle/CI e dispositivo.)*
+- **Restrições e decisões vigentes:** login, backend próprio e sincronização obrigatória em nuvem não fazem parte da arquitetura offline-first atual; múltiplos usuários e troca do Room/navegação por estado para NavHost não estão planejados. IA local/remota e leitura automática de documentos/extratos não estão aprovadas como funcionalidades; qualquer possibilidade deve passar por pesquisa, análise de compatibilidade e aprovação conforme `13_GOVERNANCA_DOCUMENTAL.md`. Integrações financeiras reais exigem avaliação específica de segurança, privacidade, regulamentação e viabilidade.
 
 ---
 
