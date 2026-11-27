@@ -197,6 +197,15 @@ class MarketAlertRepository(
         }
     }
 
+    fun clearAllLocalData(): Int {
+        synchronized(writeLock) {
+            val removedCount = _alerts.value.size
+            store.saveAlerts(emptyList())
+            _alerts.value = emptyList()
+            return removedCount
+        }
+    }
+
     fun evaluateQuotes(freshQuotes: Map<String, MarketQuoteSnapshot>): List<MarketAlertTriggerEvent> {
         if (freshQuotes.isEmpty()) return emptyList()
 

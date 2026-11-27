@@ -110,6 +110,14 @@ class NexusNotificationScheduler(private val context: Context) {
         NotificationManagerCompat.from(appContext).cancel(notificationIdFor(reminderId))
     }
 
+    fun cancelAllScheduledAndDisplayedNotifications(reminderIds: List<String>) {
+        reminderIds.distinct().forEach { id ->
+            runCatching { cancelAlarm(id) }
+            runCatching { cancelDisplayedNotification(id) }
+        }
+        runCatching { NotificationManagerCompat.from(appContext).cancelAll() }
+    }
+
     @SuppressLint("MissingPermission")
     fun showReminderNotification(reminder: ReminderEntity, userName: String): Boolean {
         if (!ReminderRules.isSchedulableOrFirable(reminder)) return false

@@ -54,6 +54,11 @@ class MarketQuoteRepository(
         return updated
     }
 
+    fun clearAllLocalData() {
+        store.clearAll()
+        publishStates(buildInitialStatesFromStore())
+    }
+
     suspend fun refreshIfStale(): Map<String, MarketQuoteUiState> = refreshAll(force = false)
 
     suspend fun refreshUsdBrl(force: Boolean = false): MarketQuoteUiState =

@@ -24,6 +24,7 @@ import com.nexus.app.data.db.entity.RecurrenceExceptionEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
@@ -123,6 +124,7 @@ internal object BackupMergeEngine {
         val tasks: List<TaskEntity>,
         val transactions: List<TransactionEntity>,
         val subtasks: List<SubtaskEntity>,
+        val scheduleChecklistItems: List<ScheduleChecklistItemEntity>,
         val recurrenceExceptions: List<RecurrenceExceptionEntity>,
         val reminders: List<ReminderEntity>
     )
@@ -214,6 +216,7 @@ internal object BackupMergeEngine {
                 storage.insertTasks(b.tasks)
                 storage.insertTransactions(b.transactions)
                 storage.insertSubtasks(b.subtasks)
+                storage.insertScheduleChecklistItems(b.scheduleChecklistItems)
                 storage.insertRecurrenceExceptions(b.recurrenceExceptions)
                 storage.insertReminders(b.reminders)
 
@@ -885,6 +888,17 @@ internal object BackupMergeEngine {
             perEntity = perEntity
         )
 
+        val localScheduleChecklists = storage.getScheduleChecklistItems()
+        val newScheduleChecklists = mergeScheduleChecklistItems(
+            dtos = payload.scheduleChecklistItems,
+            localItems = localScheduleChecklists,
+            validAppointmentIds = validAppointmentIds,
+            validEventIds = validEventIds,
+            now = now,
+            issues = issues,
+            perEntity = perEntity
+        )
+
         val localRecExceptions = storage.getRecurrenceExceptions()
         val newRecExceptions = mergeRecurrenceExceptions(
             dtos = payload.recurrenceExceptions,
@@ -970,6 +984,7 @@ internal object BackupMergeEngine {
                 tasks = newTasks,
                 transactions = newTransactions,
                 subtasks = newSubtasks,
+                scheduleChecklistItems = newScheduleChecklists,
                 recurrenceExceptions = newRecExceptions,
                 reminders = newReminders
             ),
@@ -2116,6 +2131,8 @@ internal object BackupMergeEngine {
                 creditCardId = rawCard,
                 installmentsCount = dto.installmentsCount.coerceAtLeast(1),
                 templateSubtasksJson = dto.templateSubtasksJson.ifBlank { "[]" },
+                checklistTemplateVersion = dto.checklistTemplateVersion.coerceAtLeast(1),
+                templateHistoryJson = dto.templateHistoryJson.ifBlank { "[]" },
                 createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                 updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
             )
@@ -2529,6 +2546,81 @@ internal object BackupMergeEngine {
                 } else {
                     stats.conflicts++
                     issues.add(MergeIssueItem(table, id, MergeIssueKind.CONFLICT_KEPT_LOCAL, "Subtarefa já existe com diferenças; mantida local."))
+                }
+                return@forEach
+            }
+            if (id in accepted) {
+                stats.alreadyExisting++
+                return@forEach
+            }
+            accepted[id] = candidate
+            stats.newRecords++
+            stats.inserted++
+        }
+        stats.preservedLocalOnly = localItems.count { it.id !in seenLocal }
+        perEntity.add(stats.build())
+        return accepted.values.toList()
+    }
+
+    private fun mergeScheduleChecklistItems(
+        dtos: List<ScheduleChecklistItemBackupDto>,
+        localItems: List<ScheduleChecklistItemEntity>,
+        validAppointmentIds: Set<String>,
+        validEventIds: Set<String>,
+        now: Long,
+        issues: MutableList<MergeIssueItem>,
+        perEntity: MutableList<EntityMergeCounts>
+    ): List<ScheduleChecklistItemEntity> {
+        val table = "schedule_checklist_items"
+        val stats = TableStatsBuilder(table, "Checklists de compromissos/eventos", dtos.size)
+        val localById = localItems.associateBy { it.id }
+        val accepted = mutableMapOf<String, ScheduleChecklistItemEntity>()
+        val seenLocal = mutableSetOf<String>()
+
+        dtos.forEach { dto ->
+            val id = dto.id.trim()
+            val apptId = dto.appointmentId?.trim()?.takeIf { it.isNotEmpty() && it in validAppointmentIds }
+            val eventId = dto.eventId?.trim()?.takeIf { it.isNotEmpty() && it in validEventIds }
+            val hasValidParent = (apptId != null) xor (eventId != null)
+            if (id.isEmpty() || dto.title.isBlank() || !hasValidParent) {
+                stats.invalid++
+                stats.needsReview++
+                issues.add(
+                    MergeIssueItem(
+                        table,
+                        id.ifEmpty { "(sem id)" },
+                        MergeIssueKind.INVALID_REJECTED,
+                        "Item de checklist órfão ou inválido (compromisso/evento inexistente)."
+                    )
+                )
+                return@forEach
+            }
+            val candidate = ScheduleChecklistItemEntity(
+                id = id,
+                appointmentId = apptId,
+                eventId = eventId,
+                title = dto.title.trim(),
+                isCompleted = dto.isCompleted,
+                sortOrder = dto.sortOrder.coerceAtLeast(0),
+                templateVersion = dto.templateVersion.coerceAtLeast(1),
+                createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+            )
+            val local = localById[id]
+            if (local != null) {
+                seenLocal.add(id)
+                if (local.copy(createdAt = 0L, updatedAt = 0L) == candidate.copy(createdAt = 0L, updatedAt = 0L)) {
+                    stats.alreadyExisting++
+                } else {
+                    stats.conflicts++
+                    issues.add(
+                        MergeIssueItem(
+                            table,
+                            id,
+                            MergeIssueKind.CONFLICT_KEPT_LOCAL,
+                            "Item de checklist já existe com diferenças; mantido local."
+                        )
+                    )
                 }
                 return@forEach
             }

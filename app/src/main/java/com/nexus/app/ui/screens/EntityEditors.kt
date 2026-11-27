@@ -27,10 +27,13 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ConfirmationNumber
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Repeat
@@ -47,6 +50,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -64,6 +68,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -76,6 +81,7 @@ import com.nexus.app.core.DateTimeUtils
 import com.nexus.app.data.db.entity.AppointmentEntity
 import com.nexus.app.data.db.entity.CategoryEntity
 import com.nexus.app.data.db.entity.ReminderEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
 import com.nexus.app.data.db.entity.TaskRecurrenceEntity
@@ -1801,6 +1807,7 @@ private fun TaskScopeConfirmDialogs(
 fun AppointmentEditorSheet(
     existingAppointment: AppointmentEntity?,
     existingRecurrence: TaskRecurrenceEntity? = null,
+    existingChecklistItems: List<ScheduleChecklistItemEntity> = emptyList(),
     categories: List<CategoryEntity>,
     events: List<EventWithDetails> = emptyList(),
     initialDate: LocalDate,
@@ -1820,7 +1827,8 @@ fun AppointmentEditorSheet(
         link: String,
         reminderMinutesBefore: Int?,
         recurrenceDraft: TaskRecurrenceDraft?,
-        recurringEditScope: RecurringEditScope
+        recurringEditScope: RecurringEditScope,
+        checklistDrafts: List<Triple<String?, String, Boolean>>
     ) -> Unit,
     onDelete: (String, RecurringEditScope) -> Unit,
     onError: (String, Throwable) -> Unit,
@@ -1933,6 +1941,29 @@ fun AppointmentEditorSheet(
     }
     var reminderModified by remember(appointmentId, reminderId) { mutableStateOf(false) }
 
+    var checklistInitialized by remember(appointmentId) { mutableStateOf(false) }
+    var initialChecklistSnapshot by remember(appointmentId) {
+        mutableStateOf<List<Triple<String?, String, Boolean>>>(emptyList())
+    }
+    val draftChecklist = remember(appointmentId) {
+        mutableStateListOf<Triple<String?, String, Boolean>>()
+    }
+    var newChecklistItemText by remember(appointmentId) { mutableStateOf("") }
+
+    LaunchedEffect(appointmentId, existingChecklistItems) {
+        val mapped = existingChecklistItems
+            .sortedBy { it.sortOrder }
+            .map { Triple<String?, String, Boolean>(it.id, it.title, it.isCompleted) }
+        val userEditedChecklist = draftChecklist.toList() != initialChecklistSnapshot ||
+            newChecklistItemText.isNotBlank()
+        if (!checklistInitialized || (!userEditedChecklist && mapped != initialChecklistSnapshot)) {
+            initialChecklistSnapshot = mapped
+            draftChecklist.clear()
+            draftChecklist.addAll(mapped)
+            checklistInitialized = true
+        }
+    }
+
     val recurrenceRuleChanged = recurrenceFrequency != initRecFrequency ||
         (recurrenceFrequency == TaskRecurrenceFrequency.CUSTOM_DAYS &&
             customIntervalDaysText.trim() != initCustomIntervalText) ||
@@ -1945,6 +1976,13 @@ fun AppointmentEditorSheet(
                 (recurrenceEndMode == "COUNT" && maxOccurrencesText.trim() != initMaxOccurrencesText)
             ))
 
+    val initChecklistTitles = initialChecklistSnapshot.map { it.second.trim() }
+    val currentChecklistTitles = draftChecklist.map { it.second.trim() } +
+        listOfNotNull(newChecklistItemText.trim().takeIf { it.isNotEmpty() })
+    val checklistStructureChanged = currentChecklistTitles != initChecklistTitles
+    val checklistChanged = draftChecklist.toList() != initialChecklistSnapshot ||
+        newChecklistItemText.isNotBlank()
+
     val templateFieldsChanged = title != initTitle ||
         description != initDescription ||
         categoryId != initCategoryId ||
@@ -1955,9 +1993,10 @@ fun AppointmentEditorSheet(
         startDate != initStartDate ||
         endDate != initEndDate ||
         (!isAllDay && (startTime != initStartTime || endTime != initEndTime)) ||
-        reminderModified
+        reminderModified ||
+        checklistStructureChanged
 
-    val hasUnsavedChanges = templateFieldsChanged || recurrenceRuleChanged
+    val hasUnsavedChanges = templateFieldsChanged || checklistChanged || recurrenceRuleChanged
 
     fun dispatchSaveWithScopeHandling(executeSave: (RecurringEditScope) -> Unit) {
         if (activeRecurrence == null) {
@@ -2215,6 +2254,17 @@ fun AppointmentEditorSheet(
                 onMaxOccurrencesChange = { maxOccurrencesText = it }
             )
 
+            ScheduleChecklistSectionCard(
+                items = draftChecklist,
+                newItemText = newChecklistItemText,
+                onNewItemTextChange = { newChecklistItemText = it },
+                notice = if (activeRecurrence != null) {
+                    "Marcações e edições neste checklist ficam isoladas apenas nesta ocorrência."
+                } else {
+                    null
+                }
+            )
+
             OutlinedTextField(
                 value = location,
                 onValueChange = { location = it },
@@ -2296,6 +2346,10 @@ fun AppointmentEditorSheet(
                         recurrenceEndDate = recurrenceEndDate,
                         maxOccurrencesText = maxOccurrencesText
                     )
+                    val finalChecklistDrafts = buildFinalChecklistDrafts(
+                        draftChecklist = draftChecklist,
+                        pendingItemText = newChecklistItemText
+                    )
                     dispatchSaveWithScopeHandling { editScope ->
                         onSave(
                             existingAppointment?.id,
@@ -2310,7 +2364,8 @@ fun AppointmentEditorSheet(
                             link,
                             if (reminderModified) (reminderMinutesBefore ?: defaultReminderMinutes) else null,
                             recDraft,
-                            editScope
+                            editScope,
+                            finalChecklistDrafts
                         )
                     }
                 },
@@ -2746,3 +2801,234 @@ fun ProjectEditorSheet(
         )
     }
 }
+
+fun buildFinalChecklistDrafts(
+    draftChecklist: List<Triple<String?, String, Boolean>>,
+    pendingItemText: String
+): List<Triple<String?, String, Boolean>> {
+    val cleanPending = pendingItemText.trim()
+    return if (cleanPending.isNotEmpty()) {
+        draftChecklist + Triple<String?, String, Boolean>(null, cleanPending, false)
+    } else {
+        draftChecklist.toList()
+    }
+}
+
+@Composable
+fun ScheduleChecklistSectionCard(
+    items: SnapshotStateList<Triple<String?, String, Boolean>>,
+    newItemText: String,
+    onNewItemTextChange: (String) -> Unit,
+    notice: String? = null
+) {
+    val palette = LocalNexusPalette.current
+    var editingIndex by remember { mutableStateOf<Int?>(null) }
+    var editingTitle by remember { mutableStateOf("") }
+
+    val addPendingItem = {
+        val clean = newItemText.trim()
+        if (clean.isNotEmpty()) {
+            items.add(Triple(null, clean, false))
+            onNewItemTextChange("")
+        }
+    }
+
+    val doneCount = items.count { it.third }
+    val totalCount = items.size
+    val allDone = totalCount > 0 && doneCount == totalCount
+
+    NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Checklist",
+                style = MaterialTheme.typography.titleMedium,
+                color = palette.textPrimary
+            )
+            if (totalCount > 0) {
+                val pct = ((doneCount.toFloat() / totalCount.toFloat()) * 100f).toInt()
+                Text(
+                    text = if (allDone) "$doneCount/$totalCount · Concluído" else "$doneCount/$totalCount ($pct%)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (allDone) palette.positive else palette.textSecondary
+                )
+            }
+        }
+
+        if (totalCount > 0) {
+            Spacer(modifier = Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { doneCount.toFloat() / totalCount.toFloat() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp),
+                color = if (allDone) palette.positive else palette.highlight,
+                trackColor = palette.border
+            )
+        }
+
+        if (!notice.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = notice,
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.textSecondary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (items.isEmpty()) {
+            Text(
+                text = "Nenhum item no checklist.",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.textSecondary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        } else {
+            items.forEachIndexed { index, (itemId, itemTitle, isDone) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { items[index] = Triple(itemId, itemTitle, !isDone) },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = isDone,
+                        onCheckedChange = { checked ->
+                            items[index] = Triple(itemId, itemTitle, checked)
+                        }
+                    )
+                    Text(
+                        text = itemTitle,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None
+                        ),
+                        color = if (isDone) palette.textSecondary else palette.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            editingIndex = index
+                            editingTitle = itemTitle
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Edit,
+                            contentDescription = "Editar item",
+                            tint = palette.textSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(
+                        enabled = index > 0,
+                        onClick = {
+                            if (index > 0) {
+                                val current = items[index]
+                                items[index] = items[index - 1]
+                                items[index - 1] = current
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.KeyboardArrowUp,
+                            contentDescription = "Mover acima",
+                            tint = if (index > 0) palette.textSecondary else palette.border,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(
+                        enabled = index < items.lastIndex,
+                        onClick = {
+                            if (index < items.lastIndex) {
+                                val current = items[index]
+                                items[index] = items[index + 1]
+                                items[index + 1] = current
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.KeyboardArrowDown,
+                            contentDescription = "Mover abaixo",
+                            tint = if (index < items.lastIndex) palette.textSecondary else palette.border,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    IconButton(onClick = { items.removeAt(index) }) {
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteOutline,
+                            contentDescription = "Remover item",
+                            tint = palette.danger,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = newItemText,
+                onValueChange = onNewItemTextChange,
+                placeholder = { Text("Adicionar item ao checklist") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { addPendingItem() }),
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = addPendingItem) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = "Adicionar item",
+                    tint = palette.highlight
+                )
+            }
+        }
+    }
+
+    val activeEditIdx = editingIndex
+    if (activeEditIdx != null && activeEditIdx in items.indices) {
+        AlertDialog(
+            onDismissRequest = { editingIndex = null },
+            containerColor = palette.surfaceElevated,
+            title = { Text("Editar item do checklist", color = palette.textPrimary) },
+            text = {
+                OutlinedTextField(
+                    value = editingTitle,
+                    onValueChange = { editingTitle = it },
+                    label = { Text("Título do item") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = editingTitle.trim().isNotEmpty(),
+                    onClick = {
+                        val clean = editingTitle.trim()
+                        if (clean.isNotEmpty() && activeEditIdx in items.indices) {
+                            val current = items[activeEditIdx]
+                            items[activeEditIdx] = Triple(current.first, clean, current.third)
+                        }
+                        editingIndex = null
+                    }
+                ) {
+                    Text("Salvar", color = palette.highlight)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingIndex = null }) {
+                    Text("Cancelar", color = palette.textSecondary)
+                }
+            }
+        )
+    }
+}
+

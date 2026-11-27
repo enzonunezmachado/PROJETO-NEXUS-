@@ -1163,8 +1163,16 @@ private fun AllDayEventBandCard(
                             color = palette.accentNeon
                         )
                     }
+                    val allDayChecklistSuffix = if ((occurrence.kind == AgendaOccurrenceKind.APPOINTMENT ||
+                            occurrence.kind == AgendaOccurrenceKind.EVENT) &&
+                        occurrence.checklistTotalCount > 0
+                    ) {
+                        " · Checklist: ${occurrence.checklistDoneCount}/${occurrence.checklistTotalCount}"
+                    } else {
+                        ""
+                    }
                     Text(
-                        text = "Dia inteiro · ${occurrence.subtitle}",
+                        text = "Dia inteiro · ${occurrence.subtitle}$allDayChecklistSuffix",
                         style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
                         color = palette.textSecondary,
                         maxLines = 1,
@@ -1239,6 +1247,12 @@ private fun AgendaOccurrenceRow(
                         append(" · ")
                     }
                     append(occurrence.subtitle)
+                    if ((occurrence.kind == AgendaOccurrenceKind.APPOINTMENT ||
+                            occurrence.kind == AgendaOccurrenceKind.EVENT) &&
+                        occurrence.checklistTotalCount > 0
+                    ) {
+                        append(" · Checklist: ${occurrence.checklistDoneCount}/${occurrence.checklistTotalCount}")
+                    }
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

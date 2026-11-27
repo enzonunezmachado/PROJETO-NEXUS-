@@ -12,21 +12,20 @@
 | Requisito relacionado | `REQ-009` |
 | Estado | **IMPLEMENTADA NO CÓDIGO (Rodada 4) — aguardando compilação Gradle/CI e validação em dispositivo** |
 | Origem | `docs/02_ESPECIFICACAO_PRODUTO.md`, `docs/07_ESTADO_ATUAL.md`, `docs/10_ROADMAP.md`, `docs/12_RASTREABILIDADE.md`, `ADR-008`, `ADR-019` |
-| Escopo afetado | Compromissos, Eventos, Agenda, lembretes/notificações, Room `v7`, Backup `v8` (entrada estruturada `GAP-002` mantida fora desta rodada) |
-| Evidência prática | No povoamento de 26/11/2026, a corrida semanal “A Vida é um Corre”, quinta-feira às 20h, não podia ser registrada como compromisso recorrente nem criada no app. Na Rodada 4, o suporte nativo a séries recorrentes de Compromissos e Eventos foi implementado no aplicativo Android. |
+| Escopo afetado | Compromissos, Eventos, Agenda, lembretes/notificações, Room `v7→v8`, Backup `v8→v9` e Inbox `contractVersion = 1` (`GAP-002`) |
+| Evidência prática | No povoamento de 26/11/2026, a corrida semanal “A Vida é um Corre”, quinta-feira às 20h, não podia ser registrada como compromisso recorrente nem criada no app. Na Rodada 4, o suporte nativo foi implementado no app (`GAP-001`) e estendido à ponte `NEXUS-INBOX` (`GAP-002` + `GAP-004`). |
 
-### Implementação realizada na Rodada 4 (`ADR-019`)
-- **Modelo e migração (`Room v7`):** `TaskRecurrenceEntity` estendida com `RecurrenceDomain` (`TASK`, `APPOINTMENT`, `EVENT`), frequência `TaskRecurrenceFrequency.ANNUAL`, duração/allDay/local/links/snapshot de evento; `appointments` e `events` receberam `recurrenceId` (`SET_NULL`) + `occurrenceDateIso` + `UNIQUE(recurrenceId, occurrenceDateIso)`; `RecurrenceExceptionEntity` recebeu overrides de horário/descrição/local/link/allDay e referências `appointmentId`/`eventId` via `MIGRATION_6_7`.
+### Implementação realizada na Rodada 4 (`ADR-019` + `ADR-020`)
+- **Modelo e migrações (`Room v7` → `Room v8`):** `TaskRecurrenceEntity` estendida com `RecurrenceDomain` (`TASK`, `APPOINTMENT`, `EVENT`), frequência `TaskRecurrenceFrequency.ANNUAL`, duração/allDay/local/links/snapshot de evento, `templateSubtasksJson`, `checklistTemplateVersion` e `templateHistoryJson`; `appointments` e `events` receberam `recurrenceId` (`SET_NULL`) + `occurrenceDateIso` + `UNIQUE(recurrenceId, occurrenceDateIso)`; `RecurrenceExceptionEntity` recebeu overrides específicos; e `MIGRATION_7_8` adicionou `schedule_checklist_items` (`28ª` tabela).
 - **Motor, projeção e conflitos:** `RecurrenceEngine` calcula ocorrências de Compromissos e Eventos (incluindo `ANNUAL` com ajuste de 29/02) na zona `America/Sao_Paulo` e gera IDs virtuais determinísticos `"rec::<recurrenceId>::<occurrenceDateIso>"`. `AgendaEngine` e `EventsScreen` projetam séries virtuais na janela consultada (com detecção de conflitos virtual↔materializado na Agenda), sem pré-gerar centenas de linhas.
-- **Materialização sob demanda e escopos:** ao abrir/editar/excluir um item `"rec::..."`, `NexusRepository` materializa a ocorrência de forma idempotente ou aplica `RecurrenceExceptionEntity` (`SKIP` / `OVERRIDE`), suportando `"Só esta ocorrência"` vs `"Toda a série"` em `EntityEditors.kt` (`AppointmentEditorSheet` e `EventEditorSheet`).
+- **Materialização sob demanda e escopos:** ao abrir/editar/excluir um item `"rec::..."`, `NexusRepository` materializa a ocorrência de forma idempotente (populando checklist a partir do snapshot da data) ou aplica `RecurrenceExceptionEntity` (`SKIP` / `OVERRIDE`), suportando `"Só esta ocorrência"` vs `"Toda a série"` em `EntityEditors.kt` (`AppointmentEditorSheet` e `EventEditorSheet`).
 - **Proteção financeira em Eventos:** ocorrências virtuais e materializações sob demanda nunca criam obrigações `TransactionEntity`; edições/exclusões `"Toda a série"` preservam e desvinculam ocorrências já com `ATTENDED` ou ingresso `PAID` / transação `SETTLED`.
-- **Lembretes e Backup `v8`:** `NexusNotificationScheduler` e `NexusRepository` agendam/cancelam lembretes para ocorrências virtuais `rec::...`; `BackupModels.kt`, `BackupManager.kt` e `BackupMergeEngine.kt` evoluídos para `CURRENT_FORMAT_VERSION = 8`.
-- **Testes automatizados adicionados:** `NexusRodada4RecurrenceUnitTests.kt` (`5` `@Test`) e ampliação de `BackupIncrementalMergeUnitTests.kt` (`15` `@Test`).
+- **Lembretes e Backup `v9`:** `NexusNotificationScheduler` e `NexusRepository` agendam/cancelam lembretes para ocorrências virtuais `rec::...`; `BackupModels.kt`, `BackupManager.kt` e `BackupMergeEngine.kt` evoluídos para `CURRENT_FORMAT_VERSION = 9`.
+- **Testes automatizados adicionados:** `NexusRodada4RecurrenceUnitTests.kt` (`5` `@Test`), `OccurrenceChecklistIsolationUnitTests.kt` (`12` `@Test`) e ampliação de `BackupIncrementalMergeUnitTests.kt` (`15` `@Test`).
 
 ### Validação restante antes de encerrar em produção
 - Executar `:app:testDebugUnitTest :app:assembleDebug` no GitHub Actions ou Android Studio (container atual sem JDK/Gradle/SDK).
-- Validar `MIGRATION_6_7` em aparelho e testar criação de série semanal/anual de Compromisso e Evento, projeção na Agenda/Eventos, edição `"Só esta ocorrência"` vs `"Toda a série"`, cancelamento, ausência de transações fantasma, backup `v8` e lembretes após reinício.
-- **Dependência da ponte (`GAP-002`):** extensão do contrato `v1` da `NEXUS-INBOX` para criar regras recorrentes via JSON ficou explicitamente fora da Rodada 4.
+- Validar `MIGRATION_6_7` + `MIGRATION_7_8` em aparelho e testar criação de série semanal/anual de Compromisso e Evento, projeção na Agenda/Eventos, edição `"Só esta ocorrência"` vs `"Toda a série"`, cancelamento, checklists isolados, ausência de transações fantasma, backup `v9` e lembretes após reinício.
 
 ## 2. Inconsistência documental encontrada na ponte
 
@@ -45,11 +44,10 @@
 | Campo | Registro |
 |---|---|
 | ID | `GAP-002` |
-| Estado | **ABERTA — limitação conhecida do contrato `v1`** |
-| Arquivos | `StructuredInputModels.kt`, `StructuredInputProcessor.kt`, `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md` |
-| Problema | O contrato aceita `APPOINTMENT` e `EVENT` como registros únicos, mas não define série/regra/exceções recorrentes. Também não oferece uma operação para criar a regra de recorrência de uma nova tarefa. |
-| Consequência | A Secretária ChatGPT não consegue registrar fielmente compromissos/eventos recorrentes nem criar uma nova série de tarefas via Inbox; referenciar `recurrenceId` não cria a regra. |
-| Próximo passo | Agora que `GAP-001` e `GAP-003` foram implementados no aplicativo (`Room v7` / `Backup v8`), definir extensão/versão do contrato `v1`, DTOs, validação, preview, idempotência, conflitos e importação transacional para séries recorrentes. Não simular recorrência com ocorrências avulsas. |
+| Estado | **IMPLEMENTADA NO CÓDIGO (`ADR-020`) — aguardando compilação Gradle/CI e validação em dispositivo** |
+| Arquivos | `StructuredInputModels.kt`, `StructuredInputProcessor.kt`, `StructuredInputGateway.kt`, `StructuredInputUnitTests.kt`, `InboxBridgeUnitTests.kt`, `docs/14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`, `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` |
+| Implementação | Adicionado `StructuredEntityType.RECURRENCE` (`StructuredRecurrenceData` para `TASK`, `APPOINTMENT` e `EVENT`, incluindo `templateChecklist`, `effectiveFromDateIso` não retroativo, `weekdays`/`weekdaysMask` e sanitização anti-obrigação fantasma) e `checklist: List<StructuredSubtaskItem>` em `APPOINTMENT`/`EVENT`, preservando 100% de retrocompatibilidade do `contractVersion = 1` (`ignoreUnknownKeys = false`), preview dry-run e idempotência. |
+| Validação restante | Executar `:app:testDebugUnitTest` (incl. `StructuredInputUnitTests` `12` `@Test` e `InboxBridgeUnitTests` `5` `@Test`) no CI/Gradle e testar importação real de `RECURRENCE` + checklists via `NEXUS-INBOX` no dispositivo. |
 
 ## 4. Requisito transversal: checklist independente por ocorrência recorrente
 
@@ -82,7 +80,8 @@ Os itens abaixo já constam dos documentos oficiais e permanecem no inventário 
 | `REQ-012` | Listagem/criação direta de compromissos na ficha de Evento | PARCIALMENTE IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `12_RASTREABILIDADE.md` |
 | `REQ-014` | Campos avançados de Evento (`locationMode`, banner local, apresentação de taxas) | NÃO IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `10_ROADMAP.md` |
 | `REQ-026` | Backup ZIP com banners de Eventos | NÃO IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `10_ROADMAP.md` |
-| Build/dispositivo | Atualização in-place (`v6→v7`), `MIGRATION_6_7`, séries de Compromissos/Eventos, checklist independente entre ocorrências, `19` suítes (`145` `@Test`) e fluxos críticos em aparelho | NÃO VERIFICADO até execução Gradle/CI e validação em dispositivo | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
+| Restauração de Fábrica | Fluxo de **Restaurar banco de dados de fábrica** em Configurações (28 tabelas + re-seed padrão + preservação PAT/GitHub Inbox + `FactoryResetUnitTests` `10` `@Test`) | **IMPLEMENTADA NO CÓDIGO — aguardando Gradle/CI e validação em dispositivo** | `07_ESTADO_ATUAL.md`, `08_QUALIDADE_SEGURANCA.md`, `12_RASTREABILIDADE.md`, `ADR-020` |
+| Build/dispositivo | Atualização in-place (`v7→v8`), `MIGRATION_7_8`, `schedule_checklist_items`, versionamento não retroativo, `RECURRENCE` Inbox, Restauração de Fábrica, `Backup v9`, `21` suítes (`170` `@Test`) e fluxos críticos em aparelho | NÃO VERIFICADO até execução Gradle/CI e validação em dispositivo | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
 
 ## 6. Erros encontrados durante a Rodada 3 — histórico e resultado
 
@@ -143,16 +142,15 @@ A conclusão da Rodada 3 não encerra a manutenção da ponte. Segurança do tok
 
 ## 10. Novas lacunas e requisitos capturados para completude do domínio (2026-11-26)
 
-### GAP-004 — Checklist opcional em Compromissos e Eventos
+### GAP-004 — Checklist opcional e independente em Compromissos e Eventos (`REQ-029`)
 
 | Campo | Registro |
 |---|---|
-| Estado | **CAPTURADA — PLANEJADA para Rodada 4** |
+| Estado | **IMPLEMENTADA NO CÓDIGO (`ADR-020`) — aguardando compilação Gradle/CI e validação em dispositivo** |
 | Requisito | `REQ-029` |
-| Escopo | Compromissos, Eventos, Agenda, editores, recorrência, backup, entrada estruturada e histórico |
-| Necessidade | Compromissos e Eventos também podem exigir preparação/etapas próprias. O checklist deve ser opcional e pertencer ao registro correspondente, sem se confundir com tarefas vinculadas. |
-| Questões | Modelo reutilizável para séries; estado independente por ocorrência; mudanças no checklist-base; ocorrências passadas/futuras/exceções; ordem; conclusão parcial; backup/merge; importação; acessibilidade; evitar gravação antes de salvar o editor. |
-| Critério inicial | Um compromisso/evento pode ter checklist próprio; marcar itens em uma ocorrência não altera outra ocorrência nem tarefas relacionadas. |
+| Escopo | Compromissos, Eventos, Agenda, editores (`ScheduleChecklistSectionCard`), recorrência (`ChecklistTemplateSnapshot`), backup `v9`, entrada estruturada `contractVersion = 1` e histórico |
+| Implementação | Tabela `schedule_checklist_items` (`ScheduleChecklistItemEntity`, `MIGRATION_7_8` em `Room v8`), UI completa (criação, edição inline, exclusão, reordenação, barra/progresso em `AppointmentEditorSheet`, `EventEditorSheet`, `EventSummaryCard` e `AgendaScreen`, em modo rascunho nos editores), isolamento estrito `(recurrenceId, occurrenceDateIso)`, versionamento não retroativo (`checklistTemplateVersion` + `templateHistoryJson`) preservando ocorrências passadas e exceções, e suporte na Inbox (`APPOINTMENT.checklist`, `EVENT.checklist`, `RECURRENCE.templateChecklist`). |
+| Testes & Validação | `OccurrenceChecklistIsolationUnitTests.kt` (`12` `@Test`), `StructuredInputUnitTests.kt` (`12` `@Test`), `BackupIncrementalMergeUnitTests.kt` (`15` `@Test`). Aguardando `:app:testDebugUnitTest :app:assembleDebug` no CI e teste funcional em aparelho. |
 
 ### GAP-005 — Identidade contextual de Compromissos e Eventos
 
@@ -178,13 +176,12 @@ A conclusão da Rodada 3 não encerra a manutenção da ponte. Segurança do tok
 | Privacidade | Não publicar automaticamente backup completo ou dados pessoais/financeiros em excesso. Snapshot deve ser minimizado, escopado, privado e com controles de exclusão/retenção. |
 | Critério inicial | Após as Rodadas 4 e 5, o usuário pode solicitar sincronização de entrada e saída, ver prévia/resultado e manter o aplicativo funcional offline sem depender da integração. |
 
-### Guia operacional do ChatGPT — artefato `v1` consolidado
+### Guia operacional do ChatGPT — artefato `v1.1.0` atualizado
 
-Arquivo: `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` (versão `1.0.0`, consolidada em `2026-11-27`).
+Arquivo: `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` (versão `1.1.0`, atualizada em `2026-11-27`).
 
-O guia foi preenchido integralmente pelo Google AI Studio a partir dos DTOs (`StructuredInputModels.kt`), enums (`NexusEnums.kt`), processador (`StructuredInputProcessor.kt`), conector (`data/inbox/*`), entidades/seeds (`NexusDatabase.kt`/`NexusMigrations.kt`) e testes reais (`StructuredInputUnitTests.kt`, `InboxBridgeUnitTests.kt`) do contrato `v1`:
-- Documenta o modelo mental do NEXUS, árvore de decisão entre entidades, todas as 7 entidades suportadas, limites reais de atualização (`UPDATE`/`UPSERT` vs `CHECKLIST`), categorias padrão garantidas e regras financeiras (`ADR-006`, faturas e `EVENT`).
-- Inclui exemplos JSON completos verificados estaticamente contra o parser estrito `ignoreUnknownKeys = false` (criação simples, checklist inline, `CHECKLIST` standalone, compromisso, evento pago + despesa vinculada, objetivo + projeto + tarefa, lote completo multi-entidade e atualizações).
-- Separa explicitamente o que funciona hoje na Inbox `v1` do que existe apenas na UI do app pós-Rodada 4 (`GAP-001` e `GAP-003`, aguardando CI/dispositivo) e do que permanece fora do contrato `v1` (`GAP-002`, `GAP-004`, `GAP-005`, `GAP-006`), instruindo o ChatGPT a não simular recorrência nem inventar campos/ícones.
-- **Regra permanente de manutenção:** sempre que futuras rodadas implementarem novos recursos acessíveis ao ChatGPT (como `GAP-002`, `GAP-004`, `GAP-005` ou `GAP-006`) ou alterarem entidades/regras existentes, o guia deve ser atualizado no mesmo lote conforme `docs/09_GUIA_DESENVOLVIMENTO.md` Seção 5.C.
-- **Nota de verificação:** por ausência de JDK/Gradle neste container, a execução automatizada dos novos blocos de exemplo no `:app:testDebugUnitTest` ocorre após sincronização manual com o GitHub/CI.
+O guia foi atualizado conforme `docs/09_GUIA_DESENVOLVIMENTO.md` Seção 5.C a partir dos DTOs (`StructuredInputModels.kt`), enums (`NexusEnums.kt`), processador (`StructuredInputProcessor.kt`), conector (`data/inbox/*`), schema `Room v8` / `Backup v9` e suítes JUnit (`StructuredInputUnitTests.kt`, `InboxBridgeUnitTests.kt`, `OccurrenceChecklistIsolationUnitTests.kt`):
+- Documenta os `8` valores de `StructuredEntityType` (`TASK`, `CHECKLIST`, `APPOINTMENT`, `EVENT`, `RECURRENCE`, `PROJECT`, `PERSONAL_GOAL`, `TRANSACTION`), o novo DTO `StructuredRecurrenceData` (`templateChecklist` e `effectiveFromDateIso` não retroativo) e o campo opcional `checklist` em `APPOINTMENT`/`EVENT`.
+- Inclui novos exemplos JSON validados estaticamente contra `ignoreUnknownKeys = false` (`RECURRENCE` com `templateChecklist`, `APPOINTMENT` com `checklist` e evolução não retroativa via `UPSERT` + `effectiveFromDateIso`).
+- Separa com precisão o que agora é suportado no código/contrato `v1` (`GAP-001`..`GAP-004` — aguardando CI/dispositivo) do que permanece planejado fora do contrato (`GAP-005` ícones e `GAP-006` snapshot/catálogo bidirecional).
+- **Nota de verificação:** por ausência de JDK/Gradle neste container, a execução automatizada das `21` suítes (`170` `@Test`) em `:app:testDebugUnitTest` ocorre após sincronização manual com o GitHub/CI.

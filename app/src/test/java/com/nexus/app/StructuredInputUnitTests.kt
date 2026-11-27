@@ -10,6 +10,7 @@ import com.nexus.app.data.db.entity.InstallmentPurchaseEntity
 import com.nexus.app.data.db.entity.PersonalGoalEntity
 import com.nexus.app.data.db.entity.ProjectEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
 import com.nexus.app.data.db.entity.TaskRecurrenceEntity
@@ -29,12 +30,15 @@ import com.nexus.app.domain.model.GoalProgressMode
 import com.nexus.app.domain.model.GoalStatus
 import com.nexus.app.domain.model.PaymentMethod
 import com.nexus.app.domain.model.ProjectStatus
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.RecurrenceFrequency
 import com.nexus.app.domain.model.StatementStatus
 import com.nexus.app.domain.model.TaskPriority
+import com.nexus.app.domain.model.TaskRecurrenceFrequency
 import com.nexus.app.domain.model.TaskStatus
 import com.nexus.app.domain.model.TicketStatus
 import com.nexus.app.domain.model.TransactionType
+import com.nexus.app.domain.rules.RecurrenceEngine
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -57,6 +61,7 @@ class StructuredInputUnitTests {
         val tasks = mutableListOf<TaskEntity>()
         val subtasks = mutableListOf<SubtaskEntity>()
         val appointments = mutableListOf<AppointmentEntity>()
+        val scheduleChecklistItems = mutableListOf<ScheduleChecklistItemEntity>()
         val transactions = mutableListOf<TransactionEntity>()
         val taskRecurrences = mutableListOf<TaskRecurrenceEntity>()
         val creditCards = mutableListOf<CreditCardEntity>()
@@ -75,6 +80,8 @@ class StructuredInputUnitTests {
             val tasks: List<TaskEntity>,
             val subtasks: List<SubtaskEntity>,
             val appointments: List<AppointmentEntity>,
+            val scheduleChecklistItems: List<ScheduleChecklistItemEntity>,
+            val taskRecurrences: List<TaskRecurrenceEntity>,
             val transactions: List<TransactionEntity>,
             val auditHistory: List<AuditHistoryEntity>
         )
@@ -86,6 +93,8 @@ class StructuredInputUnitTests {
             tasks = tasks.toList(),
             subtasks = subtasks.toList(),
             appointments = appointments.toList(),
+            scheduleChecklistItems = scheduleChecklistItems.toList(),
+            taskRecurrences = taskRecurrences.toList(),
             transactions = transactions.toList(),
             auditHistory = auditHistory.toList()
         )
@@ -97,6 +106,8 @@ class StructuredInputUnitTests {
             tasks.apply { clear(); addAll(s.tasks) }
             subtasks.apply { clear(); addAll(s.subtasks) }
             appointments.apply { clear(); addAll(s.appointments) }
+            scheduleChecklistItems.apply { clear(); addAll(s.scheduleChecklistItems) }
+            taskRecurrences.apply { clear(); addAll(s.taskRecurrences) }
             transactions.apply { clear(); addAll(s.transactions) }
             auditHistory.apply { clear(); addAll(s.auditHistory) }
         }
@@ -170,6 +181,14 @@ class StructuredInputUnitTests {
             subtasks.filter { it.taskId == taskId }.sortedWith(compareBy<SubtaskEntity> { it.sortOrder }.thenBy { it.createdAt })
         override suspend fun getAppointmentById(id: String): AppointmentEntity? = appointments.firstOrNull { it.id == id }
         override suspend fun getEventById(id: String): EventEntity? = events.firstOrNull { it.id == id }
+        override suspend fun getTaskRecurrenceById(id: String): TaskRecurrenceEntity? =
+            taskRecurrences.firstOrNull { it.id == id }
+        override suspend fun getScheduleChecklistItemsByAppointmentId(appointmentId: String): List<ScheduleChecklistItemEntity> =
+            scheduleChecklistItems.filter { it.appointmentId == appointmentId }
+                .sortedWith(compareBy<ScheduleChecklistItemEntity> { it.sortOrder }.thenBy { it.createdAt })
+        override suspend fun getScheduleChecklistItemsByEventId(eventId: String): List<ScheduleChecklistItemEntity> =
+            scheduleChecklistItems.filter { it.eventId == eventId }
+                .sortedWith(compareBy<ScheduleChecklistItemEntity> { it.sortOrder }.thenBy { it.createdAt })
         override suspend fun getProjectById(id: String): ProjectEntity? = projects.firstOrNull { it.id == id }
         override suspend fun getPersonalGoalById(id: String): PersonalGoalEntity? = personalGoals.firstOrNull { it.id == id }
         override suspend fun getTransactionById(id: String): TransactionEntity? = transactions.firstOrNull { it.id == id }
@@ -231,6 +250,21 @@ class StructuredInputUnitTests {
             }
             events.removeAll { it.id == entity.id }
             events.add(entity)
+        }
+
+        override suspend fun insertTaskRecurrence(entity: TaskRecurrenceEntity) {
+            if (failOnEntityInsert == StructuredEntityType.RECURRENCE) {
+                throw IllegalStateException("Simulated SQLite insert failure for RECURRENCE")
+            }
+            taskRecurrences.removeAll { it.id == entity.id }
+            taskRecurrences.add(entity)
+        }
+
+        override suspend fun insertScheduleChecklistItems(entities: List<ScheduleChecklistItemEntity>) {
+            entities.forEach { entity ->
+                scheduleChecklistItems.removeAll { it.id == entity.id }
+                scheduleChecklistItems.add(entity)
+            }
         }
 
         override suspend fun insertProject(entity: ProjectEntity) {
@@ -1103,4 +1137,200 @@ class StructuredInputUnitTests {
         assertTrue(gateway.subtasks.isEmpty())
         assertTrue(gateway.auditHistory.isEmpty())
     }
+
+    @Test
+    fun `RECURRENCE CREATE and non-retroactive UPSERT work for TASK APPOINTMENT and EVENT with appointment event checklists`() = runBlocking {
+        val gateway = InMemoryStructuredInputGateway()
+        seedLocalContext(gateway)
+        val processor = StructuredInputProcessor(gateway) { t0 }
+
+        val createJson = """
+            {
+              "contractVersion": 1,
+              "source": "chatgpt_inbox",
+              "createdAt": $t0,
+              "operations": [
+                {
+                  "operationId": "op-rec-task",
+                  "entityType": "RECURRENCE",
+                  "action": "CREATE",
+                  "data": {
+                    "id": "rec-review-task",
+                    "domain": "TASK",
+                    "title": "Fechamento semanal",
+                    "frequency": "WEEKLY",
+                    "startDateIso": "2026-11-02",
+                    "hasDueTime": true,
+                    "startTime": "09:30",
+                    "templateChecklist": ["Conferir extratos", "Revisar faturas"]
+                  }
+                },
+                {
+                  "operationId": "op-rec-appt",
+                  "entityType": "RECURRENCE",
+                  "action": "CREATE",
+                  "data": {
+                    "id": "rec-medical-appt",
+                    "domain": "APPOINTMENT",
+                    "title": "Fisioterapia",
+                    "frequency": "SPECIFIC_WEEKDAYS",
+                    "weekdays": ["MON", "WED"],
+                    "startDateIso": "2026-11-02",
+                    "hasDueTime": true,
+                    "dueTimeMinutesOfDay": 840,
+                    "durationMillis": 3600000,
+                    "location": "Clínica Centro",
+                    "templateChecklist": ["Levar exame", "Água"]
+                  }
+                },
+                {
+                  "operationId": "op-rec-ev",
+                  "entityType": "RECURRENCE",
+                  "action": "CREATE",
+                  "data": {
+                    "id": "rec-meetup-ev",
+                    "domain": "EVENT",
+                    "title": "Meetup Mobile",
+                    "frequency": "MONTHLY",
+                    "startDateIso": "2026-11-15",
+                    "isAllDay": true,
+                    "locationName": "Hub Tech",
+                    "eventStatus": "CONFIRMED",
+                    "ticketStatus": "FREE",
+                    "templateChecklist": ["Credencial", "Notebook"]
+                  }
+                },
+                {
+                  "operationId": "op-appt-solo-chk",
+                  "entityType": "APPOINTMENT",
+                  "action": "CREATE",
+                  "data": {
+                    "id": "appt-with-chk",
+                    "title": "Consulta médica",
+                    "startAt": $t0,
+                    "endAt": ${t0 + 3600000L},
+                    "checklist": [
+                      { "id": "chk-a1", "title": "Pedido médico", "isCompleted": true, "sortOrder": 0 },
+                      { "id": "chk-a2", "title": "Carteirinha", "isCompleted": false, "sortOrder": 1 }
+                    ]
+                  }
+                },
+                {
+                  "operationId": "op-ev-solo-chk",
+                  "entityType": "EVENT",
+                  "action": "CREATE",
+                  "data": {
+                    "id": "ev-with-chk",
+                    "name": "Workshop",
+                    "startAt": $t0,
+                    "endAt": ${t0 + 7200000L},
+                    "checklist": [
+                      { "id": "chk-e1", "title": "Carregador", "isCompleted": false, "sortOrder": 0 }
+                    ]
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val preview = processor.previewEnvelopeJson(createJson)
+        assertEquals(5, preview.willCreateCount)
+        assertEquals(0, preview.rejectedCount)
+        assertTrue(gateway.taskRecurrences.isEmpty())
+        assertTrue(gateway.scheduleChecklistItems.isEmpty())
+
+        val result = processor.processJson(createJson, atomicBatch = true)
+        assertEquals(5, result.appliedCount)
+        assertEquals(0, result.rejectedCount)
+
+        val apptRec = gateway.getTaskRecurrenceById("rec-medical-appt")!!
+        assertEquals(RecurrenceDomain.APPOINTMENT, apptRec.domain)
+        assertEquals(TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS, apptRec.frequency)
+        assertEquals(840, apptRec.dueTimeMinutesOfDay)
+        assertEquals(1, apptRec.checklistTemplateVersion)
+        assertEquals(listOf("Levar exame", "Água"), RecurrenceEngine.deserializeChecklistTemplate(apptRec.checklistTemplateJson))
+
+        assertEquals(2, gateway.getScheduleChecklistItemsByAppointmentId("appt-with-chk").size)
+        assertEquals(1, gateway.getScheduleChecklistItemsByEventId("ev-with-chk").size)
+
+        // Update RECURRENCE template checklist -> increments version non-retroactively and preserves history
+        val updateRecJson = """
+            {
+              "contractVersion": 1,
+              "source": "chatgpt_inbox",
+              "createdAt": ${t0 + 1000L},
+              "operations": [
+                {
+                  "operationId": "op-rec-appt-upd",
+                  "entityType": "RECURRENCE",
+                  "action": "UPSERT",
+                  "data": {
+                    "id": "rec-medical-appt",
+                    "domain": "APPOINTMENT",
+                    "title": "Fisioterapia",
+                    "frequency": "SPECIFIC_WEEKDAYS",
+                    "weekdays": ["MON", "WED"],
+                    "startDateIso": "2026-11-02",
+                    "hasDueTime": true,
+                    "dueTimeMinutesOfDay": 840,
+                    "durationMillis": 3600000,
+                    "templateChecklist": ["Levar exame", "Água", "Toalha"],
+                    "effectiveFromDateIso": "2026-11-16"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val updRes = processor.processJson(updateRecJson, atomicBatch = true)
+        assertEquals(1, updRes.updatedCount)
+        val updatedRec = gateway.getTaskRecurrenceById("rec-medical-appt")!!
+        assertEquals(2, updatedRec.checklistTemplateVersion)
+        val (_, pastItems) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(updatedRec, "2026-11-09")
+        val (_, futureItems) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(updatedRec, "2026-11-16")
+        assertEquals(listOf("Levar exame", "Água"), pastItems)
+        assertEquals(listOf("Levar exame", "Água", "Toalha"), futureItems)
+    }
+
+    @Test
+    fun `invalid RECURRENCE payloads are rejected without mutating database`() = runBlocking {
+        val gateway = InMemoryStructuredInputGateway()
+        val processor = StructuredInputProcessor(gateway) { t0 }
+        val invalidJson = """
+            {
+              "contractVersion": 1,
+              "source": "chatgpt_inbox",
+              "createdAt": $t0,
+              "operations": [
+                {
+                  "operationId": "op-rec-bad-1",
+                  "entityType": "RECURRENCE",
+                  "action": "CREATE",
+                  "data": {
+                    "domain": "APPOINTMENT",
+                    "title": "Sem dias",
+                    "frequency": "SPECIFIC_WEEKDAYS",
+                    "startDateIso": "2026-11-02"
+                  }
+                },
+                {
+                  "operationId": "op-rec-bad-2",
+                  "entityType": "RECURRENCE",
+                  "action": "CREATE",
+                  "data": {
+                    "domain": "INVALID_DOMAIN",
+                    "title": "Domínio ruim",
+                    "frequency": "WEEKLY",
+                    "startDateIso": "2026-11-02"
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val res = processor.processJson(invalidJson, atomicBatch = false)
+        assertEquals(2, res.rejectedCount)
+        assertTrue(gateway.taskRecurrences.isEmpty())
+    }
 }
+

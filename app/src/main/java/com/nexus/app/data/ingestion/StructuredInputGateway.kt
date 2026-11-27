@@ -8,8 +8,10 @@ import com.nexus.app.data.db.entity.CreditCardStatementEntity
 import com.nexus.app.data.db.entity.EventEntity
 import com.nexus.app.data.db.entity.PersonalGoalEntity
 import com.nexus.app.data.db.entity.ProjectEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
+import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.data.db.entity.TransactionEntity
 import java.util.UUID
 
@@ -42,6 +44,9 @@ interface StructuredInputGateway {
     suspend fun getSubtasksByTaskId(taskId: String): List<SubtaskEntity>
     suspend fun getAppointmentById(id: String): AppointmentEntity?
     suspend fun getEventById(id: String): EventEntity?
+    suspend fun getTaskRecurrenceById(id: String): TaskRecurrenceEntity?
+    suspend fun getScheduleChecklistItemsByAppointmentId(appointmentId: String): List<ScheduleChecklistItemEntity>
+    suspend fun getScheduleChecklistItemsByEventId(eventId: String): List<ScheduleChecklistItemEntity>
     suspend fun getProjectById(id: String): ProjectEntity?
     suspend fun getPersonalGoalById(id: String): PersonalGoalEntity?
     suspend fun getTransactionById(id: String): TransactionEntity?
@@ -57,6 +62,8 @@ interface StructuredInputGateway {
     suspend fun insertSubtasks(entities: List<SubtaskEntity>)
     suspend fun insertAppointment(entity: AppointmentEntity)
     suspend fun insertEvent(entity: EventEntity)
+    suspend fun insertTaskRecurrence(entity: TaskRecurrenceEntity)
+    suspend fun insertScheduleChecklistItems(entities: List<ScheduleChecklistItemEntity>)
     suspend fun insertProject(entity: ProjectEntity)
     suspend fun insertPersonalGoal(entity: PersonalGoalEntity)
     suspend fun insertTransaction(entity: TransactionEntity)
@@ -157,6 +164,15 @@ internal class RoomStructuredInputGateway(
     override suspend fun getEventById(id: String): EventEntity? =
         database.eventDao().getById(id)
 
+    override suspend fun getTaskRecurrenceById(id: String): TaskRecurrenceEntity? =
+        database.taskRecurrenceDao().getById(id)
+
+    override suspend fun getScheduleChecklistItemsByAppointmentId(appointmentId: String): List<ScheduleChecklistItemEntity> =
+        database.scheduleChecklistItemDao().getByAppointmentId(appointmentId)
+
+    override suspend fun getScheduleChecklistItemsByEventId(eventId: String): List<ScheduleChecklistItemEntity> =
+        database.scheduleChecklistItemDao().getByEventId(eventId)
+
     override suspend fun getProjectById(id: String): ProjectEntity? =
         database.projectDao().getById(id)
 
@@ -205,6 +221,16 @@ internal class RoomStructuredInputGateway(
 
     override suspend fun insertEvent(entity: EventEntity) {
         database.eventDao().upsert(entity)
+    }
+
+    override suspend fun insertTaskRecurrence(entity: TaskRecurrenceEntity) {
+        database.taskRecurrenceDao().upsert(entity)
+    }
+
+    override suspend fun insertScheduleChecklistItems(entities: List<ScheduleChecklistItemEntity>) {
+        if (entities.isNotEmpty()) {
+            database.scheduleChecklistItemDao().insertAll(entities)
+        }
     }
 
     override suspend fun insertProject(entity: ProjectEntity) {

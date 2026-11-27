@@ -19,6 +19,7 @@ interface MarketQuoteStore {
     fun loadRecord(assetCode: String): PersistedMarketQuoteRecord?
     fun saveValidQuote(quote: MarketQuoteSnapshot)
     fun recordFailedAttempt(assetCode: String, attemptAtEpochMs: Long, errorMessage: String)
+    fun clearAll() {}
 }
 
 /**
@@ -70,6 +71,10 @@ class SharedPreferencesMarketQuoteStore(context: Context) : MarketQuoteStore {
         prefs.edit()
             .putString(keyFor(assetCode), json.encodeToString(updated))
             .apply()
+    }
+
+    override fun clearAll() {
+        prefs.edit().clear().apply()
     }
 
     companion object {

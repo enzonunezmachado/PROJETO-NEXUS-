@@ -1,14 +1,14 @@
-# 14 — Contrato de Entrada Estruturada (`v1`) e Ponte ChatGPT → NEXUS-INBOX (Rodada 3)
+# 14 — Contrato de Entrada Estruturada (`v1`) e Ponte ChatGPT → NEXUS-INBOX
 
-> **Estado atual (Rodada 3 — Ponte ChatGPT → NEXUS implementada):**
-> - Camada interna de ingestão em `app/src/main/java/com/nexus/app/data/ingestion/` (`StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt`) conectada ao `NexusRepository` (`previewStructuredInputJson`, `previewStructuredInputEnvelope`, `processStructuredInputJson`, `processStructuredInputEnvelope`) sobre o banco Room único `v6` (`NexusDatabase`) + `audit_history`.
+> **Estado atual (Contrato `v1` estendido com `RECURRENCE` e Checklists de Agenda):**
+> - Camada interna de ingestão em `app/src/main/java/com/nexus/app/data/ingestion/` (`StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt`) conectada ao `NexusRepository` (`previewStructuredInputJson`, `previewStructuredInputEnvelope`, `processStructuredInputJson`, `processStructuredInputEnvelope`) sobre o banco Room único `v8` (`NexusDatabase`) + `audit_history`.
 > - Conector externo somente-leitura **NEXUS-INBOX** em `app/src/main/java/com/nexus/app/data/inbox/` (`InboxModels.kt`, `InboxStores.kt`, `GitHubInboxRemoteDataSource.kt`, `InboxRepository.kt`, `InboxSyncWorker.kt`) integrado à UI em `MoreScreen` → `SubRoute.InboxBridge` (`NexusInboxScreen.kt`).
 
 ---
 
 ## 1. Propósito e Garantias Estruturais
 
-1. **Banco único (Zero segundo banco / Zero migração Room):** grava diretamente nas tabelas oficiais do `NexusDatabase` (`DATABASE_VERSION = 6`), mantendo 100% compatibilidade com `BackupManager` (`v7`), Widgets Glance, Lembretes (`rescheduleAllRemindersInternal`) e telas Compose.
+1. **Banco único (Zero segundo banco):** grava diretamente nas tabelas oficiais do `NexusDatabase` (`DATABASE_VERSION = 8`), mantendo 100% compatibilidade com `BackupManager` (`v9`), Widgets Glance, Lembretes (`rescheduleAllRemindersInternal`) e telas Compose.
 2. **Idempotência transacional via `audit_history`:** toda operação com desfecho persistido (`APPLIED`, `UPDATED` ou `CONFLICT_PRESERVED_LOCAL`) registra recibo em `audit_history` (`entityType = "STRUCTURED_INPUT_OP"`, `entityId = operationId`, `action = state.name`) dentro da **mesma transação `database.withTransaction`**. O resumo consolidado de cada importação confirmada da NEXUS-INBOX também é gravado em `audit_history` (`entityType = "INBOX_IMPORT_LOG"`).
 3. **Prévia Dry-Run fiel antes de qualquer gravação:** `previewJson` / `previewEnvelope` utilizam `PreviewOverlayGateway` em memória para simular o lote inteiro — inclusive dependências encadeadas no mesmo JSON (ex.: `TASK` → `CHECKLIST` ou `TASK` → `TRANSACTION`) — com **zero escritas** no SQLite até confirmação explícita do usuário.
 4. **Rollback seguro e reprocessamento limpo:** se houver falha SQLite ou aborto de lote atômico (`atomicBatch = true`), nenhuma entidade parcial nem recibo `APPLIED`/`UPDATED` permanece salvo — permitindo reenviar exatamente o mesmo `operationId` após corrigir a falha sem falso `DUPLICATE_IGNORED`.
@@ -126,8 +126,9 @@ Todos os DTOs em `StructuredInputModels.kt` espelham **exclusivamente colunas re
 | --- | --- | --- | --- | --- |
 | `TASK` | `StructuredTaskData` | `title` não vazio; `priority` (`TaskPriority`); `status` (`TaskStatus`); `subtasks` opcional com `title` não vazio | `projectId`, `categoryId`, `eventId`, `goalId`, `recurrenceId` | `id` (`tasks`) e par `(recurrenceId, occurrenceDateIso)` |
 | `CHECKLIST` | `StructuredChecklistData` | `taskId` não vazio; `items` ou `title` não vazio; cada item com `title` não vazio | `taskId` (`tasks`) | `id` de cada subtarefa na tabela `subtasks` |
-| `APPOINTMENT` | `StructuredAppointmentData` | `title` não vazio; `startAt > 0`; `endAt >= startAt` | `categoryId`, `eventId` | `id` (`appointments`) |
-| `EVENT` | `StructuredEventData` | `name` não vazio; `startAt > 0`; `endAt >= startAt`; quantidades/valores `>= 0`; enums `EventLifecycleStatus`, `TicketStatus`, `PaymentMethod` | `categoryId`, `creditCardId` | `id` (`events`) |
+| `APPOINTMENT` | `StructuredAppointmentData` | `title` não vazio; `startAt > 0`; `endAt >= startAt`; `checklist` opcional (`List<StructuredSubtaskItem>`) com `title` não vazio | `categoryId`, `eventId` | `id` (`appointments`) + `schedule_checklist_items` |
+| `EVENT` | `StructuredEventData` | `name` não vazio; `startAt > 0`; `endAt >= startAt`; quantidades/valores `>= 0`; enums `EventLifecycleStatus`, `TicketStatus`, `PaymentMethod`; `checklist` opcional (`List<StructuredSubtaskItem>`) com `title` não vazio | `categoryId`, `creditCardId` | `id` (`events`) + `schedule_checklist_items` |
+| `RECURRENCE` | `StructuredRecurrenceData` | `title` não vazio; `domain` (`TASK`, `APPOINTMENT`, `EVENT` — imutável em UPDATE/UPSERT); `frequency` (`TaskRecurrenceFrequency`, exige `weekdays`/`weekdaysMask` em `SPECIFIC_WEEKDAYS`); `startDateIso` (`YYYY-MM-DD`); `endDateIso >= startDateIso`; `customIntervalDays >= 1`; `maxOccurrences > 0`; `durationMillis >= 60000` p/ `APPOINTMENT`/`EVENT`; `templateChecklist` sem itens vazios; `effectiveFromDateIso` opcional (`YYYY-MM-DD`, versionamento não retroativo) | `projectId`, `categoryId`, `eventId`, `goalId`, `creditCardId` | `id` (`recurrences`) |
 | `PROJECT` | `StructuredProjectData` | `name` não vazio; enums `ProjectStatus`, `TaskPriority` | `goalId` (`personal_goals`) | `id` (`projects`) |
 | `PERSONAL_GOAL` | `StructuredPersonalGoalData` | `title` não vazio; `manualProgressPercent in 0..100`; enums `GoalStatus`, `GoalProgressMode` | `categoryId` | `id` (`personal_goals`) |
 | `TRANSACTION` | `StructuredTransactionData` | `description` não vazia; `amountCents > 0`; `occurredAt > 0`; enums `TransactionType`, `FinancialStatus`, `PaymentMethod`, `EventCostType?`; bounds de parcelas | `categoryId`, `projectId`, `eventId`, `taskId`, `creditCardId`, `statementId`, `installmentPurchaseId`, `recurringRuleId` | `id` (`transactions`), `(installmentPurchaseId, installmentNumber)`, `(recurringRuleId, occurrenceIndex)` |
@@ -166,14 +167,15 @@ A ponte **ChatGPT → NEXUS-INBOX → NEXUS Android** opera sobre este contrato 
 4. **Verificação periódica opcional em segundo plano:** `InboxSyncWorker` (`WorkManager`, intervalo mínimo de `15 min`, `NetworkType.CONNECTED`, bateria não baixa) apenas consulta e notifica (`NexusNotificationScheduler.showInboxPendingNotification`) com deep-link para `SubRoute.InboxBridge`, **jamais importando dados automaticamente sem confirmação**.
 
 
-## 6. Limitações atuais de recorrência
+## 6. Recorrência, Checklists de Agenda e Escopo Não Suportado
 
-O contrato `v1` não permite criar regras/séries recorrentes para `APPOINTMENT` ou `EVENT`. Também não disponibiliza uma operação `RECURRENCE` para criar uma regra nova de recorrência de tarefa; a presença de `recurrenceId` como referência opcional em dados de tarefa não cria a regra referenciada.
+### O que PASSOU a ser suportado no contrato `v1` (Implementado no código — aguardando CI/dispositivo):
+- **`entityType: "RECURRENCE"` (`GAP-002`):** permite criar (`CREATE`), atualizar (`UPDATE`) ou upsertar (`UPSERT`) regras recorrentes nativas em `recurrences` para `domain = "TASK"`, `"APPOINTMENT"` ou `"EVENT"`, com todas as frequências (`DAILY`, `SPECIFIC_WEEKDAYS`, `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `ANNUAL`, `CUSTOM_DAYS`), `templateChecklist` e `effectiveFromDateIso` (versionamento não retroativo de templates sem afetar ocorrências passadas ou já materializadas). Em `EVENT` recorrente, status `ATTENDED` e ingresso `PAID`/`BOUGHT`/`PARTIALLY_PAID` são sanitizados conforme a regra anti-obrigação fantasma.
+- **Checklists opcionais em `APPOINTMENT` e `EVENT` (`GAP-004` / `REQ-029`):** o campo opcional `checklist: List<StructuredSubtaskItem>` grava em `schedule_checklist_items` com suporte completo de prévia/dry-run e atualização incremental.
 
-Até a implementação e validação de `REQ-009` e a definição de uma extensão/versionamento compatível do contrato:
-- `APPOINTMENT` e `EVENT` recebidos pela Inbox representam registros únicos.
-- Não gerar múltiplas operações avulsas para simular uma série recorrente.
-- Não tratar texto em notas/checklists como compromisso real nem como agendamento de lembretes.
-- O ChatGPT deve explicar a limitação e preservar a intenção recorrente como pendência explícita, sem inventar ocorrências.
+### Limitações mantidas fora do contrato `v1`:
+- Não há operação específica para `RecurrenceExceptionEntity` isolado via JSON (exceções `SKIP`/`OVERRIDE` por ocorrência continuam sendo geridas no app).
+- Não há campo de ícone contextual (`GAP-005`) nem snapshot bidirecional automático (`GAP-006`).
+- Nunca simule recorrências criando múltiplos registros avulsos quando houver suporte direto em `RECURRENCE`.
 
-A especificação e o acompanhamento dessa lacuna estão em [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md) (`GAP-001` e `GAP-002`).
+O acompanhamento completo das lacunas e validações está em [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md) e no guia operacional [`16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`](./16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md).

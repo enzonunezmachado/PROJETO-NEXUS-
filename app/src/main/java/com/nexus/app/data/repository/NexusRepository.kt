@@ -50,6 +50,7 @@ import com.nexus.app.data.db.entity.RecurrenceExceptionEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
@@ -70,6 +71,8 @@ import com.nexus.app.domain.model.DatabaseTableCounts
 import com.nexus.app.domain.model.EventCostType
 import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.EventWithDetails
+import com.nexus.app.domain.model.FactoryResetExternalState
+import com.nexus.app.domain.model.FactoryResetSummary
 import com.nexus.app.domain.model.FinanceSummary
 import com.nexus.app.domain.model.FinancialStatus
 import com.nexus.app.domain.model.GlobalSearchResults
@@ -116,6 +119,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -165,7 +170,9 @@ class NexusRepository(
     private val goalProgressLogDao = database.goalProgressLogDao()
     private val taskRecurrenceDao = database.taskRecurrenceDao()
     private val recurrenceExceptionDao = database.recurrenceExceptionDao()
+    private val scheduleChecklistItemDao = database.scheduleChecklistItemDao()
     private val structuredInputProcessor = StructuredInputProcessor(RoomStructuredInputGateway(database))
+    private val databaseMutationMutex = Mutex()
 
     fun observeSettings(): Flow<SettingsEntity> =
         settingsDao.observeSettings().combine(flowOf(Unit)) { entity, _ ->
@@ -314,19 +321,25 @@ class NexusRepository(
             categoryDao.observeAll(),
             creditCardDao.observeAll(),
             observeTasksWithDetails(),
-            observeTransactionsWithDetails()
-        ) { events, categories, cards, tasks, transactions ->
+            combine(observeTransactionsWithDetails(), scheduleChecklistItemDao.observeAll()) { txs, checklists ->
+                txs to checklists
+            }
+        ) { events, categories, cards, tasks, (transactions, checklists) ->
             val catMap = categories.associateBy { it.id }
             val cardMap = cards.associateBy { it.id }
             val tasksByEvent = tasks.groupBy { it.task.eventId }
             val txByEvent = transactions.groupBy { it.transaction.eventId }
+            val checklistsByEvent = checklists.filter { it.eventId != null }.groupBy { it.eventId!! }
             events.map { event ->
+                val evChecklist = checklistsByEvent[event.id].orEmpty()
                 EventWithDetails(
                     event = event,
                     category = event.categoryId?.let { catMap[it] },
                     creditCard = event.creditCardId?.let { cardMap[it] },
                     linkedTasks = tasksByEvent[event.id].orEmpty(),
-                    linkedTransactions = txByEvent[event.id].orEmpty()
+                    linkedTransactions = txByEvent[event.id].orEmpty(),
+                    checklistDoneCount = evChecklist.count { it.isCompleted },
+                    checklistTotalCount = evChecklist.size
                 )
             }
         }
@@ -471,12 +484,13 @@ class NexusRepository(
         }
         val recurrenceFlow = combine(
             taskRecurrenceDao.observeAll(),
-            recurrenceExceptionDao.observeAll()
-        ) { recurrences, exceptions ->
-            recurrences to exceptions
+            recurrenceExceptionDao.observeAll(),
+            scheduleChecklistItemDao.observeAll()
+        ) { recurrences, exceptions, checklists ->
+            Triple(recurrences, exceptions, checklists)
         }
 
-        return combine(coreFlow, financeFlow, recurrenceFlow) { core, (transactions, statements, cards), (recurrences, exceptions) ->
+        return combine(coreFlow, financeFlow, recurrenceFlow) { core, (transactions, statements, cards), (recurrences, exceptions, checklists) ->
             @Suppress("UNCHECKED_CAST")
             AgendaSources(
                 appointments = core[0] as List<AppointmentEntity>,
@@ -488,7 +502,15 @@ class NexusRepository(
                 statements = statements,
                 creditCards = cards,
                 taskRecurrences = recurrences,
-                recurrenceExceptions = exceptions
+                recurrenceExceptions = exceptions,
+                checklistCountsByAppointmentId = checklists
+                    .filter { it.appointmentId != null }
+                    .groupBy { it.appointmentId!! }
+                    .mapValues { (_, items) -> items.count { it.isCompleted } to items.size },
+                checklistCountsByEventId = checklists
+                    .filter { it.eventId != null }
+                    .groupBy { it.eventId!! }
+                    .mapValues { (_, items) -> items.count { it.isCompleted } to items.size }
             )
         }
     }
@@ -569,7 +591,9 @@ class NexusRepository(
                                 event = rec.eventId?.let { eventMap[it] },
                                 recurrenceId = rec.id,
                                 occurrenceDateIso = anchorIso,
-                                isVirtualRecurrence = true
+                                isVirtualRecurrence = true,
+                                checklistDoneCount = occ.checklistDoneCount,
+                                checklistTotalCount = occ.checklistTotalCount
                             )
                         } else {
                             val appt = apptMap[occ.sourceId] ?: return@mapNotNull null
@@ -581,7 +605,9 @@ class NexusRepository(
                                 event = appt.eventId?.let { eventMap[it] },
                                 recurrenceId = appt.recurrenceId,
                                 occurrenceDateIso = appt.occurrenceDateIso,
-                                isVirtualRecurrence = false
+                                isVirtualRecurrence = false,
+                                checklistDoneCount = occ.checklistDoneCount,
+                                checklistTotalCount = occ.checklistTotalCount
                             )
                         }
                     }
@@ -643,7 +669,9 @@ class NexusRepository(
                                 recurrenceId = rec.id,
                                 occurrenceDateIso = anchorIso,
                                 seriesOccurrenceDateIso = anchorIso,
-                                isVirtualRecurrence = true
+                                isVirtualRecurrence = true,
+                                checklistDoneCount = occ.checklistDoneCount,
+                                checklistTotalCount = occ.checklistTotalCount
                             )
                         } else {
                             val ev = eventMap[occ.sourceId] ?: return@mapNotNull null
@@ -657,7 +685,9 @@ class NexusRepository(
                                 recurrenceId = ev.recurrenceId,
                                 occurrenceDateIso = ev.occurrenceDateIso,
                                 seriesOccurrenceDateIso = occ.seriesOccurrenceDateIso,
-                                isVirtualRecurrence = false
+                                isVirtualRecurrence = false,
+                                checklistDoneCount = occ.checklistDoneCount,
+                                checklistTotalCount = occ.checklistTotalCount
                             )
                         }
                     }
@@ -787,7 +817,9 @@ class NexusRepository(
                         category = item.category,
                         creditCard = null,
                         linkedTasks = emptyList(),
-                        linkedTransactions = emptyList()
+                        linkedTransactions = emptyList(),
+                        checklistDoneCount = item.checklistDoneCount,
+                        checklistTotalCount = item.checklistTotalCount
                     )
                 }
             val upcomingEvents = (materializedUpcomingEvents + virtualUpcomingEvents)
@@ -1048,7 +1080,8 @@ class NexusRepository(
                 goalMilestoneDao.observeCount(),
                 goalProgressLogDao.observeCount(),
                 taskRecurrenceDao.observeCount(),
-                recurrenceExceptionDao.observeCount()
+                recurrenceExceptionDao.observeCount(),
+                scheduleChecklistItemDao.observeCount()
             )
         ) { it }
 
@@ -1080,7 +1113,8 @@ class NexusRepository(
                 goalMilestones = c[3],
                 goalProgressLogs = c[4],
                 recurrences = c[5],
-                recurrenceExceptions = c[6]
+                recurrenceExceptions = c[6],
+                scheduleChecklistItems = c[7]
             )
         }
     }
@@ -1446,11 +1480,18 @@ class NexusRepository(
                     ?: DateTimeUtils.todayLocalDate()
                 val initialTemplateTitles = if (subtaskDrafts != null) {
                     subtaskDrafts.mapNotNull { (_, subTitle, _) -> subTitle.trim().takeIf(String::isNotBlank) }
+                } else if (recurrenceDraft.templateSubtasks != null) {
+                    recurrenceDraft.templateSubtasks.mapNotNull { it.trim().takeIf(String::isNotBlank) }
                 } else if (existing != null) {
                     subtaskDao.getByTaskId(existing.id).sortedBy { it.sortOrder }.map { it.title }
                 } else {
                     emptyList()
                 }
+                val (tmplSubJson, tmplVersion, tmplHistoryJson) = RecurrenceEngine.buildUpdatedChecklistTemplate(
+                    existing = null,
+                    newTitles = initialTemplateTitles,
+                    effectiveFromDateIso = startDate.toString()
+                )
                 val newRec = TaskRecurrenceEntity(
                     id = newRecId,
                     title = cleanTitle,
@@ -1472,7 +1513,9 @@ class NexusRepository(
                     maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
                     isActive = true,
                     domain = RecurrenceDomain.TASK,
-                    templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(initialTemplateTitles),
+                    templateSubtasksJson = tmplSubJson,
+                    checklistTemplateVersion = tmplVersion,
+                    templateHistoryJson = tmplHistoryJson,
                     createdAt = now,
                     updatedAt = now
                 )
@@ -1533,9 +1576,19 @@ class NexusRepository(
                         val resolvedReminderPref = reminderMinutesBefore ?: existingRecurrence.reminderMinutesBefore
                         val resolvedTemplateTitles = if (subtaskDrafts != null) {
                             subtaskDrafts.mapNotNull { (_, subTitle, _) -> subTitle.trim().takeIf(String::isNotBlank) }
+                        } else if (recurrenceDraft.templateSubtasks != null) {
+                            recurrenceDraft.templateSubtasks.mapNotNull { it.trim().takeIf(String::isNotBlank) }
                         } else {
                             RecurrenceEngine.deserializeChecklistTemplate(existingRecurrence.templateSubtasksJson)
                         }
+                        val effectiveFromIso = existing.occurrenceDateIso
+                            ?: dueAt?.let { DateTimeUtils.epochToLocalDate(it).toString() }
+                            ?: DateTimeUtils.todayLocalDate().toString()
+                        val (tmplSubJson, tmplVersion, tmplHistoryJson) = RecurrenceEngine.buildUpdatedChecklistTemplate(
+                            existing = existingRecurrence,
+                            newTitles = resolvedTemplateTitles,
+                            effectiveFromDateIso = effectiveFromIso
+                        )
                         val updatedRec = existingRecurrence.copy(
                             title = cleanTitle,
                             description = description.trim(),
@@ -1554,7 +1607,9 @@ class NexusRepository(
                             startDateIso = recurrenceDraft.startDateIso.ifBlank { existingRecurrence.startDateIso },
                             endDateIso = recurrenceDraft.endDateIso?.takeIf { it.isNotBlank() },
                             maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
-                            templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(resolvedTemplateTitles),
+                            templateSubtasksJson = tmplSubJson,
+                            checklistTemplateVersion = tmplVersion,
+                            templateHistoryJson = tmplHistoryJson,
                             updatedAt = now
                         )
                         seriesTemplateToUpsert = updatedRec
@@ -1854,7 +1909,10 @@ class NexusRepository(
             createdAt = now,
             updatedAt = now
         )
-        val templateTitles = RecurrenceEngine.deserializeChecklistTemplate(recurrence.templateSubtasksJson)
+        val (_, templateTitles) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(
+            recurrence = recurrence,
+            occurrenceDateIso = occurrenceDateIso
+        )
         val rowId = database.withTransaction {
             val insertedId = taskDao.insertIgnore(candidate)
             if (insertedId != -1L) {
@@ -1950,7 +2008,10 @@ class NexusRepository(
         val rowId = taskDao.insertIgnore(nextTask)
         if (rowId == -1L) return null
 
-        val templateTitles = RecurrenceEngine.deserializeChecklistTemplate(recurrence.templateSubtasksJson)
+        val (_, templateTitles) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(
+            recurrence = recurrence,
+            occurrenceDateIso = nextIso
+        )
         if (templateTitles.isNotEmpty()) {
             val clonedSubs = templateTitles.mapIndexed { index, subTitle ->
                 SubtaskEntity(
@@ -1973,6 +2034,193 @@ class NexusRepository(
 
     // --- Compromissos ---
 
+    fun observeAppointmentChecklist(appointmentId: String): Flow<List<ScheduleChecklistItemEntity>> {
+        val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(appointmentId)
+        if (virtualPair == null) {
+            return scheduleChecklistItemDao.observeByAppointmentId(appointmentId)
+        }
+        return combine(
+            appointmentDao.observeAll(),
+            taskRecurrenceDao.observeAll(),
+            scheduleChecklistItemDao.observeAll()
+        ) { appointments, recurrences, items ->
+            val materialized = appointments.firstOrNull {
+                it.recurrenceId == virtualPair.first && it.occurrenceDateIso == virtualPair.second
+            }
+            if (materialized != null) {
+                items.filter { it.appointmentId == materialized.id }
+                    .sortedWith(compareBy<ScheduleChecklistItemEntity>({ it.sortOrder }, { it.createdAt }))
+            } else {
+                val rec = recurrences.firstOrNull { it.id == virtualPair.first } ?: return@combine emptyList()
+                val (version, titles) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(rec, virtualPair.second)
+                titles.mapIndexed { idx, title ->
+                    ScheduleChecklistItemEntity(
+                        id = "virtual::${virtualPair.first}::${virtualPair.second}::$idx",
+                        appointmentId = appointmentId,
+                        eventId = null,
+                        title = title,
+                        isCompleted = false,
+                        sortOrder = idx,
+                        templateVersion = version,
+                        createdAt = rec.createdAt,
+                        updatedAt = rec.updatedAt
+                    )
+                }
+            }
+        }
+    }
+
+    fun observeEventChecklist(eventId: String): Flow<List<ScheduleChecklistItemEntity>> {
+        val virtualPair = RecurrenceEngine.parseVirtualOccurrenceId(eventId)
+        if (virtualPair == null) {
+            return scheduleChecklistItemDao.observeByEventId(eventId)
+        }
+        return combine(
+            eventDao.observeAll(),
+            taskRecurrenceDao.observeAll(),
+            scheduleChecklistItemDao.observeAll()
+        ) { events, recurrences, items ->
+            val materialized = events.firstOrNull {
+                it.recurrenceId == virtualPair.first && it.occurrenceDateIso == virtualPair.second
+            }
+            if (materialized != null) {
+                items.filter { it.eventId == materialized.id }
+                    .sortedWith(compareBy<ScheduleChecklistItemEntity>({ it.sortOrder }, { it.createdAt }))
+            } else {
+                val rec = recurrences.firstOrNull { it.id == virtualPair.first } ?: return@combine emptyList()
+                val (version, titles) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(rec, virtualPair.second)
+                titles.mapIndexed { idx, title ->
+                    ScheduleChecklistItemEntity(
+                        id = "virtual::${virtualPair.first}::${virtualPair.second}::$idx",
+                        appointmentId = null,
+                        eventId = eventId,
+                        title = title,
+                        isCompleted = false,
+                        sortOrder = idx,
+                        templateVersion = version,
+                        createdAt = rec.createdAt,
+                        updatedAt = rec.updatedAt
+                    )
+                }
+            }
+        }
+    }
+
+    suspend fun addScheduleChecklistItem(
+        appointmentId: String? = null,
+        eventId: String? = null,
+        title: String
+    ): Result<String> = safeDbCall("Checklist") {
+        val cleanTitle = title.trim()
+        require(cleanTitle.isNotEmpty()) { "O título do item de checklist é obrigatório." }
+        require((appointmentId != null) xor (eventId != null)) {
+            "Informe exatamente appointmentId ou eventId."
+        }
+        val now = DateTimeUtils.nowEpochMillis()
+        val resolvedApptId = appointmentId?.let { raw ->
+            val v = RecurrenceEngine.parseVirtualOccurrenceId(raw)
+            if (v != null) openOrMaterializeRecurringAppointmentOccurrence(v.first, v.second).getOrThrow() else raw
+        }
+        val resolvedEventId = eventId?.let { raw ->
+            val v = RecurrenceEngine.parseVirtualOccurrenceId(raw)
+            if (v != null) openOrMaterializeRecurringEventOccurrence(v.first, v.second).getOrThrow() else raw
+        }
+        val existing = when {
+            resolvedApptId != null -> scheduleChecklistItemDao.getByAppointmentId(resolvedApptId)
+            resolvedEventId != null -> scheduleChecklistItemDao.getByEventId(resolvedEventId)
+            else -> emptyList()
+        }
+        val nextSortOrder = (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
+        val itemId = UUID.randomUUID().toString()
+        scheduleChecklistItemDao.upsert(
+            ScheduleChecklistItemEntity(
+                id = itemId,
+                appointmentId = resolvedApptId,
+                eventId = resolvedEventId,
+                title = cleanTitle,
+                isCompleted = false,
+                sortOrder = nextSortOrder,
+                templateVersion = existing.firstOrNull()?.templateVersion ?: 1,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        notifyWidgetsChanged()
+        itemId
+    }
+
+    suspend fun toggleScheduleChecklistItem(item: ScheduleChecklistItemEntity): Result<Unit> =
+        safeDbCall("Checklist") {
+            val persisted = scheduleChecklistItemDao.getById(item.id) ?: item
+            scheduleChecklistItemDao.upsert(
+                persisted.copy(
+                    isCompleted = !persisted.isCompleted,
+                    updatedAt = DateTimeUtils.nowEpochMillis()
+                )
+            )
+            notifyWidgetsChanged()
+        }
+
+    suspend fun updateScheduleChecklistItemTitle(itemId: String, title: String): Result<Unit> =
+        safeDbCall("Checklist") {
+            val cleanTitle = title.trim()
+            require(cleanTitle.isNotEmpty()) { "O título do item de checklist é obrigatório." }
+            val existing = scheduleChecklistItemDao.getById(itemId)
+                ?: throw IllegalStateException("Item de checklist não encontrado.")
+            scheduleChecklistItemDao.update(
+                existing.copy(
+                    title = cleanTitle,
+                    updatedAt = DateTimeUtils.nowEpochMillis()
+                )
+            )
+        }
+
+    suspend fun deleteScheduleChecklistItem(itemId: String): Result<Unit> =
+        safeDbCall("Checklist") {
+            val existing = scheduleChecklistItemDao.getById(itemId) ?: return@safeDbCall
+            val now = DateTimeUtils.nowEpochMillis()
+            database.withTransaction {
+                scheduleChecklistItemDao.deleteById(itemId)
+                val remaining = when {
+                    existing.appointmentId != null -> scheduleChecklistItemDao.getByAppointmentId(existing.appointmentId)
+                    existing.eventId != null -> scheduleChecklistItemDao.getByEventId(existing.eventId)
+                    else -> emptyList()
+                }.sortedWith(compareBy<ScheduleChecklistItemEntity>({ it.sortOrder }, { it.createdAt }))
+                if (remaining.isNotEmpty()) {
+                    scheduleChecklistItemDao.insertAll(
+                        remaining.mapIndexed { idx, row ->
+                            if (row.sortOrder != idx) row.copy(sortOrder = idx, updatedAt = now) else row
+                        }
+                    )
+                }
+            }
+            notifyWidgetsChanged()
+        }
+
+    suspend fun moveScheduleChecklistItem(itemId: String, directionDelta: Int): Result<Unit> =
+        safeDbCall("Checklist") {
+            val target = scheduleChecklistItemDao.getById(itemId) ?: return@safeDbCall
+            val siblings = when {
+                target.appointmentId != null -> scheduleChecklistItemDao.getByAppointmentId(target.appointmentId)
+                target.eventId != null -> scheduleChecklistItemDao.getByEventId(target.eventId)
+                else -> emptyList()
+            }.sortedWith(compareBy<ScheduleChecklistItemEntity>({ it.sortOrder }, { it.createdAt })).toMutableList()
+            val currentIdx = siblings.indexOfFirst { it.id == itemId }
+            if (currentIdx == -1) return@safeDbCall
+            val targetIdx = (currentIdx + directionDelta).coerceIn(0, siblings.lastIndex)
+            if (targetIdx == currentIdx) return@safeDbCall
+            val moved = siblings.removeAt(currentIdx)
+            siblings.add(targetIdx, moved)
+            val now = DateTimeUtils.nowEpochMillis()
+            database.withTransaction {
+                scheduleChecklistItemDao.insertAll(
+                    siblings.mapIndexed { idx, row ->
+                        row.copy(sortOrder = idx, updatedAt = now)
+                    }
+                )
+            }
+        }
+
     suspend fun saveAppointment(
         id: String? = null,
         title: String,
@@ -1986,7 +2234,8 @@ class NexusRepository(
         link: String = "",
         reminderMinutesBefore: Int? = null,
         recurrenceDraft: TaskRecurrenceDraft? = null,
-        recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY
+        recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY,
+        checklistDrafts: List<Triple<String?, String, Boolean>>? = null
     ): Result<String> = safeDbCall("Agenda") {
         val cleanTitle = title.trim()
         require(cleanTitle.isNotEmpty()) { "O título do compromisso é obrigatório." }
@@ -2034,6 +2283,20 @@ class NexusRepository(
                 }
                 val startDate = RecurrenceEngine.parseLocalDateOrNull(startDateIso)
                     ?: DateTimeUtils.toLocalDate(startAt)
+                val initialTemplateTitles = if (checklistDrafts != null) {
+                    checklistDrafts.mapNotNull { (_, itemTitle, _) -> itemTitle.trim().takeIf(String::isNotBlank) }
+                } else if (recurrenceDraft.templateSubtasks != null) {
+                    recurrenceDraft.templateSubtasks.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+                } else if (existing != null) {
+                    scheduleChecklistItemDao.getByAppointmentId(existing.id).sortedBy { it.sortOrder }.map { it.title }
+                } else {
+                    emptyList()
+                }
+                val (tmplSubJson, tmplVersion, tmplHistoryJson) = RecurrenceEngine.buildUpdatedChecklistTemplate(
+                    existing = null,
+                    newTitles = initialTemplateTitles,
+                    effectiveFromDateIso = startDate.toString()
+                )
                 val newRec = TaskRecurrenceEntity(
                     id = newRecId,
                     title = cleanTitle,
@@ -2053,6 +2316,9 @@ class NexusRepository(
                     maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
                     isActive = true,
                     domain = RecurrenceDomain.APPOINTMENT,
+                    templateSubtasksJson = tmplSubJson,
+                    checklistTemplateVersion = tmplVersion,
+                    templateHistoryJson = tmplHistoryJson,
                     isAllDay = isAllDay,
                     durationMillis = durationMillis,
                     location = cleanLocation,
@@ -2137,6 +2403,19 @@ class NexusRepository(
                         finalOccurrenceDateIso = null
                     } else {
                         val resolvedReminderPref = reminderMinutesBefore ?: existingRecurrence.reminderMinutesBefore
+                        val resolvedTemplateTitles = if (checklistDrafts != null) {
+                            checklistDrafts.mapNotNull { (_, itemTitle, _) -> itemTitle.trim().takeIf(String::isNotBlank) }
+                        } else if (recurrenceDraft.templateSubtasks != null) {
+                            recurrenceDraft.templateSubtasks.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+                        } else {
+                            RecurrenceEngine.deserializeChecklistTemplate(existingRecurrence.templateSubtasksJson)
+                        }
+                        val effectiveFromIso = existingOccurrenceIso ?: DateTimeUtils.toLocalDate(startAt).toString()
+                        val (tmplSubJson, tmplVersion, tmplHistoryJson) = RecurrenceEngine.buildUpdatedChecklistTemplate(
+                            existing = existingRecurrence,
+                            newTitles = resolvedTemplateTitles,
+                            effectiveFromDateIso = effectiveFromIso
+                        )
                         val updatedRec = existingRecurrence.copy(
                             title = cleanTitle,
                             description = cleanDescription,
@@ -2151,6 +2430,9 @@ class NexusRepository(
                             startDateIso = recurrenceDraft.startDateIso.ifBlank { existingRecurrence.startDateIso },
                             endDateIso = recurrenceDraft.endDateIso?.takeIf { it.isNotBlank() },
                             maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
+                            templateSubtasksJson = tmplSubJson,
+                            checklistTemplateVersion = tmplVersion,
+                            templateHistoryJson = tmplHistoryJson,
                             isAllDay = isAllDay,
                             durationMillis = durationMillis,
                             location = cleanLocation,
@@ -2189,6 +2471,7 @@ class NexusRepository(
                                 } else {
                                     nextLinkedStart + durationMillis
                                 }
+                                // Nunca sobrescreve checklists já materializados das ocorrências irmãs
                                 linked.copy(
                                     title = cleanTitle,
                                     description = cleanDescription,
@@ -2240,6 +2523,7 @@ class NexusRepository(
         database.withTransaction {
             if (unlinkRecurrenceId != null) {
                 apptsToDeleteIds.forEach { delId ->
+                    scheduleChecklistItemDao.deleteByAppointmentId(delId)
                     appointmentDao.deleteById(delId)
                 }
                 recurrenceExceptionDao.deleteByRecurrenceId(unlinkRecurrenceId)
@@ -2255,6 +2539,59 @@ class NexusRepository(
                     ?.let { recurrenceExceptionDao.deleteById(it.id) }
             }
             exceptionToUpsert?.let { recurrenceExceptionDao.upsert(it) }
+
+            if (checklistDrafts != null) {
+                val existingItems = scheduleChecklistItemDao.getByAppointmentId(appointmentId).associateBy { it.id }
+                val fallbackVersion = existingItems.values.firstOrNull()?.templateVersion
+                    ?: seriesTemplateToUpsert?.checklistTemplateVersion
+                    ?: existingRecurrence?.checklistTemplateVersion
+                    ?: 1
+                val newEntities = checklistDrafts.mapIndexedNotNull { index, (itemId, itemTitle, isDone) ->
+                    val cleanItem = itemTitle.trim()
+                    if (cleanItem.isEmpty()) return@mapIndexedNotNull null
+                    val old = itemId?.let { existingItems[it] }
+                    ScheduleChecklistItemEntity(
+                        id = old?.id ?: UUID.randomUUID().toString(),
+                        appointmentId = appointmentId,
+                        eventId = null,
+                        title = cleanItem,
+                        isCompleted = isDone,
+                        sortOrder = index,
+                        templateVersion = old?.templateVersion ?: fallbackVersion,
+                        createdAt = old?.createdAt ?: now,
+                        updatedAt = now
+                    )
+                }
+                scheduleChecklistItemDao.deleteByAppointmentId(appointmentId)
+                if (newEntities.isNotEmpty()) {
+                    scheduleChecklistItemDao.insertAll(newEntities)
+                }
+            } else if (existing == null && finalRecurrenceId != null && finalOccurrenceDateIso != null) {
+                val targetRec = seriesTemplateToUpsert ?: existingRecurrence
+                if (targetRec != null) {
+                    val (resolvedVer, tmplTitles) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(
+                        targetRec,
+                        finalOccurrenceDateIso
+                    )
+                    if (tmplTitles.isNotEmpty()) {
+                        scheduleChecklistItemDao.insertAll(
+                            tmplTitles.mapIndexed { index, itemTitle ->
+                                ScheduleChecklistItemEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    appointmentId = appointmentId,
+                                    eventId = null,
+                                    title = itemTitle,
+                                    isCompleted = false,
+                                    sortOrder = index,
+                                    templateVersion = resolvedVer,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            }
+                        )
+                    }
+                }
+            }
         }
         syncAppointmentReminder(appointment, reminderMinutesBefore ?: recurrenceReminderMinutes)
         propagateSeriesAppointments.forEach { syncAppointmentReminder(it, overrideMinutesBefore = recurrenceReminderMinutes) }
@@ -2342,10 +2679,33 @@ class NexusRepository(
             createdAt = now,
             updatedAt = now
         )
+        val (resolvedTemplateVersion, templateTitles) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(
+            recurrence = recurrence,
+            occurrenceDateIso = occurrenceDateIso
+        )
         val rowId = database.withTransaction {
             val insertedId = appointmentDao.insertIgnore(candidate)
-            if (insertedId != -1L && exception != null) {
-                recurrenceExceptionDao.upsert(exception.copy(appointmentId = candidate.id, updatedAt = now))
+            if (insertedId != -1L) {
+                if (templateTitles.isNotEmpty()) {
+                    scheduleChecklistItemDao.insertAll(
+                        templateTitles.mapIndexed { index, itemTitle ->
+                            ScheduleChecklistItemEntity(
+                                id = UUID.randomUUID().toString(),
+                                appointmentId = candidate.id,
+                                eventId = null,
+                                title = itemTitle,
+                                isCompleted = false,
+                                sortOrder = index,
+                                templateVersion = resolvedTemplateVersion,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        }
+                    )
+                }
+                if (exception != null) {
+                    recurrenceExceptionDao.upsert(exception.copy(appointmentId = candidate.id, updatedAt = now))
+                }
             }
             insertedId
         }
@@ -2393,6 +2753,7 @@ class NexusRepository(
                 }
                 cancelAndDeleteVirtualRemindersForRecurrence(ReminderSourceType.APPOINTMENT, recId)
                 database.withTransaction {
+                    seriesAppts.forEach { scheduleChecklistItemDao.deleteByAppointmentId(it.id) }
                     appointmentDao.deleteByRecurrenceId(recId)
                     recurrenceExceptionDao.deleteByRecurrenceId(recId)
                     taskRecurrenceDao.deleteById(recId)
@@ -2425,12 +2786,18 @@ class NexusRepository(
                             )
                         )
                     }
-                    existing?.let { appointmentDao.deleteById(it.id) }
+                    existing?.let {
+                        scheduleChecklistItemDao.deleteByAppointmentId(it.id)
+                        appointmentDao.deleteById(it.id)
+                    }
                 }
             }
         } else if (existing != null) {
             cancelAndDeleteRemindersForSource(ReminderSourceType.APPOINTMENT, existing.id)
-            appointmentDao.deleteById(existing.id)
+            database.withTransaction {
+                scheduleChecklistItemDao.deleteByAppointmentId(existing.id)
+                appointmentDao.deleteById(existing.id)
+            }
         }
         syncRecurringScheduleRemindersInternal()
         notifyWidgetsChanged()
@@ -2465,7 +2832,8 @@ class NexusRepository(
         installmentsCount: Int = 1,
         reminderMinutesBefore: Int? = null,
         recurrenceDraft: TaskRecurrenceDraft? = null,
-        recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY
+        recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY,
+        checklistDrafts: List<Triple<String?, String, Boolean>>? = null
     ): Result<String> = safeDbCall("Eventos") {
         val cleanName = name.trim()
         require(cleanName.isNotEmpty()) { "O nome do evento é obrigatório." }
@@ -2541,6 +2909,20 @@ class NexusRepository(
                 }
                 val startDate = RecurrenceEngine.parseLocalDateOrNull(startDateIso)
                     ?: DateTimeUtils.toLocalDate(startAt)
+                val initialTemplateTitles = if (checklistDrafts != null) {
+                    checklistDrafts.mapNotNull { (_, itemTitle, _) -> itemTitle.trim().takeIf(String::isNotBlank) }
+                } else if (recurrenceDraft.templateSubtasks != null) {
+                    recurrenceDraft.templateSubtasks.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+                } else if (existing != null) {
+                    scheduleChecklistItemDao.getByEventId(existing.id).sortedBy { it.sortOrder }.map { it.title }
+                } else {
+                    emptyList()
+                }
+                val (tmplSubJson, tmplVersion, tmplHistoryJson) = RecurrenceEngine.buildUpdatedChecklistTemplate(
+                    existing = null,
+                    newTitles = initialTemplateTitles,
+                    effectiveFromDateIso = startDate.toString()
+                )
                 val newRec = TaskRecurrenceEntity(
                     id = newRecId,
                     title = cleanName,
@@ -2559,6 +2941,9 @@ class NexusRepository(
                     maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
                     isActive = true,
                     domain = RecurrenceDomain.EVENT,
+                    templateSubtasksJson = tmplSubJson,
+                    checklistTemplateVersion = tmplVersion,
+                    templateHistoryJson = tmplHistoryJson,
                     isAllDay = isAllDay,
                     durationMillis = durationMillis,
                     officialLink = cleanOfficialLink,
@@ -2662,6 +3047,19 @@ class NexusRepository(
                         finalOccurrenceDateIso = null
                     } else {
                         val resolvedReminderPref = reminderMinutesBefore ?: existingRecurrence.reminderMinutesBefore
+                        val resolvedTemplateTitles = if (checklistDrafts != null) {
+                            checklistDrafts.mapNotNull { (_, itemTitle, _) -> itemTitle.trim().takeIf(String::isNotBlank) }
+                        } else if (recurrenceDraft.templateSubtasks != null) {
+                            recurrenceDraft.templateSubtasks.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+                        } else {
+                            RecurrenceEngine.deserializeChecklistTemplate(existingRecurrence.templateSubtasksJson)
+                        }
+                        val effectiveFromIso = existingOccurrenceIso ?: DateTimeUtils.toLocalDate(startAt).toString()
+                        val (tmplSubJson, tmplVersion, tmplHistoryJson) = RecurrenceEngine.buildUpdatedChecklistTemplate(
+                            existing = existingRecurrence,
+                            newTitles = resolvedTemplateTitles,
+                            effectiveFromDateIso = effectiveFromIso
+                        )
                         val updatedRec = existingRecurrence.copy(
                             title = cleanName,
                             description = cleanDescription,
@@ -2676,6 +3074,9 @@ class NexusRepository(
                             startDateIso = recurrenceDraft.startDateIso.ifBlank { existingRecurrence.startDateIso },
                             endDateIso = recurrenceDraft.endDateIso?.takeIf { it.isNotBlank() },
                             maxOccurrences = recurrenceDraft.maxOccurrences?.takeIf { it > 0 },
+                            templateSubtasksJson = tmplSubJson,
+                            checklistTemplateVersion = tmplVersion,
+                            templateHistoryJson = tmplHistoryJson,
                             isAllDay = isAllDay,
                             durationMillis = durationMillis,
                             officialLink = cleanOfficialLink,
@@ -2825,6 +3226,59 @@ class NexusRepository(
                     ?.let { recurrenceExceptionDao.deleteById(it.id) }
             }
             exceptionToUpsert?.let { recurrenceExceptionDao.upsert(it) }
+
+            if (checklistDrafts != null) {
+                val existingItems = scheduleChecklistItemDao.getByEventId(eventId).associateBy { it.id }
+                val fallbackVersion = existingItems.values.firstOrNull()?.templateVersion
+                    ?: seriesTemplateToUpsert?.checklistTemplateVersion
+                    ?: existingRecurrence?.checklistTemplateVersion
+                    ?: 1
+                val newEntities = checklistDrafts.mapIndexedNotNull { index, (itemId, itemTitle, isDone) ->
+                    val cleanItem = itemTitle.trim()
+                    if (cleanItem.isEmpty()) return@mapIndexedNotNull null
+                    val old = itemId?.let { existingItems[it] }
+                    ScheduleChecklistItemEntity(
+                        id = old?.id ?: UUID.randomUUID().toString(),
+                        appointmentId = null,
+                        eventId = eventId,
+                        title = cleanItem,
+                        isCompleted = isDone,
+                        sortOrder = index,
+                        templateVersion = old?.templateVersion ?: fallbackVersion,
+                        createdAt = old?.createdAt ?: now,
+                        updatedAt = now
+                    )
+                }
+                scheduleChecklistItemDao.deleteByEventId(eventId)
+                if (newEntities.isNotEmpty()) {
+                    scheduleChecklistItemDao.insertAll(newEntities)
+                }
+            } else if (existing == null && finalRecurrenceId != null && finalOccurrenceDateIso != null) {
+                val targetRec = seriesTemplateToUpsert ?: existingRecurrence
+                if (targetRec != null) {
+                    val (resolvedVer, tmplTitles) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(
+                        targetRec,
+                        finalOccurrenceDateIso
+                    )
+                    if (tmplTitles.isNotEmpty()) {
+                        scheduleChecklistItemDao.insertAll(
+                            tmplTitles.mapIndexed { index, itemTitle ->
+                                ScheduleChecklistItemEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    appointmentId = null,
+                                    eventId = eventId,
+                                    title = itemTitle,
+                                    isCompleted = false,
+                                    sortOrder = index,
+                                    templateVersion = resolvedVer,
+                                    createdAt = now,
+                                    updatedAt = now
+                                )
+                            }
+                        )
+                    }
+                }
+            }
 
             val existingObligations = transactionDao.getTicketObligationsByEvent(eventId)
             val existingPurchaseId = existingObligations.firstNotNullOfOrNull { it.installmentPurchaseId }
@@ -3094,10 +3548,33 @@ class NexusRepository(
             updatedAt = now
         )
 
+        val (resolvedTemplateVersion, templateTitles) = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(
+            recurrence = recurrence,
+            occurrenceDateIso = occurrenceDateIso
+        )
         val rowId = database.withTransaction {
             val insertedId = eventDao.insertIgnore(candidate)
-            if (insertedId != -1L && exception != null) {
-                recurrenceExceptionDao.upsert(exception.copy(eventId = candidate.id, updatedAt = now))
+            if (insertedId != -1L) {
+                if (templateTitles.isNotEmpty()) {
+                    scheduleChecklistItemDao.insertAll(
+                        templateTitles.mapIndexed { index, itemTitle ->
+                            ScheduleChecklistItemEntity(
+                                id = UUID.randomUUID().toString(),
+                                appointmentId = null,
+                                eventId = candidate.id,
+                                title = itemTitle,
+                                isCompleted = false,
+                                sortOrder = index,
+                                templateVersion = resolvedTemplateVersion,
+                                createdAt = now,
+                                updatedAt = now
+                            )
+                        }
+                    )
+                }
+                if (exception != null) {
+                    recurrenceExceptionDao.upsert(exception.copy(eventId = candidate.id, updatedAt = now))
+                }
             }
             insertedId
         }
@@ -3230,6 +3707,7 @@ class NexusRepository(
             }
         }
         transactionDao.unlinkEvent(eventId, now)
+        scheduleChecklistItemDao.deleteByEventId(eventId)
         eventDao.deleteById(eventId)
     }
 
@@ -3936,10 +4414,12 @@ class NexusRepository(
 
     suspend fun restoreBackupAtomically(payload: NexusBackupPayload): Result<RestoreSummary> =
         safeDbCall("Backup (Restauração)") {
-            val summary = backupManager.restoreAtomically(payload)
-            rescheduleAllRemindersInternal()
-            notifyWidgetsChanged()
-            summary
+            databaseMutationMutex.withLock {
+                val summary = backupManager.restoreAtomically(payload)
+                rescheduleAllRemindersInternal()
+                notifyWidgetsChanged()
+                summary
+            }
         }
 
     fun validateBackupForMerge(payload: NexusBackupPayload): String? =
@@ -3952,11 +4432,134 @@ class NexusRepository(
 
     suspend fun mergeBackupAtomically(payload: NexusBackupPayload): Result<MergeSummary> =
         safeDbCall("Backup (Mesclagem)") {
-            val summary = backupManager.mergeBackupAtomically(payload)
-            rescheduleAllRemindersInternal()
-            notifyWidgetsChanged()
-            summary
+            databaseMutationMutex.withLock {
+                val summary = backupManager.mergeBackupAtomically(payload)
+                rescheduleAllRemindersInternal()
+                notifyWidgetsChanged()
+                summary
+            }
         }
+
+    /**
+     * Restaura o banco local para o estado limpo de fábrica de forma transacional e atômica.
+     *
+     * Apaga integralmente os registros das 28 tabelas do Room, re-semeia apenas configurações e
+     * categorias base padrão, limpa caches/preferências locais de Mercado e tracking da NEXUS-INBOX,
+     * preservando credenciais (PAT criptografado) e coordenadas remotas do repositório.
+     * Só cancela alarmes e notificações agendadas após a confirmação bem-sucedida da transação.
+     */
+    suspend fun restoreFactoryDatabase(
+        onClearExternalStateInsideTx: suspend () -> FactoryResetExternalState = { FactoryResetExternalState() }
+    ): Result<FactoryResetSummary> = safeDbCall("Restauração de Fábrica") {
+        databaseMutationMutex.withLock {
+            val now = DateTimeUtils.nowEpochMillis()
+            val reminderIdsToCancel = reminderDao.getAllOnce().map { it.id }
+            val deletedRowsTotal = countAllDatabaseRowsInternal()
+
+            var externalOutcome = FactoryResetExternalState()
+            val restoredCategories = buildDefaultFactoryCategories(now)
+
+            database.withTransaction {
+                // Ordem filho -> pai preservando reatividade de InvalidationTracker
+                goalProgressLogDao.deleteAll()
+                goalMilestoneDao.deleteAll()
+                reminderDao.deleteAll()
+                briefingHistoryDao.deleteAll()
+                routineSettingsDao.deleteAll()
+                personalizationSettingsDao.deleteAll()
+                quoteDao.deleteAll()
+                transactionDao.deleteAll()
+                subtaskDao.deleteAll()
+                scheduleChecklistItemDao.deleteAll()
+                recurrenceExceptionDao.deleteAll()
+                taskDao.deleteAll()
+                taskRecurrenceDao.deleteAll()
+                appointmentDao.deleteAll()
+                installmentPurchaseDao.deleteAll()
+                recurringRuleDao.deleteAll()
+                statementDao.deleteAll()
+                budgetDao.deleteAll()
+                financialGoalDao.deleteAll()
+                loanDao.deleteAll()
+                eventDao.deleteAll()
+                creditCardDao.deleteAll()
+                projectDao.deleteAll()
+                personalGoalDao.deleteAll()
+                categoryDao.deleteAll()
+                settingsDao.deleteAll()
+                auditHistoryDao.deleteAll()
+                errorLogDao.deleteAll()
+
+                // Re-semeadura mínima equivalente à primeira instalação limpa
+                settingsDao.upsert(
+                    SettingsEntity(
+                        id = SettingsEntity.SINGLETON_ID,
+                        userName = "Enzo",
+                        darkTheme = true,
+                        declaredBalanceCents = 0L,
+                        createdAt = now,
+                        updatedAt = now
+                    )
+                )
+                categoryDao.insertAll(restoredCategories)
+                routineSettingsDao.upsert(defaultRoutineSettings(now))
+                personalizationSettingsDao.upsert(defaultPersonalizationSettings(now))
+
+                // Limpeza de stores externos dentro da transação para rollback automático em caso de falha
+                externalOutcome = onClearExternalStateInsideTx()
+            }
+
+            // Só cancela alarmes/notificações após commit transacional bem-sucedido
+            notificationScheduler?.cancelAllScheduledAndDisplayedNotifications(reminderIdsToCancel)
+            notifyWidgetsChanged()
+
+            FactoryResetSummary(
+                deletedRowsTotal = deletedRowsTotal,
+                cancelledRemindersCount = reminderIdsToCancel.size,
+                clearedMarketFavoritesCount = externalOutcome.clearedMarketFavoritesCount,
+                clearedMarketAlertsCount = externalOutcome.clearedMarketAlertsCount,
+                marketCachesCleared = externalOutcome.marketCachesCleared,
+                inboxTrackingCleared = externalOutcome.inboxTrackingCleared,
+                preservedCredentials = externalOutcome.preservedCredentials,
+                preservedInboxConfig = externalOutcome.preservedInboxConfig,
+                restoredDefaultCategoriesCount = restoredCategories.size
+            )
+        }
+    }
+
+    private suspend fun countAllDatabaseRowsInternal(): Int {
+        return settingsDao.getAllOnce().size +
+            categoryDao.getAllOnce().size +
+            projectDao.getAllOnce().size +
+            eventDao.getAllOnce().size +
+            taskDao.getAllOnce().size +
+            subtaskDao.getAllOnce().size +
+            appointmentDao.getAllOnce().size +
+            creditCardDao.getAllOnce().size +
+            statementDao.getAllOnce().size +
+            installmentPurchaseDao.getAllOnce().size +
+            recurringRuleDao.getAllOnce().size +
+            transactionDao.getAllOnce().size +
+            loanDao.getAllOnce().size +
+            budgetDao.getAllOnce().size +
+            financialGoalDao.getAllOnce().size +
+            auditHistoryDao.getAllOnce().size +
+            errorLogDao.getAllOnce().size +
+            reminderDao.getAllOnce().size +
+            routineSettingsDao.getAllOnce().size +
+            briefingHistoryDao.getAllOnce().size +
+            personalizationSettingsDao.getAllOnce().size +
+            quoteDao.getAllOnce().size +
+            personalGoalDao.getAllOnce().size +
+            goalMilestoneDao.getAllOnce().size +
+            goalProgressLogDao.getAllOnce().size +
+            taskRecurrenceDao.getAllOnce().size +
+            recurrenceExceptionDao.getAllOnce().size +
+            scheduleChecklistItemDao.getAllOnce().size
+    }
+
+    private fun buildDefaultFactoryCategories(now: Long): List<CategoryEntity> =
+        defaultFactoryCategories(now)
 
     // --- Camada interna de entrada estruturada (Etapa 2 / Rodada 3) ---
 
@@ -3977,12 +4580,14 @@ class NexusRepository(
         atomicBatch: Boolean = false
     ): Result<StructuredBatchResult> =
         safeDbCall("Entrada Estruturada (JSON)") {
-            val result = structuredInputProcessor.processJson(rawJson, atomicBatch = atomicBatch)
-            if (result.totalAppliedCount > 0) {
-                rescheduleAllRemindersInternal()
-                notifyWidgetsChanged()
+            databaseMutationMutex.withLock {
+                val result = structuredInputProcessor.processJson(rawJson, atomicBatch = atomicBatch)
+                if (result.totalAppliedCount > 0) {
+                    rescheduleAllRemindersInternal()
+                    notifyWidgetsChanged()
+                }
+                result
             }
-            result
         }
 
     suspend fun processStructuredInputEnvelope(
@@ -3990,12 +4595,14 @@ class NexusRepository(
         atomicBatch: Boolean = false
     ): Result<StructuredBatchResult> =
         safeDbCall("Entrada Estruturada") {
-            val result = structuredInputProcessor.processEnvelope(envelope, atomicBatch = atomicBatch)
-            if (result.totalAppliedCount > 0) {
-                rescheduleAllRemindersInternal()
-                notifyWidgetsChanged()
+            databaseMutationMutex.withLock {
+                val result = structuredInputProcessor.processEnvelope(envelope, atomicBatch = atomicBatch)
+                if (result.totalAppliedCount > 0) {
+                    rescheduleAllRemindersInternal()
+                    notifyWidgetsChanged()
+                }
+                result
             }
-            result
         }
 
     override suspend fun previewInboxEnvelope(
@@ -6512,6 +7119,50 @@ class NexusRepository(
                 goalsTotalCurrentCents = goals.sumOf { it.currentAmountCents },
                 topGoalName = goals.firstOrNull()?.name
             )
+        }
+
+        internal fun defaultFactoryCategories(now: Long): List<CategoryEntity> {
+            val general = listOf(
+                Triple("cat-default-pessoal", "Pessoal", "#4C8BF5"),
+                Triple("cat-default-trabalho", "Trabalho", "#9A9A9A"),
+                Triple("cat-default-saude", "Saúde", "#34C759"),
+                Triple("cat-default-estudos", "Estudos", "#E5A000")
+            ).map { (id, name, color) ->
+                CategoryEntity(
+                    id = id,
+                    name = name,
+                    colorHex = color,
+                    scope = CategoryScope.GENERAL,
+                    isDefault = true,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            }
+            val finance = listOf(
+                Triple("cat-fin-alimentacao", "Alimentação", "#E5A000"),
+                Triple("cat-fin-transporte", "Transporte", "#4C8BF5"),
+                Triple("cat-fin-faculdade", "Faculdade", "#9A9A9A"),
+                Triple("cat-fin-moradia", "Moradia", "#F2F2F2"),
+                Triple("cat-fin-tecnologia", "Tecnologia", "#4C8BF5"),
+                Triple("cat-fin-assinaturas", "Assinaturas", "#E5A000"),
+                Triple("cat-fin-compras", "Compras", "#9A9A9A"),
+                Triple("cat-fin-eventos", "Eventos", "#34C759"),
+                Triple("cat-fin-saude", "Saúde e bem-estar", "#34C759"),
+                Triple("cat-fin-salario", "Salário", "#34C759"),
+                Triple("cat-fin-freelance", "Freelance", "#34C759"),
+                Triple("cat-fin-outros", "Outros", "#777777")
+            ).map { (id, name, color) ->
+                CategoryEntity(
+                    id = id,
+                    name = name,
+                    colorHex = color,
+                    scope = CategoryScope.FINANCE,
+                    isDefault = true,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            }
+            return general + finance
         }
     }
 }

@@ -61,6 +61,7 @@ enum class InboxEntityGroup {
     TASK,
     CHECKLIST,
     APPOINTMENT,
+    RECURRENCE,
     TRANSACTION,
     PROJECT,
     PERSONAL_GOAL

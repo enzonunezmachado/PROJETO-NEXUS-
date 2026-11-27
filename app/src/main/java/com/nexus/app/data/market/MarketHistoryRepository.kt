@@ -32,6 +32,13 @@ class MarketHistoryRepository(
     private fun mutexFor(assetCode: String, range: MarketHistoryRange): Mutex =
         requestMutexes.computeIfAbsent("${assetCode}_${range.key}") { Mutex() }
 
+    fun clearAllLocalData() {
+        store.clearAll()
+        synchronized(stateWriteLock) {
+            _historyStates.value = buildInitialStatesFromStore()
+        }
+    }
+
     suspend fun loadHistory(
         assetCode: String,
         range: MarketHistoryRange,

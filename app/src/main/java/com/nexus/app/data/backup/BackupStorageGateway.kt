@@ -24,6 +24,7 @@ import com.nexus.app.data.db.entity.RecurrenceExceptionEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
@@ -60,6 +61,7 @@ interface BackupStorageGateway {
     suspend fun getGoalProgressLogs(): List<GoalProgressLogEntity>
     suspend fun getTaskRecurrences(): List<TaskRecurrenceEntity>
     suspend fun getRecurrenceExceptions(): List<RecurrenceExceptionEntity>
+    suspend fun getScheduleChecklistItems(): List<ScheduleChecklistItemEntity>
 
     suspend fun insertSettings(items: List<SettingsEntity>)
     suspend fun insertCategories(items: List<CategoryEntity>)
@@ -88,6 +90,7 @@ interface BackupStorageGateway {
     suspend fun insertGoalProgressLogs(items: List<GoalProgressLogEntity>)
     suspend fun insertTaskRecurrences(items: List<TaskRecurrenceEntity>)
     suspend fun insertRecurrenceExceptions(items: List<RecurrenceExceptionEntity>)
+    suspend fun insertScheduleChecklistItems(items: List<ScheduleChecklistItemEntity>)
 
     suspend fun clearAllForFullRestore()
 }
@@ -140,6 +143,8 @@ internal class RoomBackupStorageGateway(
         database.taskRecurrenceDao().getAllOnce()
     override suspend fun getRecurrenceExceptions(): List<RecurrenceExceptionEntity> =
         database.recurrenceExceptionDao().getAllOnce()
+    override suspend fun getScheduleChecklistItems(): List<ScheduleChecklistItemEntity> =
+        database.scheduleChecklistItemDao().getAllOnce()
 
     override suspend fun insertSettings(items: List<SettingsEntity>) {
         if (items.isNotEmpty()) database.settingsDao().insertAll(items)
@@ -249,6 +254,10 @@ internal class RoomBackupStorageGateway(
         if (items.isNotEmpty()) database.recurrenceExceptionDao().insertAll(items)
     }
 
+    override suspend fun insertScheduleChecklistItems(items: List<ScheduleChecklistItemEntity>) {
+        if (items.isNotEmpty()) database.scheduleChecklistItemDao().insertAll(items)
+    }
+
     override suspend fun clearAllForFullRestore() {
         database.goalProgressLogDao().deleteAll()
         database.goalMilestoneDao().deleteAll()
@@ -259,6 +268,7 @@ internal class RoomBackupStorageGateway(
         database.quoteDao().deleteAll()
         database.transactionDao().deleteAll()
         database.subtaskDao().deleteAll()
+        database.scheduleChecklistItemDao().deleteAll()
         database.recurrenceExceptionDao().deleteAll()
         database.taskDao().deleteAll()
         database.taskRecurrenceDao().deleteAll()

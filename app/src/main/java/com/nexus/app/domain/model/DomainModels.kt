@@ -29,7 +29,8 @@ data class TaskRecurrenceDraft(
     val weekdaysMask: Int = 0,
     val startDateIso: String,
     val endDateIso: String? = null,
-    val maxOccurrences: Int? = null
+    val maxOccurrences: Int? = null,
+    val templateSubtasks: List<String>? = null
 )
 
 enum class RecurringEditScope(val label: String) {
@@ -83,7 +84,9 @@ data class EventWithDetails(
     val category: CategoryEntity?,
     val creditCard: CreditCardEntity?,
     val linkedTasks: List<TaskWithDetails>,
-    val linkedTransactions: List<TransactionWithDetails>
+    val linkedTransactions: List<TransactionWithDetails>,
+    val checklistDoneCount: Int = 0,
+    val checklistTotalCount: Int = 0
 ) {
     val estimatedTotalCostCents: Long
         get() = linkedTransactions
@@ -195,7 +198,9 @@ sealed interface AgendaItem {
         val event: EventEntity? = null,
         val recurrenceId: String? = null,
         val occurrenceDateIso: String? = null,
-        val isVirtualRecurrence: Boolean = false
+        val isVirtualRecurrence: Boolean = false,
+        val checklistDoneCount: Int = 0,
+        val checklistTotalCount: Int = 0
     ) : AgendaItem {
         override val id: String = if (isVirtualRecurrence && recurrenceId != null && occurrenceDateIso != null) {
             "appt_rec_${recurrenceId}_${occurrenceDateIso}"
@@ -228,7 +233,9 @@ sealed interface AgendaItem {
         val recurrenceId: String? = null,
         val occurrenceDateIso: String? = null,
         val seriesOccurrenceDateIso: String? = null,
-        val isVirtualRecurrence: Boolean = false
+        val isVirtualRecurrence: Boolean = false,
+        val checklistDoneCount: Int = 0,
+        val checklistTotalCount: Int = 0
     ) : AgendaItem {
         override val id: String = if (isVirtualRecurrence && recurrenceId != null && (seriesOccurrenceDateIso ?: occurrenceDateIso) != null) {
             "event_rec_${recurrenceId}_${seriesOccurrenceDateIso ?: occurrenceDateIso}:${date}"
@@ -391,7 +398,29 @@ data class DatabaseTableCounts(
     val goalMilestones: Int = 0,
     val goalProgressLogs: Int = 0,
     val recurrences: Int = 0,
-    val recurrenceExceptions: Int = 0
+    val recurrenceExceptions: Int = 0,
+    val scheduleChecklistItems: Int = 0
+)
+
+data class FactoryResetSummary(
+    val deletedRowsTotal: Int,
+    val cancelledRemindersCount: Int,
+    val clearedMarketFavoritesCount: Int,
+    val clearedMarketAlertsCount: Int,
+    val marketCachesCleared: Boolean,
+    val inboxTrackingCleared: Boolean,
+    val preservedCredentials: Boolean,
+    val preservedInboxConfig: Boolean,
+    val restoredDefaultCategoriesCount: Int
+)
+
+data class FactoryResetExternalState(
+    val clearedMarketFavoritesCount: Int = 0,
+    val clearedMarketAlertsCount: Int = 0,
+    val marketCachesCleared: Boolean = false,
+    val inboxTrackingCleared: Boolean = false,
+    val preservedCredentials: Boolean = true,
+    val preservedInboxConfig: Boolean = true
 )
 
 data class GlobalSearchResults(

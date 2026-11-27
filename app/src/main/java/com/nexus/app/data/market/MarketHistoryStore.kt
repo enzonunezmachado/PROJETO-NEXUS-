@@ -27,6 +27,7 @@ interface MarketHistoryStore {
         attemptAtEpochMs: Long,
         errorMessage: String
     )
+    fun clearAll() {}
 }
 
 /**
@@ -111,6 +112,19 @@ class FileMarketHistoryStore(
                 lastAttemptError = errorMessage
             )
             writeRecordAtomicallyLocked(file, updated)
+        }
+    }
+
+    override fun clearAll() {
+        runCatching {
+            if (directory.exists() && directory.isDirectory) {
+                directory.listFiles()?.forEach { child ->
+                    val lockKey = child.nameWithoutExtension
+                    synchronized(lockFor(lockKey)) {
+                        child.delete()
+                    }
+                }
+            }
         }
     }
 

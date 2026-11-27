@@ -1,7 +1,7 @@
 # NEXUS — Documentação Oficial de Produto e Engenharia
 
 > **Entrada principal da documentação do repositório ativo `PROJETO-NEXUS-`.**  
-> **Última revisão documental:** 2026-11-27 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 7`, Backup `CURRENT_FORMAT_VERSION = 8`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX`, Rodada 4 com `GAP-001`/`REQ-009` e `GAP-003` implementados no código — aguardando Gradle/CI e dispositivo, `19` suítes de teste / `145` anotações `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
+> **Última revisão documental:** 2026-11-27 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 8` / `28` tabelas, Backup `CURRENT_FORMAT_VERSION = 9`, entrada estruturada `contractVersion = 1` com `RECURRENCE` e checklists em `APPOINTMENT`/`EVENT` + ponte `NEXUS-INBOX`, `GAP-001`..`GAP-004` / `REQ-009` / `REQ-029` e Restauração de Fábrica implementados no código — aguardando Gradle/CI e dispositivo, `21` suítes de teste / `170` anotações `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
 
 ---
 
@@ -33,7 +33,7 @@ Antes de qualquer leitura técnica ou execução, leia [`00_ORIENTACAO_E_AUTORID
 | **1** | [`01_DOCUMENTO_MESTRE.md`](./01_DOCUMENTO_MESTRE.md) | Visão do produto, problema resolvido, pilares, limites e resumo executivo | Entender o todo em 5 minutos |
 | **2** | [`02_ESPECIFICACAO_PRODUTO.md`](./02_ESPECIFICACAO_PRODUTO.md) | Requisitos (`REQ-*`), regras de negócio e especificação completa dos 13 módulos | Definir comportamento funcional e regras de domínio |
 | **3** | [`03_ARQUITETURA_ENGENHARIA.md`](./03_ARQUITETURA_ENGENHARIA.md) | Arquitetura em camadas, DI (`AppContainer`), navegação por estado, diagramas C4, rede e workers | Planejar mudanças estruturais ou novos componentes |
-| **4** | [`04_MODELO_DADOS.md`](./04_MODELO_DADOS.md) | Dicionário completo das 27 tabelas Room, enums, stores não-Room (Mercado/Widgets), migrações `v1→v7` e Backup `v1→v8` | Qualquer leitura/escrita persistente ou migração |
+| **4** | [`04_MODELO_DADOS.md`](./04_MODELO_DADOS.md) | Dicionário completo das 28 tabelas Room, enums, stores não-Room (Mercado/Widgets/Inbox), migrações `v1→v8` e Backup `v1→v9` | Qualquer leitura/escrita persistente ou migração |
 | **5** | [`05_FLUXOS_COMPORTAMENTOS.md`](./05_FLUXOS_COMPORTAMENTOS.md) | Fluxos ponta a ponta (Agenda, Tarefas/Recorrência, Cartão/Fatura, Eventos, Mercado/Alertas, Rotina, Widgets, Erros) | Implementar ou depurar interações entre módulos |
 | **6** | [`06_DESIGN_SYSTEM.md`](./06_DESIGN_SYSTEM.md) | Tokens reais (`NexusPalette`), tipografia, formas, gráficos Canvas, estados padrão e widgets Glance dual-theme | Criar ou ajustar UI, gráficos e widgets |
 | **7** | [`07_ESTADO_ATUAL.md`](./07_ESTADO_ATUAL.md) | Auditoria factual por módulo (`IMPLEMENTADA`, `PARCIAL`, `NÃO IMPLEMENTADA`, `INCONSISTENTE`, `NÃO VERIFICADO`) e dívidas abertas | Saber exatamente o que existe vs. o que falta |
@@ -45,7 +45,7 @@ Antes de qualquer leitura técnica ou execução, leia [`00_ORIENTACAO_E_AUTORID
 | **13** | [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) | Ciclo de vida de ideias, revisão de decisões, autorização e continuidade | Antes de classificar ou reavaliar ideias |
 | **14** | [`14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`](./14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md) | Contrato JSON `v1`, entidades suportadas, estados e guia de integração da Entrada Estruturada para Etapa 3 | Antes de implementar ou integrar a Etapa 3 |
 | **15** | [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md) | Lacunas funcionais, defeitos, inconsistências e validações pendentes | Acompanhar o que falta e as evidências |
-| **16** | [`16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`](./16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md) | Guia operacional `v1` consolidado a partir do código real para converter linguagem natural em JSON válido do contrato `v1` (sujeito a manutenção contínua) | Sempre ao preparar entradas para `NEXUS-INBOX` ou ao evoluir entidades/regras acessíveis ao ChatGPT |
+| **16** | [`16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`](./16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md) | Guia operacional `v1.1.0` consolidado a partir do código real para converter linguagem natural em JSON válido do contrato `v1` (incluindo `RECURRENCE` e `checklist` em `APPOINTMENT`/`EVENT`) | Sempre ao preparar entradas para `NEXUS-INBOX` ou ao evoluir entidades/regras acessíveis ao ChatGPT |
 | **17** | [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md) | Registro das mudanças no próprio modelo documental | Entender a evolução das regras documentais |
 
 ### Documentos Históricos e Arquivados (`/docs/archive/`)

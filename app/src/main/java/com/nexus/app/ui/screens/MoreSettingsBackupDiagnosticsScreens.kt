@@ -92,6 +92,7 @@ import com.nexus.app.domain.model.DatabaseTableCounts
 import com.nexus.app.domain.model.GlobalSearchResults
 import com.nexus.app.domain.model.NexusDateFormat
 import com.nexus.app.ui.BackupUiState
+import com.nexus.app.ui.FactoryResetUiState
 import com.nexus.app.ui.components.ConfirmDangerDialog
 import com.nexus.app.ui.components.NexusCard
 import com.nexus.app.ui.components.NexusEmptyState
@@ -224,7 +225,7 @@ fun MoreScreen(
                 MoreMenuItem(
                     icon = Icons.Outlined.BugReport,
                     title = "Diagnóstico",
-                    subtitle = "Versão do banco (v${NexusDatabase.DATABASE_VERSION}), contagem das 27 tabelas e logs",
+                    subtitle = "Versão do banco (v${NexusDatabase.DATABASE_VERSION}), contagem das 28 tabelas e logs",
                     onClick = onOpenDiagnostics
                 )
             }
@@ -433,6 +434,7 @@ fun SettingsScreen(
     personalization: PersonalizationSettingsEntity,
     routineSettings: RoutineAssistantSettingsEntity,
     categories: List<CategoryEntity>,
+    factoryResetState: FactoryResetUiState = FactoryResetUiState(),
     onBack: () -> Unit,
     onSaveSettings: (userName: String, darkTheme: Boolean) -> Unit,
     onSaveGreetingAndPresentation: (
@@ -453,9 +455,18 @@ fun SettingsScreen(
     onOpenDiagnostics: () -> Unit,
     onSaveCategory: (id: String?, name: String, colorHex: String) -> Unit,
     onDeleteCategory: (String) -> Unit,
+    onGenerateBackupJson: suspend () -> Result<String> = {
+        Result.failure(IllegalStateException("Exportação indisponível."))
+    },
+    onNotifyBackupExported: () -> Unit = {},
+    onTriggerFactoryReset: () -> Unit = {},
+    onDismissFactoryResetFeedback: () -> Unit = {},
+    onLogError: (String, Throwable) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val palette = LocalNexusPalette.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val today = DateTimeUtils.todayLocalDate()
     var userNameInput by remember(settings.userName) { mutableStateOf(settings.userName) }
     var greetingTemplateInput by remember(personalization.greetingTemplate) {
@@ -463,6 +474,32 @@ fun SettingsScreen(
     }
     var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
     var showCreateCategory by remember { mutableStateOf(false) }
+    var factoryResetDialogStep by remember { mutableStateOf(0) }
+    var factoryResetAcknowledged by remember { mutableStateOf(false) }
+
+    val preResetExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val jsonResult = onGenerateBackupJson()
+            jsonResult.onSuccess { json ->
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use { stream ->
+                            stream.write(json.toByteArray(Charsets.UTF_8))
+                        } ?: error("Não foi possível gravar o backup selecionado.")
+                    }
+                }.onSuccess {
+                    onNotifyBackupExported()
+                }.onFailure { err ->
+                    onLogError("Backup pré-restauração (SAF)", err)
+                }
+            }.onFailure { err ->
+                onLogError("Backup pré-restauração (JSON)", err)
+            }
+        }
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         TopSubScreenBar(title = "Configurações", onBack = onBack)
@@ -925,6 +962,49 @@ fun SettingsScreen(
                 }
             }
 
+            item { SectionHeader(title = "Dados e armazenamento") }
+            item {
+                NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
+                    Text(
+                        text = "Restaurar banco de dados de fábrica",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = palette.danger
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Apaga todos os dados locais do aparelho (tarefas, compromissos, eventos, checklists, projetos, metas, financeiro, lembretes, séries recorrentes, frases, favoritos/alertas/caches do Mercado e rastreamento local da NEXUS-INBOX) e recria a base inicial de fábrica.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Preserva: instalação do app, repositório remoto GitHub, token PAT criptografado e coordenadas configuradas da NEXUS-INBOX.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.info
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        enabled = !factoryResetState.isResetting,
+                        onClick = {
+                            factoryResetAcknowledged = false
+                            factoryResetDialogStep = 1
+                        },
+                        border = BorderStroke(1.dp, palette.danger),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (factoryResetState.isResetting) {
+                                "Restaurando banco de fábrica..."
+                            } else {
+                                "Restaurar banco de dados de fábrica"
+                            },
+                            color = palette.danger
+                        )
+                    }
+                }
+            }
+
             item { SectionHeader(title = "Diagnóstico e versão") }
             item {
                 NexusCard(modifier = Modifier.fillMaxWidth()) {
@@ -958,6 +1038,203 @@ fun SettingsScreen(
                 onSaveCategory(editingCategory?.id, name, colorHex)
                 showCreateCategory = false
                 editingCategory = null
+            }
+        )
+    }
+
+    if (factoryResetDialogStep == 1) {
+        AlertDialog(
+            onDismissRequest = { factoryResetDialogStep = 0 },
+            containerColor = palette.surfaceElevated,
+            title = {
+                Text("Restaurar banco de fábrica?", color = palette.danger)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Esta operação apaga todas as 28 tabelas locais do SQLite/Room, cancela lembretes agendados, limpa caches/alertas/favoritos do Mercado e zera o rastreamento local de importações da NEXUS-INBOX.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = "As configurações padrão iniciais serão recriadas. Suas credenciais (token GitHub PAT) e coordenadas da NEXUS-INBOX serão mantidas.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            val timestamp = DateTimeUtils.formatDate(DateTimeUtils.nowEpochMillis())
+                                .replace("/", "-")
+                            preResetExportLauncher.launch("nexus-backup-pre-reset-$timestamp.json")
+                        },
+                        border = BorderStroke(1.dp, palette.highlight),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Fazer backup JSON antes", color = palette.highlight)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        factoryResetAcknowledged = false
+                        factoryResetDialogStep = 2
+                    }
+                ) {
+                    Text("Continuar", color = palette.danger)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { factoryResetDialogStep = 0 }) {
+                    Text("Cancelar", color = palette.textSecondary)
+                }
+            }
+        )
+    }
+
+    if (factoryResetDialogStep == 2) {
+        AlertDialog(
+            onDismissRequest = { factoryResetDialogStep = 0 },
+            containerColor = palette.surfaceElevated,
+            title = {
+                Text("Confirmação final e irreversível", color = palette.danger)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Todos os registros locais não exportados serão perdidos permanentemente.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textPrimary
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { factoryResetAcknowledged = !factoryResetAcknowledged },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = factoryResetAcknowledged,
+                            onCheckedChange = { factoryResetAcknowledged = it },
+                            colors = CheckboxDefaults.colors(checkedColor = palette.danger)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Entendo que os dados locais serão apagados e o banco será reiniciado do zero.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = palette.textPrimary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = factoryResetAcknowledged && !factoryResetState.isResetting,
+                    onClick = {
+                        factoryResetDialogStep = 0
+                        factoryResetAcknowledged = false
+                        onTriggerFactoryReset()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = palette.danger,
+                        contentColor = palette.background
+                    )
+                ) {
+                    Text("APAGAR E RESTAURAR")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { factoryResetDialogStep = 0 }) {
+                    Text("Cancelar", color = palette.textSecondary)
+                }
+            }
+        )
+    }
+
+    if (factoryResetState.isResetting) {
+        AlertDialog(
+            onDismissRequest = {},
+            containerColor = palette.surfaceElevated,
+            title = { Text("Restaurando banco de fábrica", color = palette.textPrimary) },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), color = palette.highlight)
+                    Text(
+                        text = "Limpando tabelas e recriando dados iniciais...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textSecondary
+                    )
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    factoryResetState.lastSummary?.let { summary ->
+        AlertDialog(
+            onDismissRequest = onDismissFactoryResetFeedback,
+            containerColor = palette.surfaceElevated,
+            title = { Text("Banco restaurado de fábrica", color = palette.positive) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Registros apagados: ${summary.deletedRowsTotal}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = "Lembretes cancelados: ${summary.cancelledRemindersCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = "Mercado limpo: ${summary.clearedMarketFavoritesCount} favorito(s), ${summary.clearedMarketAlertsCount} alerta(s) e caches",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = "Categorias iniciais restauradas: ${summary.restoredDefaultCategoriesCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.textPrimary
+                    )
+                    Text(
+                        text = if (summary.preservedCredentials && summary.preservedInboxConfig) {
+                            "Credenciais GitHub PAT e coordenadas NEXUS-INBOX preservadas."
+                        } else {
+                            "Rastreamento local da NEXUS-INBOX limpo."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.info
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onDismissFactoryResetFeedback) {
+                    Text("Entendi", color = palette.highlight)
+                }
+            }
+        )
+    }
+
+    factoryResetState.lastError?.let { errorMsg ->
+        AlertDialog(
+            onDismissRequest = onDismissFactoryResetFeedback,
+            containerColor = palette.surfaceElevated,
+            title = { Text("Falha na restauração de fábrica", color = palette.danger) },
+            text = {
+                Text(
+                    text = "A restauração falhou e a transação foi revertida para preservar os dados anteriores.\n\nDetalhe: $errorMsg",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.textPrimary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onDismissFactoryResetFeedback) {
+                    Text("Fechar", color = palette.textPrimary)
+                }
             }
         )
     }
@@ -1104,7 +1381,7 @@ fun BackupScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Gera um arquivo JSON versionado com todas as 27 tabelas locais (tarefas, séries recorrentes, projetos, objetivos pessoais, personalização, frases, agenda, eventos, financeiro, lembretes e rotina) e suas configurações do Mercado (favoritos e alertas de preço) via seletor SAF.",
+                        text = "Gera um arquivo JSON versionado com todas as 28 tabelas locais (tarefas, séries recorrentes, projetos, objetivos pessoais, personalização, frases, agenda, eventos, checklists de ocorrências, financeiro, lembretes e rotina) e suas configurações do Mercado (favoritos e alertas de preço) via seletor SAF.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = palette.textSecondary
                     )
@@ -1646,7 +1923,8 @@ fun DiagnosticsScreen(
         "goal_milestones" to tableCounts.goalMilestones,
         "goal_progress_logs" to tableCounts.goalProgressLogs,
         "recurrences" to tableCounts.recurrences,
-        "recurrence_exceptions" to tableCounts.recurrenceExceptions
+        "recurrence_exceptions" to tableCounts.recurrenceExceptions,
+        "schedule_checklist_items" to tableCounts.scheduleChecklistItems
     )
 
     Column(modifier = modifier.fillMaxSize()) {

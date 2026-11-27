@@ -85,7 +85,9 @@ data class AgendaOccurrence(
     val searchableText: String = "",
     val recurrenceId: String? = null,
     val seriesOccurrenceDateIso: String? = null,
-    val isVirtualRecurrence: Boolean = false
+    val isVirtualRecurrence: Boolean = false,
+    val checklistDoneCount: Int = 0,
+    val checklistTotalCount: Int = 0
 ) {
     val occurrenceDate: LocalDate
         get() = LocalDate.parse(occurrenceDateIso)
@@ -108,7 +110,9 @@ data class AgendaSources(
     val projects: List<ProjectEntity> = emptyList(),
     val categories: List<CategoryEntity> = emptyList(),
     val taskRecurrences: List<TaskRecurrenceEntity> = emptyList(),
-    val recurrenceExceptions: List<RecurrenceExceptionEntity> = emptyList()
+    val recurrenceExceptions: List<RecurrenceExceptionEntity> = emptyList(),
+    val checklistCountsByAppointmentId: Map<String, Pair<Int, Int>> = emptyMap(),
+    val checklistCountsByEventId: Map<String, Pair<Int, Int>> = emptyMap()
 )
 
 data class AgendaFilters(
@@ -316,6 +320,7 @@ object AgendaEngine {
                         linkedEvent?.name
                     ).joinToString(" ").lowercase()
 
+                    val apptChecklistCounts = sources.checklistCountsByAppointmentId[appt.id] ?: (0 to 0)
                     var day = iterStart
                     while (!day.isAfter(iterEnd)) {
                         occurrences += AgendaOccurrence(
@@ -341,7 +346,9 @@ object AgendaEngine {
                             searchableText = searchText,
                             recurrenceId = appt.recurrenceId,
                             seriesOccurrenceDateIso = appt.occurrenceDateIso ?: spanStart.toString(),
-                            isVirtualRecurrence = false
+                            isVirtualRecurrence = false,
+                            checklistDoneCount = apptChecklistCounts.first,
+                            checklistTotalCount = apptChecklistCounts.second
                         )
                         day = day.plusDays(1)
                     }
@@ -386,6 +393,10 @@ object AgendaEngine {
                             linkedEvent?.name
                         ).joinToString(" ").lowercase()
 
+                        val virtualTemplateTotal = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(
+                            recurrence = rec,
+                            occurrenceDateIso = projOcc.occurrenceDateIso
+                        ).second.size
                         var day = iterStart
                         while (!day.isAfter(iterEnd)) {
                             occurrences += AgendaOccurrence(
@@ -411,7 +422,9 @@ object AgendaEngine {
                                 searchableText = searchText,
                                 recurrenceId = rec.id,
                                 seriesOccurrenceDateIso = projOcc.occurrenceDateIso,
-                                isVirtualRecurrence = true
+                                isVirtualRecurrence = true,
+                                checklistDoneCount = 0,
+                                checklistTotalCount = virtualTemplateTotal
                             )
                             day = day.plusDays(1)
                         }
@@ -563,6 +576,7 @@ object AgendaEngine {
                         cat?.name
                     ).joinToString(" ").lowercase()
 
+                    val evChecklistCounts = sources.checklistCountsByEventId[ev.id] ?: (0 to 0)
                     var day = iterStart
                     while (!day.isAfter(iterEnd)) {
                         occurrences += AgendaOccurrence(
@@ -587,7 +601,9 @@ object AgendaEngine {
                             searchableText = searchText,
                             recurrenceId = ev.recurrenceId,
                             seriesOccurrenceDateIso = ev.occurrenceDateIso ?: spanStart.toString(),
-                            isVirtualRecurrence = false
+                            isVirtualRecurrence = false,
+                            checklistDoneCount = evChecklistCounts.first,
+                            checklistTotalCount = evChecklistCounts.second
                         )
                         day = day.plusDays(1)
                     }
@@ -630,6 +646,10 @@ object AgendaEngine {
                             cat?.name
                         ).joinToString(" ").lowercase()
 
+                        val virtualTemplateTotal = RecurrenceEngine.resolveChecklistTemplateVersionAndItems(
+                            recurrence = rec,
+                            occurrenceDateIso = projOcc.occurrenceDateIso
+                        ).second.size
                         var day = iterStart
                         while (!day.isAfter(iterEnd)) {
                             occurrences += AgendaOccurrence(
@@ -654,7 +674,9 @@ object AgendaEngine {
                                 searchableText = searchText,
                                 recurrenceId = rec.id,
                                 seriesOccurrenceDateIso = projOcc.occurrenceDateIso,
-                                isVirtualRecurrence = true
+                                isVirtualRecurrence = true,
+                                checklistDoneCount = 0,
+                                checklistTotalCount = virtualTemplateTotal
                             )
                             day = day.plusDays(1)
                         }

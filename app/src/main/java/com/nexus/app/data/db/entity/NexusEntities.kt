@@ -873,6 +873,8 @@ data class TaskRecurrenceEntity(
     val creditCardId: String? = null,
     val installmentsCount: Int = 1,
     val templateSubtasksJson: String = "[]",
+    val checklistTemplateVersion: Int = 1,
+    val templateHistoryJson: String = "[]",
     val createdAt: Long,
     val updatedAt: Long
 )
@@ -907,6 +909,41 @@ data class RecurrenceExceptionEntity(
     val taskId: String? = null,
     val appointmentId: String? = null,
     val eventId: String? = null,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+@Entity(
+    tableName = "schedule_checklist_items",
+    foreignKeys = [
+        ForeignKey(
+            entity = AppointmentEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["appointmentId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = EventEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["eventId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [
+        Index(value = ["appointmentId"]),
+        Index(value = ["appointmentId", "sortOrder"]),
+        Index(value = ["eventId"]),
+        Index(value = ["eventId", "sortOrder"])
+    ]
+)
+data class ScheduleChecklistItemEntity(
+    @PrimaryKey val id: String,
+    val appointmentId: String? = null,
+    val eventId: String? = null,
+    val title: String,
+    val isCompleted: Boolean = false,
+    val sortOrder: Int = 0,
+    val templateVersion: Int = 1,
     val createdAt: Long,
     val updatedAt: Long
 )

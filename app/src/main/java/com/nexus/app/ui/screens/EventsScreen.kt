@@ -54,6 +54,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -68,6 +69,7 @@ import com.nexus.app.data.db.entity.CategoryEntity
 import com.nexus.app.data.db.entity.CreditCardEntity
 import com.nexus.app.data.db.entity.EventEntity
 import com.nexus.app.data.db.entity.ReminderEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.EventWithDetails
@@ -308,7 +310,7 @@ fun EventSummaryCard(
             Text(text = meta, style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
         }
 
-        if (item.estimatedTotalCostCents > 0L || item.linkedTasks.isNotEmpty()) {
+        if (item.estimatedTotalCostCents > 0L || item.linkedTasks.isNotEmpty() || item.checklistTotalCount > 0) {
             Spacer(modifier = Modifier.height(6.dp))
             val extra = buildList {
                 if (item.estimatedTotalCostCents > 0L) {
@@ -317,6 +319,9 @@ fun EventSummaryCard(
                 }
                 if (item.linkedTasks.isNotEmpty()) {
                     add("${item.linkedTasks.size} tarefa(s)")
+                }
+                if (item.checklistTotalCount > 0) {
+                    add("Checklist: ${item.checklistDoneCount}/${item.checklistTotalCount}")
                 }
             }.joinToString(" · ")
             Text(text = extra, style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
@@ -417,6 +422,7 @@ private fun buildEventEditorInitialState(
 fun EventEditorSheet(
     existingEvent: EventWithDetails?,
     existingRecurrence: TaskRecurrenceEntity? = null,
+    existingChecklistItems: List<ScheduleChecklistItemEntity> = emptyList(),
     categories: List<CategoryEntity>,
     creditCards: List<CreditCardEntity>,
     existingReminder: ReminderEntity? = null,
@@ -450,7 +456,8 @@ fun EventEditorSheet(
         installmentsCount: Int,
         reminderMinutesBefore: Int?,
         recurrenceDraft: TaskRecurrenceDraft?,
-        recurringEditScope: RecurringEditScope
+        recurringEditScope: RecurringEditScope,
+        checklistDrafts: List<Triple<String?, String, Boolean>>
     ) -> Unit,
     onDelete: (String, RecurringEditScope) -> Unit,
     onAddLinkedTask: (String) -> Unit,
@@ -557,6 +564,29 @@ fun EventEditorSheet(
     var reminderModified by remember(evId, reminderId) { mutableStateOf(false) }
     var linkedAppointmentsCount by remember(evId) { mutableStateOf(0) }
 
+    var checklistInitialized by remember(evId) { mutableStateOf(false) }
+    var initialChecklistSnapshot by remember(evId) {
+        mutableStateOf<List<Triple<String?, String, Boolean>>>(emptyList())
+    }
+    val draftChecklist = remember(evId) {
+        mutableStateListOf<Triple<String?, String, Boolean>>()
+    }
+    var newChecklistItemText by remember(evId) { mutableStateOf("") }
+
+    LaunchedEffect(evId, existingChecklistItems) {
+        val mapped = existingChecklistItems
+            .sortedBy { it.sortOrder }
+            .map { Triple<String?, String, Boolean>(it.id, it.title, it.isCompleted) }
+        val userEditedChecklist = draftChecklist.toList() != initialChecklistSnapshot ||
+            newChecklistItemText.isNotBlank()
+        if (!checklistInitialized || (!userEditedChecklist && mapped != initialChecklistSnapshot)) {
+            initialChecklistSnapshot = mapped
+            draftChecklist.clear()
+            draftChecklist.addAll(mapped)
+            checklistInitialized = true
+        }
+    }
+
     LaunchedEffect(evId, showDeleteConfirm) {
         if (ev != null && showDeleteConfirm) {
             linkedAppointmentsCount = countLinkedAppointments(ev.id)
@@ -576,6 +606,13 @@ fun EventEditorSheet(
                 (recurrenceEndMode == "DATE" && recurrenceEndDate != init.recEndDate) ||
                 (recurrenceEndMode == "COUNT" && maxOccurrencesText.trim() != init.maxOccurrencesText)
             ))
+
+    val initChecklistTitles = initialChecklistSnapshot.map { it.second.trim() }
+    val currentChecklistTitles = draftChecklist.map { it.second.trim() } +
+        listOfNotNull(newChecklistItemText.trim().takeIf { it.isNotEmpty() })
+    val checklistStructureChanged = currentChecklistTitles != initChecklistTitles
+    val checklistChanged = draftChecklist.toList() != initialChecklistSnapshot ||
+        newChecklistItemText.isNotBlank()
 
     val templateFieldsChanged = name != init.name ||
         description != init.description ||
@@ -600,9 +637,10 @@ fun EventEditorSheet(
         paymentMethod != init.paymentMethod ||
         creditCardId != init.creditCardId ||
         installmentsInput != init.installments ||
-        reminderModified
+        reminderModified ||
+        checklistStructureChanged
 
-    val hasUnsavedChanges = templateFieldsChanged || recurrenceRuleChanged
+    val hasUnsavedChanges = templateFieldsChanged || checklistChanged || recurrenceRuleChanged
 
     fun dispatchSaveWithScopeHandling(executeSave: (RecurringEditScope) -> Unit) {
         if (activeRecurrence == null) {
@@ -828,6 +866,17 @@ fun EventEditorSheet(
                 maxOccurrencesText = maxOccurrencesText,
                 onMaxOccurrencesChange = { maxOccurrencesText = it },
                 infoNotice = "Ocorrências futuras aparecem na Agenda sem gerar cobranças financeiras até serem abertas e confirmadas."
+            )
+
+            ScheduleChecklistSectionCard(
+                items = draftChecklist,
+                newItemText = newChecklistItemText,
+                onNewItemTextChange = { newChecklistItemText = it },
+                notice = if (activeRecurrence != null) {
+                    "Marcações e edições neste checklist ficam isoladas apenas nesta ocorrência."
+                } else {
+                    null
+                }
             )
 
             NexusCard(modifier = Modifier.fillMaxWidth(), elevated = true) {
@@ -1162,6 +1211,10 @@ fun EventEditorSheet(
                         recurrenceEndDate = recurrenceEndDate,
                         maxOccurrencesText = maxOccurrencesText
                     )
+                    val finalChecklistDrafts = buildFinalChecklistDrafts(
+                        draftChecklist = draftChecklist,
+                        pendingItemText = newChecklistItemText
+                    )
                     dispatchSaveWithScopeHandling { editScope ->
                         onSave(
                             ev?.id,
@@ -1190,7 +1243,8 @@ fun EventEditorSheet(
                             instCount,
                             if (reminderModified) (reminderMinutesBefore ?: defaultReminderMinutes) else null,
                             recDraft,
-                            editScope
+                            editScope,
+                            finalChecklistDrafts
                         )
                     }
                 },

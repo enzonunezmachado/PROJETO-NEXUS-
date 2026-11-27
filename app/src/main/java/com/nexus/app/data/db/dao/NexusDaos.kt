@@ -1022,5 +1022,57 @@ interface RecurrenceExceptionDao {
     fun observeCount(): Flow<Int>
 }
 
+@Dao
+interface ScheduleChecklistItemDao {
+    @Query("SELECT * FROM schedule_checklist_items ORDER BY sortOrder ASC, createdAt ASC")
+    fun observeAll(): Flow<List<ScheduleChecklistItemEntity>>
+
+    @Query("SELECT * FROM schedule_checklist_items WHERE appointmentId = :appointmentId ORDER BY sortOrder ASC, createdAt ASC")
+    fun observeByAppointmentId(appointmentId: String): Flow<List<ScheduleChecklistItemEntity>>
+
+    @Query("SELECT * FROM schedule_checklist_items WHERE eventId = :eventId ORDER BY sortOrder ASC, createdAt ASC")
+    fun observeByEventId(eventId: String): Flow<List<ScheduleChecklistItemEntity>>
+
+    @Query("SELECT * FROM schedule_checklist_items ORDER BY sortOrder ASC, createdAt ASC")
+    suspend fun getAllOnce(): List<ScheduleChecklistItemEntity>
+
+    @Query("SELECT * FROM schedule_checklist_items WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): ScheduleChecklistItemEntity?
+
+    @Query("SELECT * FROM schedule_checklist_items WHERE appointmentId = :appointmentId ORDER BY sortOrder ASC, createdAt ASC")
+    suspend fun getByAppointmentId(appointmentId: String): List<ScheduleChecklistItemEntity>
+
+    @Query("SELECT * FROM schedule_checklist_items WHERE eventId = :eventId ORDER BY sortOrder ASC, createdAt ASC")
+    suspend fun getByEventId(eventId: String): List<ScheduleChecklistItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: ScheduleChecklistItemEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(item: ScheduleChecklistItemEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<ScheduleChecklistItemEntity>)
+
+    @Update
+    suspend fun update(item: ScheduleChecklistItemEntity)
+
+    @Query("DELETE FROM schedule_checklist_items WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM schedule_checklist_items WHERE appointmentId = :appointmentId")
+    suspend fun deleteByAppointmentId(appointmentId: String)
+
+    @Query("DELETE FROM schedule_checklist_items WHERE eventId = :eventId")
+    suspend fun deleteByEventId(eventId: String)
+
+    @Query("DELETE FROM schedule_checklist_items")
+    suspend fun deleteAll()
+
+    @Query("SELECT COUNT(*) FROM schedule_checklist_items")
+    fun observeCount(): Flow<Int>
+}
+
+
 
 

@@ -74,6 +74,15 @@ class MarketWatchlistRepository(
         return next
     }
 
+    fun clearAllLocalData(): Int {
+        synchronized(writeLock) {
+            val removedCount = _favoriteCodes.value.size
+            store.saveFavoriteCodes(emptyList())
+            _favoriteCodes.value = emptyList()
+            return removedCount
+        }
+    }
+
     private fun sanitize(codes: List<String>): List<String> =
         codes
             .map { it.trim() }

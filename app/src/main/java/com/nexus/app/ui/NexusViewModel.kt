@@ -25,6 +25,7 @@ import com.nexus.app.data.db.entity.QuoteEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskRecurrenceEntity
@@ -52,6 +53,8 @@ import com.nexus.app.domain.model.DatabaseTableCounts
 import com.nexus.app.domain.model.EventCostType
 import com.nexus.app.domain.model.EventLifecycleStatus
 import com.nexus.app.domain.model.EventWithDetails
+import com.nexus.app.domain.model.FactoryResetExternalState
+import com.nexus.app.domain.model.FactoryResetSummary
 import com.nexus.app.domain.model.FinanceSummary
 import com.nexus.app.domain.model.FinancialStatus
 import com.nexus.app.domain.model.GlobalSearchResults
@@ -86,6 +89,7 @@ import com.nexus.app.domain.rules.AgendaOccurrenceKind
 import com.nexus.app.domain.rules.FinanceRules
 import com.nexus.app.domain.rules.MonthlyFinanceDashboardData
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -170,6 +174,12 @@ data class BackupUiState(
     val validationError: String? = null,
     val lastRestoreSummary: RestoreSummary? = null,
     val lastMergeSummary: MergeSummary? = null
+)
+
+data class FactoryResetUiState(
+    val isResetting: Boolean = false,
+    val lastSummary: FactoryResetSummary? = null,
+    val lastError: String? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -482,6 +492,9 @@ class NexusViewModel(
     private val _backupState = MutableStateFlow(BackupUiState())
     val backupState: StateFlow<BackupUiState> = _backupState.asStateFlow()
 
+    private val _factoryResetState = MutableStateFlow(FactoryResetUiState())
+    val factoryResetState: StateFlow<FactoryResetUiState> = _factoryResetState.asStateFlow()
+
     // --- Filtros ---
 
     fun setTasksTabMode(mode: TasksTabMode) {
@@ -748,6 +761,51 @@ class NexusViewModel(
 
     // --- Compromissos ---
 
+    fun observeAppointmentChecklist(appointmentId: String): Flow<List<ScheduleChecklistItemEntity>> =
+        repository.observeAppointmentChecklist(appointmentId)
+
+    fun observeEventChecklist(eventId: String): Flow<List<ScheduleChecklistItemEntity>> =
+        repository.observeEventChecklist(eventId)
+
+    fun addScheduleChecklistItem(
+        appointmentId: String? = null,
+        eventId: String? = null,
+        title: String
+    ) {
+        viewModelScope.launch {
+            repository.addScheduleChecklistItem(appointmentId, eventId, title)
+                .onFailure { emitMessage(it.message ?: "Erro ao adicionar item ao checklist") }
+        }
+    }
+
+    fun toggleScheduleChecklistItem(item: ScheduleChecklistItemEntity) {
+        viewModelScope.launch {
+            repository.toggleScheduleChecklistItem(item)
+                .onFailure { emitMessage(it.message ?: "Erro ao atualizar checklist") }
+        }
+    }
+
+    fun updateScheduleChecklistItemTitle(itemId: String, title: String) {
+        viewModelScope.launch {
+            repository.updateScheduleChecklistItemTitle(itemId, title)
+                .onFailure { emitMessage(it.message ?: "Erro ao renomear item do checklist") }
+        }
+    }
+
+    fun deleteScheduleChecklistItem(itemId: String) {
+        viewModelScope.launch {
+            repository.deleteScheduleChecklistItem(itemId)
+                .onFailure { emitMessage(it.message ?: "Erro ao remover item do checklist") }
+        }
+    }
+
+    fun moveScheduleChecklistItem(itemId: String, directionDelta: Int) {
+        viewModelScope.launch {
+            repository.moveScheduleChecklistItem(itemId, directionDelta)
+                .onFailure { emitMessage(it.message ?: "Erro ao reordenar checklist") }
+        }
+    }
+
     fun openOrMaterializeRecurringAppointmentOccurrence(
         recurrenceId: String,
         occurrenceDateIso: String,
@@ -774,6 +832,7 @@ class NexusViewModel(
         reminderMinutesBefore: Int? = null,
         recurrenceDraft: TaskRecurrenceDraft? = null,
         recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY,
+        checklistDrafts: List<Triple<String?, String, Boolean>>? = null,
         onSaved: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -790,7 +849,8 @@ class NexusViewModel(
                 link = link,
                 reminderMinutesBefore = reminderMinutesBefore,
                 recurrenceDraft = recurrenceDraft,
-                recurringEditScope = recurringEditScope
+                recurringEditScope = recurringEditScope,
+                checklistDrafts = checklistDrafts
             ).onSuccess { savedId ->
                 emitMessage(if (id == null) "Compromisso salvo" else "Compromisso atualizado")
                 onSaved(savedId)
@@ -857,6 +917,7 @@ class NexusViewModel(
         reminderMinutesBefore: Int? = null,
         recurrenceDraft: TaskRecurrenceDraft? = null,
         recurringEditScope: RecurringEditScope = RecurringEditScope.THIS_OCCURRENCE_ONLY,
+        checklistDrafts: List<Triple<String?, String, Boolean>>? = null,
         onSaved: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
@@ -887,7 +948,8 @@ class NexusViewModel(
                 installmentsCount = installmentsCount,
                 reminderMinutesBefore = reminderMinutesBefore,
                 recurrenceDraft = recurrenceDraft,
-                recurringEditScope = recurringEditScope
+                recurringEditScope = recurringEditScope,
+                checklistDrafts = checklistDrafts
             ).onSuccess { savedId ->
                 emitMessage(if (id == null) "Evento salvo" else "Evento atualizado")
                 onSaved(savedId)
@@ -1931,6 +1993,54 @@ class NexusViewModel(
 
     fun dismissInboxLastSummary() {
         inboxRepository?.clearLastUpdateLogBanner()
+    }
+
+    fun triggerFactoryReset() {
+        if (_factoryResetState.value.isResetting) return
+        viewModelScope.launch {
+            _factoryResetState.value = FactoryResetUiState(isResetting = true)
+            val executeReset: suspend () -> Result<FactoryResetSummary> = {
+                repository.restoreFactoryDatabase {
+                    val clearedFavs = marketWatchlistRepository?.clearAllLocalData() ?: 0
+                    val clearedAlerts = marketAlertRepository?.clearAllLocalData() ?: 0
+                    marketQuoteRepository?.clearAllLocalData()
+                    marketHistoryRepository?.clearAllLocalData()
+                    val inboxCleared = inboxRepository?.resetLocalTrackingStateUnlocked() ?: false
+                    FactoryResetExternalState(
+                        clearedMarketFavoritesCount = clearedFavs,
+                        clearedMarketAlertsCount = clearedAlerts,
+                        marketCachesCleared = (marketQuoteRepository != null || marketHistoryRepository != null),
+                        inboxTrackingCleared = inboxCleared,
+                        preservedCredentials = inboxRepository?.hasSavedToken?.value ?: false,
+                        preservedInboxConfig = inboxRepository?.config?.value?.isConfigured ?: false
+                    )
+                }
+            }
+            val result = inboxRepository?.withExclusiveOperationLock { executeReset() } ?: executeReset()
+            result.onSuccess { summary ->
+                _factoryResetState.value = FactoryResetUiState(
+                    isResetting = false,
+                    lastSummary = summary,
+                    lastError = null
+                )
+                emitMessage("Banco de dados restaurado para o padrão de fábrica")
+            }.onFailure { err ->
+                val message = err.message ?: "Falha ao restaurar o banco de dados de fábrica"
+                _factoryResetState.value = FactoryResetUiState(
+                    isResetting = false,
+                    lastSummary = null,
+                    lastError = message
+                )
+                emitMessage(message)
+            }
+        }
+    }
+
+    fun dismissFactoryResetFeedback() {
+        _factoryResetState.value = _factoryResetState.value.copy(
+            lastSummary = null,
+            lastError = null
+        )
     }
 
     fun emitMessage(message: String) {

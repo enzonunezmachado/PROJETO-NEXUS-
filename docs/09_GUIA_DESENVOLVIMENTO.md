@@ -38,7 +38,7 @@ Em `17/11/2026` (documentado em [`archive/DIAGNOSTICO_COMPILACAO_2026-11-17.md`]
 1. Pré-extrair chaves simples no topo do composable (`val taskKey = existingTask?.task?.id`).
 2. Construir uma `data class *EditorInitialState` e uma função pura `build*InitialState(...)` invocada em **um único** `val init = remember(taskKey, ...) { ... }`.
 3. Usar `by remember(taskKey) { mutableStateOf(init.campo) }` sem operadores `?.` nos delegates.
-4. Decompor seções grandes (como `TaskRecurrenceSectionCard`, `TaskScopeConfirmDialogs`) em composables privados menores.
+4. Decompor seções grandes (como `TaskRecurrenceSectionCard`, `ScheduleChecklistSectionCard`, `TaskScopeConfirmDialogs`) em composables privados menores.
 
 ---
 
@@ -117,7 +117,7 @@ Toda implementação futura que crie, altere, remova ou mude o comportamento de 
 6. Registrar a atualização em `docs/HISTORICO_DOCUMENTACAO.md` e manter coerência com `07_ESTADO_ATUAL.md`, `10_ROADMAP.md`, `14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md` e `15_REGISTRO_LACUNAS_E_FALHAS.md`.
 7. Sincronizar os artefatos acessíveis do Google AI Studio (e o espelho `NEXUS-DOCUMENTACAO/GOOGLE_IA/docs/` quando montado no ambiente, ou registrar pendência honesta quando ausente).
 
-**Exclusões explícitas:** não antecipar no guia funcionalidades apenas planejadas (`GAP-002`, `GAP-004`, `GAP-005`, `GAP-006`) antes de existirem no código/contrato real; alterações puramente visuais, de espaçamento/cores ou refatorações internas sem efeito em entidades, campos, relações, validações ou comportamento acessível ao ChatGPT não exigem edição funcional do guia.
+**Exclusões explícitas:** não antecipar no guia funcionalidades apenas planejadas (`GAP-005`, `GAP-006`) antes de existirem no código/contrato real; alterações puramente visuais, de espaçamento/cores ou refatorações internas sem efeito em entidades, campos, relações, validações ou comportamento acessível ao ChatGPT não exigem edição funcional do guia.
 
 ---
 

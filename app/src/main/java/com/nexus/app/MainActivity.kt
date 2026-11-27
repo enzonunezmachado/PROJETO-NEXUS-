@@ -109,6 +109,7 @@ import com.nexus.app.ui.theme.LocalNexusPalette
 import com.nexus.app.ui.theme.NexusTheme
 import com.nexus.app.widgets.NexusWidgetNavigation
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -266,6 +267,7 @@ private fun NexusAppRoot(
     val tableCounts by viewModel.tableCounts.collectAsStateWithLifecycle()
     val errorLogs by viewModel.errorLogs.collectAsStateWithLifecycle()
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
+    val factoryResetState by viewModel.factoryResetState.collectAsStateWithLifecycle()
     val routineSettings by viewModel.routineSettings.collectAsStateWithLifecycle()
     val reminders by viewModel.reminders.collectAsStateWithLifecycle()
     val briefingHistory by viewModel.briefingHistory.collectAsStateWithLifecycle()
@@ -840,6 +842,7 @@ private fun NexusAppRoot(
                     personalization = personalizationSettings,
                     routineSettings = routineSettings,
                     categories = categories,
+                    factoryResetState = factoryResetState,
                     onBack = popSubRoute,
                     onSaveSettings = viewModel::saveSettings,
                     onSaveGreetingAndPresentation = viewModel::saveGreetingAndPresentation,
@@ -853,6 +856,11 @@ private fun NexusAppRoot(
                     onOpenDiagnostics = { navigateToSubRoute(SubRoute.Diagnostics) },
                     onSaveCategory = { id, name, hex -> viewModel.saveCategory(id, name, hex) },
                     onDeleteCategory = viewModel::deleteCategory,
+                    onGenerateBackupJson = viewModel::generateBackupJson,
+                    onNotifyBackupExported = viewModel::notifyBackupExported,
+                    onTriggerFactoryReset = viewModel::triggerFactoryReset,
+                    onDismissFactoryResetFeedback = viewModel::dismissFactoryResetFeedback,
+                    onLogError = viewModel::logUiError,
                     modifier = contentModifier
                 )
                 SubRoute.Backup -> BackupScreen(
@@ -1179,6 +1187,10 @@ private fun NexusAppRoot(
                 )
             }
             is ActiveEditor.AppointmentEditor -> {
+                val apptIdForChecklist = loadedAppointment?.id ?: editor.appointmentId
+                val appointmentChecklist by remember(apptIdForChecklist) {
+                    apptIdForChecklist?.let { viewModel.observeAppointmentChecklist(it) } ?: flowOf(emptyList())
+                }.collectAsStateWithLifecycle(initialValue = emptyList())
                 val existingReminder = editor.appointmentId?.let { id ->
                     reminders.firstOrNull {
                         it.sourceType == ReminderSourceType.APPOINTMENT &&
@@ -1193,13 +1205,14 @@ private fun NexusAppRoot(
                 AppointmentEditorSheet(
                     existingAppointment = loadedAppointment,
                     existingRecurrence = activeAppointmentRecurrence,
+                    existingChecklistItems = appointmentChecklist,
                     categories = categories,
                     events = allEvents,
                     initialDate = agendaFilter.selectedDate,
                     existingReminder = existingReminder,
                     defaultReminderMinutes = routineSettings.defaultAppointmentReminderMinutes,
                     onDismiss = { activeEditor = ActiveEditor.None },
-                    onSave = { id, title, desc, catId, evId, startAt, endAt, isAllDay, location, link, reminderMins, recDraft, editScope ->
+                    onSave = { id, title, desc, catId, evId, startAt, endAt, isAllDay, location, link, reminderMins, recDraft, editScope, checklistDrafts ->
                         viewModel.saveAppointment(
                             id = id,
                             title = title,
@@ -1214,6 +1227,7 @@ private fun NexusAppRoot(
                             reminderMinutesBefore = reminderMins,
                             recurrenceDraft = recDraft,
                             recurringEditScope = editScope,
+                            checklistDrafts = checklistDrafts,
                             onSaved = { activeEditor = ActiveEditor.None }
                         )
                     },
@@ -1279,16 +1293,21 @@ private fun NexusAppRoot(
                             it.category == ReminderCategory.SCHEDULE
                     }
                 }
+                val eventIdForChecklist = existing?.event?.id ?: editor.eventId
+                val eventChecklist by remember(eventIdForChecklist) {
+                    eventIdForChecklist?.let { viewModel.observeEventChecklist(it) } ?: flowOf(emptyList())
+                }.collectAsStateWithLifecycle(initialValue = emptyList())
                 EventEditorSheet(
                     existingEvent = existing,
                     existingRecurrence = activeEventRecurrence,
+                    existingChecklistItems = eventChecklist,
                     categories = categories,
                     creditCards = cardsWithStatements.map { it.card },
                     existingReminder = existingReminder,
                     defaultReminderMinutes = routineSettings.defaultEventReminderMinutes,
                     countLinkedAppointments = viewModel::countAppointmentsForEvent,
                     onDismiss = { activeEditor = ActiveEditor.None },
-                    onSave = { id, name, desc, catId, startAt, endAt, allDay, officialUrl, ticketUrl, locName, addr, city, st, notes, evStatus, tStatus, tPrice, tQty, tFees, tPurchaseDate, tDueDate, payMethod, cardId, instCount, reminderMins, recDraft, editScope ->
+                    onSave = { id, name, desc, catId, startAt, endAt, allDay, officialUrl, ticketUrl, locName, addr, city, st, notes, evStatus, tStatus, tPrice, tQty, tFees, tPurchaseDate, tDueDate, payMethod, cardId, instCount, reminderMins, recDraft, editScope, checklistDrafts ->
                         viewModel.saveEvent(
                             id = id,
                             name = name,
@@ -1317,6 +1336,7 @@ private fun NexusAppRoot(
                             reminderMinutesBefore = reminderMins,
                             recurrenceDraft = recDraft,
                             recurringEditScope = editScope,
+                            checklistDrafts = checklistDrafts,
                             onSaved = { activeEditor = ActiveEditor.None }
                         )
                     },

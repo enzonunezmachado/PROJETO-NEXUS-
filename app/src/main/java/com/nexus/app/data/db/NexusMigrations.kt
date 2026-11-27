@@ -697,14 +697,74 @@ object NexusMigrations {
         }
     }
 
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS schedule_checklist_items (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    appointmentId TEXT,
+                    eventId TEXT,
+                    title TEXT NOT NULL,
+                    isCompleted INTEGER NOT NULL,
+                    sortOrder INTEGER NOT NULL,
+                    templateVersion INTEGER NOT NULL DEFAULT 1,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    FOREIGN KEY(appointmentId) REFERENCES appointments(id) ON DELETE CASCADE,
+                    FOREIGN KEY(eventId) REFERENCES events(id) ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_schedule_checklist_items_appointmentId ON schedule_checklist_items(appointmentId)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_schedule_checklist_items_appointmentId_sortOrder ON schedule_checklist_items(appointmentId, sortOrder)"
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_schedule_checklist_items_eventId ON schedule_checklist_items(eventId)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_schedule_checklist_items_eventId_sortOrder ON schedule_checklist_items(eventId, sortOrder)"
+            )
+
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN checklistTemplateVersion INTEGER NOT NULL DEFAULT 1")
+            db.execSQL("ALTER TABLE recurrences ADD COLUMN templateHistoryJson TEXT NOT NULL DEFAULT '[]'")
+
+            // Backfill historico inicial v1 para series existentes com templateSubtasksJson preenchido
+            db.query("SELECT id, startDateIso, templateSubtasksJson FROM recurrences").use { cursor ->
+                while (cursor.moveToNext()) {
+                    val recId = cursor.getString(0)
+                    val startDateIso = cursor.getString(1) ?: ""
+                    val rawTemplate = cursor.getString(2)
+                    val items = RecurrenceEngine.deserializeChecklistTemplate(rawTemplate)
+                    if (items.isNotEmpty() && startDateIso.isNotBlank()) {
+                        val historyJson = RecurrenceEngine.serializeTemplateHistory(
+                            listOf(
+                                com.nexus.app.domain.rules.ChecklistTemplateSnapshot(
+                                    version = 1,
+                                    effectiveFromDateIso = startDateIso,
+                                    items = items
+                                )
+                            )
+                        )
+                        db.execSQL(
+                            "UPDATE recurrences SET templateHistoryJson = ? WHERE id = ?",
+                            arrayOf<Any>(historyJson, recId)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     val ALL_MIGRATIONS: Array<Migration> = arrayOf(
         MIGRATION_1_2,
         MIGRATION_2_3,
         MIGRATION_3_4,
         MIGRATION_4_5,
         MIGRATION_5_6,
-        MIGRATION_6_7
+        MIGRATION_6_7,
+        MIGRATION_7_8
     )
 }
+
 
 

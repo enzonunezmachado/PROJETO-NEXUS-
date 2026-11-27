@@ -50,6 +50,7 @@ import com.nexus.app.data.db.entity.RecurrenceExceptionEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
@@ -124,6 +125,7 @@ class BackupIncrementalMergeUnitTests {
         val goalProgressLogs = mutableListOf<GoalProgressLogEntity>()
         val taskRecurrences = mutableListOf<TaskRecurrenceEntity>()
         val recurrenceExceptions = mutableListOf<RecurrenceExceptionEntity>()
+        val scheduleChecklistItems = mutableListOf<ScheduleChecklistItemEntity>()
 
         private data class Snapshot(
             val settings: List<SettingsEntity>,
@@ -152,7 +154,8 @@ class BackupIncrementalMergeUnitTests {
             val goalMilestones: List<GoalMilestoneEntity>,
             val goalProgressLogs: List<GoalProgressLogEntity>,
             val taskRecurrences: List<TaskRecurrenceEntity>,
-            val recurrenceExceptions: List<RecurrenceExceptionEntity>
+            val recurrenceExceptions: List<RecurrenceExceptionEntity>,
+            val scheduleChecklistItems: List<ScheduleChecklistItemEntity>
         )
 
         private fun snapshot() = Snapshot(
@@ -182,7 +185,8 @@ class BackupIncrementalMergeUnitTests {
             goalMilestones = goalMilestones.toList(),
             goalProgressLogs = goalProgressLogs.toList(),
             taskRecurrences = taskRecurrences.toList(),
-            recurrenceExceptions = recurrenceExceptions.toList()
+            recurrenceExceptions = recurrenceExceptions.toList(),
+            scheduleChecklistItems = scheduleChecklistItems.toList()
         )
 
         private fun restoreSnapshot(s: Snapshot) {
@@ -213,6 +217,7 @@ class BackupIncrementalMergeUnitTests {
             goalProgressLogs.apply { clear(); addAll(s.goalProgressLogs) }
             taskRecurrences.apply { clear(); addAll(s.taskRecurrences) }
             recurrenceExceptions.apply { clear(); addAll(s.recurrenceExceptions) }
+            scheduleChecklistItems.apply { clear(); addAll(s.scheduleChecklistItems) }
         }
 
         override suspend fun <T> inTransaction(block: suspend () -> T): T {
@@ -272,6 +277,7 @@ class BackupIncrementalMergeUnitTests {
         override suspend fun getGoalProgressLogs() = goalProgressLogs.toList()
         override suspend fun getTaskRecurrences() = taskRecurrences.toList()
         override suspend fun getRecurrenceExceptions() = recurrenceExceptions.toList()
+        override suspend fun getScheduleChecklistItems() = scheduleChecklistItems.toList()
 
         override suspend fun insertSettings(items: List<SettingsEntity>) {
             checkFail("settings")
@@ -538,6 +544,17 @@ class BackupIncrementalMergeUnitTests {
             }
         }
 
+        override suspend fun insertScheduleChecklistItems(items: List<ScheduleChecklistItemEntity>) {
+            checkFail("schedule_checklist_items")
+            val apptIds = appointments.map { it.id }.toSet()
+            val eventIds = events.map { it.id }.toSet()
+            items.forEach { item ->
+                checkFk(item.appointmentId, apptIds, "schedule_checklist_items.appointmentId")
+                checkFk(item.eventId, eventIds, "schedule_checklist_items.eventId")
+            }
+            upsertById(scheduleChecklistItems, items) { it.id }
+        }
+
         override suspend fun clearAllForFullRestore() {
             clearAllCallsCount++
             goalProgressLogs.clear()
@@ -548,6 +565,7 @@ class BackupIncrementalMergeUnitTests {
             personalizationSettings.clear()
             quotes.clear()
             transactions.clear()
+            scheduleChecklistItems.clear()
             subtasks.clear()
             recurrenceExceptions.clear()
             tasks.clear()
@@ -557,7 +575,7 @@ class BackupIncrementalMergeUnitTests {
             recurringRules.clear()
             creditCardStatements.clear()
             budgets.clear()
-            financialGoals.clear()
+            financialGoals.apply { clear() }
             loans.clear()
             events.clear()
             creditCards.clear()

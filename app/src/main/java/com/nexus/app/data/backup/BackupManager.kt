@@ -25,6 +25,7 @@ import com.nexus.app.data.db.entity.RecurrenceExceptionEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
@@ -547,6 +548,8 @@ class BackupManager internal constructor(
                     creditCardId = it.creditCardId,
                     installmentsCount = it.installmentsCount,
                     templateSubtasksJson = it.templateSubtasksJson,
+                    checklistTemplateVersion = it.checklistTemplateVersion,
+                    templateHistoryJson = it.templateHistoryJson,
                     createdAt = it.createdAt,
                     updatedAt = it.updatedAt
                 )
@@ -567,6 +570,19 @@ class BackupManager internal constructor(
                     taskId = it.taskId,
                     appointmentId = it.appointmentId,
                     eventId = it.eventId,
+                    createdAt = it.createdAt,
+                    updatedAt = it.updatedAt
+                )
+            },
+            scheduleChecklistItems = storage.getScheduleChecklistItems().map {
+                ScheduleChecklistItemBackupDto(
+                    id = it.id,
+                    appointmentId = it.appointmentId,
+                    eventId = it.eventId,
+                    title = it.title,
+                    isCompleted = it.isCompleted,
+                    sortOrder = it.sortOrder,
+                    templateVersion = it.templateVersion,
                     createdAt = it.createdAt,
                     updatedAt = it.updatedAt
                 )
@@ -673,7 +689,7 @@ class BackupManager internal constructor(
                 "reminders", "routineSettings", "briefingHistory",
                 "personalizationSettings", "quotes", "personalGoals",
                 "goalMilestones", "goalProgressLogs",
-                "recurrences", "recurrenceExceptions", "marketConfig"
+                "recurrences", "recurrenceExceptions", "scheduleChecklistItems", "marketConfig"
             )
             if (rootKeys.none { it in recognizedKeys }) {
                 return BackupValidationResult.Invalid("Este JSON não parece ser um backup válido do NEXUS.")
@@ -734,6 +750,7 @@ class BackupManager internal constructor(
                     goalProgressLogsCount = payload.goalProgressLogs.size,
                     recurrencesCount = payload.recurrences.size,
                     recurrenceExceptionsCount = payload.recurrenceExceptions.size,
+                    scheduleChecklistItemsCount = payload.scheduleChecklistItems.size,
                     marketFavoritesCount = previewFavorites?.size ?: 0,
                     marketAlertsCount = previewAlerts?.size ?: 0,
                     includesMarketConfig = payload.marketConfig != null &&
@@ -928,6 +945,8 @@ class BackupManager internal constructor(
                     creditCardId = dto.creditCardId?.takeIf { it in validCardIds },
                     installmentsCount = dto.installmentsCount.coerceAtLeast(1),
                     templateSubtasksJson = dto.templateSubtasksJson.ifBlank { "[]" },
+                    checklistTemplateVersion = dto.checklistTemplateVersion.coerceAtLeast(1),
+                    templateHistoryJson = dto.templateHistoryJson.ifBlank { "[]" },
                     createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
                     updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
                 )
@@ -1430,6 +1449,27 @@ class BackupManager internal constructor(
             .distinctBy { it.id }
             .distinctBy { it.recurrenceId to it.occurrenceDateIso }
 
+        val scheduleChecklistEntities = payload.scheduleChecklistItems
+            .filter { dto ->
+                if (dto.title.isBlank()) return@filter false
+                val validAppt = dto.appointmentId?.takeIf { it in validAppointmentIds }
+                val validEvent = dto.eventId?.takeIf { it in validEventIds }
+                (validAppt != null) xor (validEvent != null)
+            }
+            .map { dto ->
+                ScheduleChecklistItemEntity(
+                    id = dto.id.ifBlank { UUID.randomUUID().toString() },
+                    appointmentId = dto.appointmentId?.takeIf { it in validAppointmentIds },
+                    eventId = dto.eventId?.takeIf { it in validEventIds },
+                    title = dto.title.trim(),
+                    isCompleted = dto.isCompleted,
+                    sortOrder = dto.sortOrder.coerceAtLeast(0),
+                    templateVersion = dto.templateVersion.coerceAtLeast(1),
+                    createdAt = if (dto.createdAt > 0L) dto.createdAt else now,
+                    updatedAt = if (dto.updatedAt > 0L) dto.updatedAt else now
+                )
+            }.distinctBy { it.id }
+
         // Valida e sanitiza configurações do Mercado ANTES de iniciar qualquer escrita.
         // Campo ausente (null) preserva os dados locais existentes; lista explicitamente vazia ([]) substitui.
         val validatedMarketFavorites: List<String>? =
@@ -1467,6 +1507,7 @@ class BackupManager internal constructor(
                 storage.insertRecurrenceExceptions(recurrenceExceptionEntities)
                 storage.insertSubtasks(subtaskEntities)
                 storage.insertAppointments(appointmentEntities)
+                storage.insertScheduleChecklistItems(scheduleChecklistEntities)
                 storage.insertCreditCardStatements(statementEntities)
                 storage.insertInstallmentPurchases(installmentPurchaseEntities)
                 storage.insertRecurringRules(recurringRuleEntities)
@@ -1533,6 +1574,7 @@ class BackupManager internal constructor(
             goalProgressLogsRestored = goalProgressLogEntities.size,
             recurrencesRestored = taskRecurrenceEntities.size,
             recurrenceExceptionsRestored = recurrenceExceptionEntities.size,
+            scheduleChecklistItemsRestored = scheduleChecklistEntities.size,
             marketFavoritesRestored = appliedFavoritesCount,
             marketAlertsRestored = appliedAlertsCount,
             marketConfigApplied = marketApplied

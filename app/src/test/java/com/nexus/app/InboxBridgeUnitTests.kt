@@ -10,6 +10,7 @@ import com.nexus.app.data.db.entity.InstallmentPurchaseEntity
 import com.nexus.app.data.db.entity.PersonalGoalEntity
 import com.nexus.app.data.db.entity.ProjectEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
 import com.nexus.app.data.db.entity.TaskRecurrenceEntity
@@ -51,6 +52,8 @@ class InboxBridgeUnitTests {
         val tasks = mutableListOf<TaskEntity>()
         val subtasks = mutableListOf<SubtaskEntity>()
         val appointments = mutableListOf<AppointmentEntity>()
+        val scheduleChecklistItems = mutableListOf<ScheduleChecklistItemEntity>()
+        val taskRecurrences = mutableListOf<TaskRecurrenceEntity>()
         val transactions = mutableListOf<TransactionEntity>()
         val auditHistory = mutableListOf<AuditHistoryEntity>()
 
@@ -98,7 +101,7 @@ class InboxBridgeUnitTests {
         override suspend fun subtaskExists(id: String): Boolean = subtasks.any { it.id == id }
         override suspend fun appointmentExists(id: String): Boolean = appointments.any { it.id == id }
         override suspend fun transactionExists(id: String): Boolean = transactions.any { it.id == id }
-        override suspend fun taskRecurrenceExists(id: String): Boolean = false
+        override suspend fun taskRecurrenceExists(id: String): Boolean = taskRecurrences.any { it.id == id }
         override suspend fun creditCardExists(id: String): Boolean = false
         override suspend fun installmentPurchaseExists(id: String): Boolean = false
         override suspend fun recurringRuleExists(id: String): Boolean = false
@@ -109,6 +112,12 @@ class InboxBridgeUnitTests {
             subtasks.filter { it.taskId == taskId }
         override suspend fun getAppointmentById(id: String): AppointmentEntity? = appointments.firstOrNull { it.id == id }
         override suspend fun getEventById(id: String): EventEntity? = events.firstOrNull { it.id == id }
+        override suspend fun getTaskRecurrenceById(id: String): TaskRecurrenceEntity? =
+            taskRecurrences.firstOrNull { it.id == id }
+        override suspend fun getScheduleChecklistItemsByAppointmentId(appointmentId: String): List<ScheduleChecklistItemEntity> =
+            scheduleChecklistItems.filter { it.appointmentId == appointmentId }
+        override suspend fun getScheduleChecklistItemsByEventId(eventId: String): List<ScheduleChecklistItemEntity> =
+            scheduleChecklistItems.filter { it.eventId == eventId }
         override suspend fun getProjectById(id: String): ProjectEntity? = projects.firstOrNull { it.id == id }
         override suspend fun getPersonalGoalById(id: String): PersonalGoalEntity? = personalGoals.firstOrNull { it.id == id }
         override suspend fun getTransactionById(id: String): TransactionEntity? = transactions.firstOrNull { it.id == id }
@@ -141,6 +150,18 @@ class InboxBridgeUnitTests {
         override suspend fun insertEvent(entity: EventEntity) {
             events.removeAll { it.id == entity.id }
             events.add(entity)
+        }
+
+        override suspend fun insertTaskRecurrence(entity: TaskRecurrenceEntity) {
+            taskRecurrences.removeAll { it.id == entity.id }
+            taskRecurrences.add(entity)
+        }
+
+        override suspend fun insertScheduleChecklistItems(entities: List<ScheduleChecklistItemEntity>) {
+            entities.forEach { item ->
+                scheduleChecklistItems.removeAll { it.id == item.id }
+                scheduleChecklistItems.add(item)
+            }
         }
 
         override suspend fun insertProject(entity: ProjectEntity) {
@@ -564,4 +585,91 @@ class InboxBridgeUnitTests {
         assertTrue(gateway.transactions.isEmpty())
         assertTrue(configStorage.processedKeys.isEmpty())
     }
+
+    @Test
+    fun `inbox processes RECURRENCE operations and resetLocalTrackingPreservingCredentials keeps PAT and coordinates`() = runBlocking {
+        val gateway = InMemoryGateway()
+        val configStorage = FakeInboxConfigStorage()
+        val tokenStore = FakeInboxTokenStore()
+        val remote = FakeInboxRemoteDataSource()
+        val ingestion = FakeIngestionPort(gateway) { t0 }
+        val repo = InboxRepository(
+            configStorage = configStorage,
+            tokenStore = tokenStore,
+            remoteDataSource = remote,
+            ingestionPort = ingestion,
+            clockMillis = { t0 }
+        )
+
+        repo.saveConfiguration(
+            owner = "enzo",
+            repo = "NEXUS-INBOX",
+            branch = "main",
+            pathPrefix = "inbox",
+            autoCheckEnabled = true,
+            newTokenOrBlank = "pat_read_only_valid"
+        ).getOrThrow()
+
+        remote.files = listOf(
+            InboxRemoteFile(
+                name = "2026-11-27-recurrence.json",
+                path = "inbox/2026-11-27-recurrence.json",
+                sha = "sha-rec-1",
+                sizeBytes = 600L
+            )
+        )
+        remote.contentsByPath["inbox/2026-11-27-recurrence.json"] = """
+            {
+              "contractVersion": 1,
+              "source": "chatgpt-nexus-inbox",
+              "createdAt": $t0,
+              "operations": [
+                {
+                  "operationId": "op-rec-inbox-1",
+                  "entityType": "RECURRENCE",
+                  "action": "UPSERT",
+                  "data": {
+                    "id": "rec-inbox-terapia",
+                    "domain": "APPOINTMENT",
+                    "title": "Terapia semanal",
+                    "frequency": "WEEKLY",
+                    "startDateIso": "2026-11-05",
+                    "hasDueTime": true,
+                    "startTime": "18:00",
+                    "durationMillis": 3000000,
+                    "templateChecklist": ["Anotar tópicos"]
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val preview = repo.checkInboxNow(fromBackgroundWorker = false).getOrThrow()
+        assertEquals(1, preview.combinedPreview.willCreateCount)
+        assertTrue(
+            preview.entityGroups.any {
+                it.entityType == com.nexus.app.data.ingestion.StructuredEntityType.RECURRENCE
+            }
+        )
+
+        val log = repo.confirmAndApplyPendingCheck().getOrThrow()
+        assertEquals(1, log.totalApplied)
+        assertEquals(1, gateway.taskRecurrences.size)
+        assertTrue(configStorage.processedKeys.isNotEmpty())
+
+        val preserved = repo.resetLocalTrackingPreservingCredentials()
+        assertTrue(preserved.first)
+        assertTrue(preserved.second)
+        assertTrue(configStorage.processedKeys.isEmpty())
+        assertNull(configStorage.notifiedFingerprint)
+        assertNull(repo.pendingCheck.value)
+        assertNull(repo.lastUpdateLog.value)
+        assertTrue(repo.updateLogs.value.isEmpty())
+        assertEquals("pat_read_only_valid", tokenStore.getToken())
+        assertEquals("enzo", repo.config.value.owner)
+        assertEquals("NEXUS-INBOX", repo.config.value.repo)
+        assertEquals("inbox", repo.config.value.pathPrefix)
+        assertTrue(repo.config.value.autoCheckEnabled)
+    }
 }
+

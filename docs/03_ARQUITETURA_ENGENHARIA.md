@@ -12,7 +12,7 @@ O NEXUS é um aplicativo Android nativo em **módulo Gradle único (`:app`)**, e
 - **Linguagem / Runtime:** Kotlin `2.1.0`, Java `17`, `kotlinx-coroutines-android:1.9.0`, `kotlinx-serialization-json:1.7.3`.
 - **Android SDK:** `minSdk = 26`, `targetSdk = 35`, `compileSdk = 35`.
 - **UI:** Jetpack Compose (BOM `2024.12.01`), Material 3, `material-icons-extended`, gráficos nativos em `Canvas` (`ui/components/charts/`), temas Claro e Escuro (`NexusTheme`).
-- **Persistência:** Room `2.6.1` (`SQLite`, KSP `2.1.0-1.0.29`, `DATABASE_VERSION = 7`), `SharedPreferences`, arquivos JSON locais em `filesDir`, Android Keystore (`AES/GCM/NoPadding` para PAT da `NEXUS-INBOX`).
+- **Persistência:** Room `2.6.1` (`SQLite`, KSP `2.1.0-1.0.29`, `DATABASE_VERSION = 8`, `28` entidades/DAOs), `SharedPreferences`, arquivos JSON locais em `filesDir`, Android Keystore (`AES/GCM/NoPadding` para PAT da `NEXUS-INBOX`).
 - **Background & Sistema:** `WorkManager` `2.10.0`, `AlarmManager`, `BroadcastReceiver`, Jetpack Glance `1.1.1`.
 - **Rede (Mercado + ponte opcional `NEXUS-INBOX`):** `java.net.HttpURLConnection` / `HttpsURLConnection` nativa somente-leitura `GET` (sem Retrofit/OkHttp).
 - **Observação sobre dependência ociosa:** `androidx.navigation:navigation-compose:2.8.5` está declarada no `app/build.gradle.kts` e `gradle/libs.versions.toml`, porém **não é utilizada** no código.
@@ -51,12 +51,12 @@ flowchart TB
         Rules["AgendaEngine · FinanceRules · RecurrenceEngine<br/>TaskRules · ReminderRules · BackNavigationRules<br/>MarketQuoteCalculations · MarketHistoryCalculations · MarketAlertRules"]
     end
 
-    subgraph DataCore["Persistência Núcleo (Room SQLite v7)"]
-        Repo["NexusRepository"]
-        DB["NexusDatabase<br/>27 Entidades · 27 DAOs · Migrações v1→v7"]
-        BM["BackupManager · BackupMergeEngine · BackupStorageGateway<br/>JSON v1–v8 (Restore Completo, Dry-Run Preview &amp; Merge Incremental) · CSV · Rollback"]
-        ING["data/ingestion (Contrato JSON v1)<br/>StructuredInputProcessor · StructuredInputGateway<br/>Dry-Run Preview · Room Único + audit_history"]
-        INB["data/inbox (Ponte ChatGPT → NEXUS-INBOX)<br/>InboxRepository · GitHubInboxRemoteDataSource (GET)<br/>AndroidKeystoreInboxTokenStore (AES-GCM)"]
+    subgraph DataCore["Persistência Núcleo (Room SQLite v8)"]
+        Repo["NexusRepository<br/>(incl. Restauração de Fábrica transacional)"]
+        DB["NexusDatabase<br/>28 Entidades · 28 DAOs · Migrações v1→v8"]
+        BM["BackupManager · BackupMergeEngine · BackupStorageGateway<br/>JSON v1–v9 (Restore Completo, Dry-Run Preview &amp; Merge Incremental) · CSV · Rollback"]
+        ING["data/ingestion (Contrato JSON v1)<br/>StructuredInputProcessor · StructuredInputGateway<br/>8 EntityTypes (incl. RECURRENCE e Checklists) · Dry-Run · audit_history"]
+        INB["data/inbox (Ponte ChatGPT → NEXUS-INBOX)<br/>InboxRepository (lock exclusivo + reset tracking)<br/>GitHubInboxRemoteDataSource (GET) · Keystore (AES-GCM)"]
     end
 
     subgraph DataMarket["Infraestrutura Módulo Mercado (Isolada do Room)"]
@@ -103,12 +103,12 @@ flowchart TB
 | `(raiz)` | Inicialização, container manual de dependências (`AppContainer`) e shell Compose | `NexusApplication.kt`, `MainActivity.kt` |
 | `core` | Data/hora em `America/Sao_Paulo`, moeda BRL e captura global de crashes | `DateTimeUtils.kt`, `GlobalErrorHandler.kt` |
 | `domain.model` | 19+ enums globais (`NexusEnums`), DTOs de UI (`DomainModels`) e modelos/regras do Mercado | `NexusEnums.kt`, `DomainModels.kt`, `MarketQuoteModels.kt`, `MarketHistoryModels.kt`, `MarketAlertModels.kt` |
-| `domain.rules` | Motores e funções puras testáveis em JVM sem Contexto Android | `AgendaEngine.kt`, `FinanceRules.kt`, `RecurrenceEngine.kt`, `TaskRules.kt`, `ReminderRules.kt`, `BackNavigationRules.kt` |
-| `data.db` | Banco Room, TypeConverters, 27 entidades, 27 DAOs e migrações `1→7` (`MIGRATION_6_7`) | `NexusDatabase.kt`, `NexusMigrations.kt`, `NexusTypeConverters.kt`, `entity/NexusEntities.kt`, `dao/NexusDaos.kt` |
-| `data.repository` | Orquestração transacional SQLite, fluxos `Flow` reativos, agendamento de lembretes, backup e entrada estruturada | `NexusRepository.kt` |
-| `data.market` | Repositórios, stores (`Prefs`/`File`), workers e clientes HTTP públicos do Mercado | `MarketQuote*.kt`, `MarketHistory*.kt`, `MarketWatchlist*.kt`, `MarketAlert*.kt` |
-| `data.backup` | Exportação, restauração completa (Modo 1), prévia dry-run (`previewMerge`) e mesclagem incremental idempotente (Modo 2) JSON `v1..v8` (Room + `marketConfig`) e CSV financeiro | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt` |
-| `data.ingestion` | Camada interna de entrada estruturada `contractVersion = 1` (prévia dry-run + criação/atualização + checklist/subtasks) sobre o Room `v7` + `audit_history` | `StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt` |
+| `domain.rules` | Motores e funções puras testáveis em JVM sem Contexto Android | `AgendaEngine.kt`, `FinanceRules.kt`, `RecurrenceEngine.kt` (`ChecklistTemplateSnapshot`), `TaskRules.kt`, `ReminderRules.kt`, `BackNavigationRules.kt` |
+| `data.db` | Banco Room, TypeConverters, 28 entidades, 28 DAOs e migrações `1→8` (`MIGRATION_7_8`) | `NexusDatabase.kt`, `NexusMigrations.kt`, `NexusTypeConverters.kt`, `entity/NexusEntities.kt`, `dao/NexusDaos.kt` |
+| `data.repository` | Orquestração transacional SQLite, fluxos `Flow` reativos, checklists por ocorrência, restauração de fábrica, lembretes, backup e ingestão | `NexusRepository.kt` |
+| `data.market` | Repositórios, stores (`Prefs`/`File`), workers e clientes HTTP públicos do Mercado (com `clearAll()` coordenado na restauração de fábrica) | `MarketQuote*.kt`, `MarketHistory*.kt`, `MarketWatchlist*.kt`, `MarketAlert*.kt` |
+| `data.backup` | Exportação, restauração completa (Modo 1), prévia dry-run (`previewMerge`) e mesclagem incremental idempotente (Modo 2) JSON `v1..v9` (Room `v8` + `marketConfig`) e CSV financeiro | `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt`, `BackupManager.kt` |
+| `data.ingestion` | Camada interna de entrada estruturada `contractVersion = 1` (`8` entidades incluindo `RECURRENCE` e `checklist` em `APPOINTMENT`/`EVENT`, prévia dry-run e versionamento não retroativo) sobre Room `v8` + `audit_history` | `StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt` |
 | `data.inbox` | Conector opcional **NEXUS-INBOX** (GitHub REST API `GET` somente leitura, Keystore `AES/GCM`, prévia/confirmação obrigatória, log em `audit_history` e worker opcional) | `InboxModels.kt`, `InboxStores.kt`, `GitHubInboxRemoteDataSource.kt`, `InboxRepository.kt`, `InboxSyncWorker.kt` |
 | `notifications` | 5 canais Android O+, agendamento `AlarmManager`, receivers de ação/boot e worker de lembretes | `NexusNotificationChannels.kt`, `NexusNotificationScheduler.kt`, `NexusBroadcastReceivers.kt`, `NexusReminderSyncWorker.kt` |
 | `widgets` | 4 AppWidgets Glance responsivos, tema dual dia/noite, config por ID e `NexusWidgetUpdater` (`Mutex`) | `MyDayGlanceWidget.kt`, `MyTasksGlanceWidget.kt`, `FinanceGlanceWidget.kt`, `NexusSummaryGlanceWidget.kt`, `NexusWidgetConfig*.kt`, `NexusWidgetTheme.kt`, `NexusWidgetUpdater.kt` |

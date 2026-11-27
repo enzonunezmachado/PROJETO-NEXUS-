@@ -9,6 +9,7 @@ import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.RecurrenceExceptionType
 import com.nexus.app.domain.model.TaskRecurrenceFrequency
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -24,6 +25,13 @@ data class RecurrenceOccurrenceProjection(
     val hasDueTime: Boolean,
     val effectiveTitle: String,
     val isOverride: Boolean = false
+)
+
+@Serializable
+data class ChecklistTemplateSnapshot(
+    val version: Int = 1,
+    val effectiveFromDateIso: String = "",
+    val items: List<String> = emptyList()
 )
 
 data class RecurrenceAppointmentProjection(
@@ -138,6 +146,160 @@ object RecurrenceEngine {
             checklistJson.decodeFromString(ListSerializer(String.serializer()), rawJson)
                 .mapNotNull { it.trim().takeIf(String::isNotBlank) }
         }.getOrDefault(emptyList())
+    }
+
+    fun serializeTemplateHistory(snapshots: List<ChecklistTemplateSnapshot>): String {
+        val cleaned = snapshots
+            .filter { it.effectiveFromDateIso.isNotBlank() }
+            .sortedWith(compareBy<ChecklistTemplateSnapshot>({ it.effectiveFromDateIso }, { it.version }))
+        return checklistJson.encodeToString(ListSerializer(ChecklistTemplateSnapshot.serializer()), cleaned)
+    }
+
+    fun deserializeTemplateHistory(rawJson: String?): List<ChecklistTemplateSnapshot> {
+        if (rawJson.isNullOrBlank() || rawJson.trim() == "[]") return emptyList()
+        return runCatching {
+            checklistJson.decodeFromString(ListSerializer(ChecklistTemplateSnapshot.serializer()), rawJson)
+                .map { snap ->
+                    snap.copy(items = snap.items.mapNotNull { it.trim().takeIf(String::isNotBlank) })
+                }
+                .filter { it.effectiveFromDateIso.isNotBlank() }
+                .sortedWith(compareBy<ChecklistTemplateSnapshot>({ it.effectiveFromDateIso }, { it.version }))
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Resolve de forma determinística e NÃO-retroativa qual versão do template de checklist se aplica
+     * a uma ocorrência identificada por [occurrenceDateIso].
+     *
+     * Ocorrências anteriores à vigência de revisões mais novas preservam versões históricas;
+     * ocorrências na data de vigência ou posteriores recebem a revisão mais recente aplicável.
+     */
+    fun resolveChecklistTemplateVersionAndItems(
+        recurrence: TaskRecurrenceEntity,
+        occurrenceDateIso: String
+    ): Pair<Int, List<String>> {
+        val history = deserializeTemplateHistory(recurrence.templateHistoryJson)
+        if (history.isEmpty()) {
+            return recurrence.checklistTemplateVersion.coerceAtLeast(1) to
+                deserializeChecklistTemplate(recurrence.templateSubtasksJson)
+        }
+        val targetDate = parseLocalDateOrNull(occurrenceDateIso)
+        if (targetDate == null) {
+            val latest = history.last()
+            return latest.version.coerceAtLeast(1) to latest.items
+        }
+        val applicable = history.lastOrNull { snap ->
+            val effectiveDate = parseLocalDateOrNull(snap.effectiveFromDateIso)
+            effectiveDate != null && !effectiveDate.isAfter(targetDate)
+        }
+        val chosen = applicable ?: history.first()
+        return chosen.version.coerceAtLeast(1) to chosen.items
+    }
+
+    /**
+     * Constrói (templateSubtasksJson, checklistTemplateVersion, templateHistoryJson) preservando versões
+     * anteriores para ocorrências passadas/já materializadas e aplicando a nova versão a partir de [effectiveFromDateIso].
+     */
+    fun buildUpdatedChecklistTemplate(
+        existing: TaskRecurrenceEntity?,
+        newTitles: List<String>,
+        effectiveFromDateIso: String
+    ): Triple<String, Int, String> {
+        val cleaned = newTitles.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+        val newSubtasksJson = serializeChecklistTemplate(cleaned)
+        if (existing == null) {
+            val initialHistory = if (cleaned.isEmpty() || effectiveFromDateIso.isBlank()) {
+                emptyList()
+            } else {
+                listOf(
+                    ChecklistTemplateSnapshot(
+                        version = 1,
+                        effectiveFromDateIso = effectiveFromDateIso,
+                        items = cleaned
+                    )
+                )
+            }
+            return Triple(newSubtasksJson, 1, serializeTemplateHistory(initialHistory))
+        }
+
+        val previousItems = deserializeChecklistTemplate(existing.templateSubtasksJson)
+        val currentVersion = existing.checklistTemplateVersion.coerceAtLeast(1)
+        val existingHistory = deserializeTemplateHistory(existing.templateHistoryJson).toMutableList()
+
+        if (previousItems == cleaned) {
+            if (existingHistory.isEmpty() && cleaned.isNotEmpty() && existing.startDateIso.isNotBlank()) {
+                existingHistory += ChecklistTemplateSnapshot(
+                    version = currentVersion,
+                    effectiveFromDateIso = existing.startDateIso,
+                    items = cleaned
+                )
+                return Triple(existing.templateSubtasksJson, currentVersion, serializeTemplateHistory(existingHistory))
+            }
+            return Triple(existing.templateSubtasksJson, currentVersion, existing.templateHistoryJson)
+        }
+
+        if (existingHistory.isEmpty() && existing.startDateIso.isNotBlank()) {
+            existingHistory += ChecklistTemplateSnapshot(
+                version = currentVersion,
+                effectiveFromDateIso = existing.startDateIso,
+                items = previousItems
+            )
+        }
+        val nextVersion = (existingHistory.maxOfOrNull { it.version } ?: currentVersion) + 1
+        existingHistory += ChecklistTemplateSnapshot(
+            version = nextVersion,
+            effectiveFromDateIso = effectiveFromDateIso.ifBlank { existing.startDateIso },
+            items = cleaned
+        )
+        return Triple(newSubtasksJson, nextVersion, serializeTemplateHistory(existingHistory))
+    }
+
+    fun parseWeekdaysStrict(weekdays: List<String>?, rawMask: Int?): Result<Int> {
+        if (rawMask != null && rawMask > 0) {
+            if (rawMask > 0b1111111) {
+                return Result.failure(IllegalArgumentException("weekdaysMask inválido: $rawMask"))
+            }
+            return Result.success(rawMask)
+        }
+        val items = weekdays.orEmpty()
+        if (items.isEmpty()) return Result.success(0)
+        val parsed = linkedSetOf<DayOfWeek>()
+        items.forEach { token ->
+            val normalized = token.trim().uppercase()
+                .replace("Á", "A")
+                .replace("Ã", "A")
+                .replace("É", "E")
+                .replace("Í", "I")
+                .replace("Ó", "O")
+                .replace("Ú", "U")
+                .replace("Ç", "C")
+            val day = when (normalized) {
+                "MONDAY", "MON", "SEG", "SEGUNDA", "SEGUNDA-FEIRA", "1" -> DayOfWeek.MONDAY
+                "TUESDAY", "TUE", "TER", "TERCA", "TERCA-FEIRA", "2" -> DayOfWeek.TUESDAY
+                "WEDNESDAY", "WED", "QUA", "QUARTA", "QUARTA-FEIRA", "3" -> DayOfWeek.WEDNESDAY
+                "THURSDAY", "THU", "QUI", "QUINTA", "QUINTA-FEIRA", "4" -> DayOfWeek.THURSDAY
+                "FRIDAY", "FRI", "SEX", "SEXTA", "SEXTA-FEIRA", "5" -> DayOfWeek.FRIDAY
+                "SATURDAY", "SAT", "SAB", "SABADO", "6" -> DayOfWeek.SATURDAY
+                "SUNDAY", "SUN", "DOM", "DOMINGO", "7", "0" -> DayOfWeek.SUNDAY
+                else -> return Result.failure(IllegalArgumentException("Dia da semana inválido: $token"))
+            }
+            parsed += day
+        }
+        return Result.success(maskFromWeekdays(parsed))
+    }
+
+    fun parseTimeOfDayMinutesStrict(raw: String?): Result<Int?> {
+        if (raw == null) return Result.success(null)
+        val clean = raw.trim()
+        if (clean.isEmpty()) return Result.success(null)
+        val match = Regex("^(\\d{1,2}):(\\d{2})$").matchEntire(clean)
+            ?: return Result.failure(IllegalArgumentException("Horário inválido (use HH:mm): $raw"))
+        val hour = match.groupValues[1].toIntOrNull()
+        val minute = match.groupValues[2].toIntOrNull()
+        if (hour == null || minute == null || hour !in 0..23 || minute !in 0..59) {
+            return Result.failure(IllegalArgumentException("Horário fora do intervalo 00:00-23:59: $raw"))
+        }
+        return Result.success(hour * 60 + minute)
     }
 
     fun weekdayBit(dayOfWeek: DayOfWeek): Int = 1 shl (dayOfWeek.value - 1)

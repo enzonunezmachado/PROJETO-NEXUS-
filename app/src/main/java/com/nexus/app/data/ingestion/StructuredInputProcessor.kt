@@ -6,8 +6,10 @@ import com.nexus.app.data.db.entity.CreditCardStatementEntity
 import com.nexus.app.data.db.entity.EventEntity
 import com.nexus.app.data.db.entity.PersonalGoalEntity
 import com.nexus.app.data.db.entity.ProjectEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
+import com.nexus.app.data.db.entity.TaskRecurrenceEntity
 import com.nexus.app.data.db.entity.TransactionEntity
 import com.nexus.app.domain.model.EventCostType
 import com.nexus.app.domain.model.EventLifecycleStatus
@@ -16,11 +18,15 @@ import com.nexus.app.domain.model.GoalProgressMode
 import com.nexus.app.domain.model.GoalStatus
 import com.nexus.app.domain.model.PaymentMethod
 import com.nexus.app.domain.model.ProjectStatus
+import com.nexus.app.domain.model.RecurrenceDomain
 import com.nexus.app.domain.model.StatementStatus
 import com.nexus.app.domain.model.TaskPriority
+import com.nexus.app.domain.model.TaskRecurrenceFrequency
 import com.nexus.app.domain.model.TaskStatus
 import com.nexus.app.domain.model.TicketStatus
 import com.nexus.app.domain.model.TransactionType
+import com.nexus.app.domain.rules.ChecklistTemplateSnapshot
+import com.nexus.app.domain.rules.RecurrenceEngine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -63,16 +69,36 @@ class StructuredInputProcessor(
             }
         }
 
-        data class UpsertAppointment(val entity: AppointmentEntity) : OperationPlan {
+        data class UpsertAppointment(
+            val entity: AppointmentEntity,
+            val checklist: List<ScheduleChecklistItemEntity> = emptyList()
+        ) : OperationPlan {
             override val targetEntityId: String get() = entity.id
-            override suspend fun apply(activeGateway: StructuredInputGateway) =
+            override suspend fun apply(activeGateway: StructuredInputGateway) {
                 activeGateway.insertAppointment(entity)
+                if (checklist.isNotEmpty()) {
+                    activeGateway.insertScheduleChecklistItems(checklist)
+                }
+            }
         }
 
-        data class UpsertEvent(val entity: EventEntity) : OperationPlan {
+        data class UpsertEvent(
+            val entity: EventEntity,
+            val checklist: List<ScheduleChecklistItemEntity> = emptyList()
+        ) : OperationPlan {
+            override val targetEntityId: String get() = entity.id
+            override suspend fun apply(activeGateway: StructuredInputGateway) {
+                activeGateway.insertEvent(entity)
+                if (checklist.isNotEmpty()) {
+                    activeGateway.insertScheduleChecklistItems(checklist)
+                }
+            }
+        }
+
+        data class UpsertTaskRecurrence(val entity: TaskRecurrenceEntity) : OperationPlan {
             override val targetEntityId: String get() = entity.id
             override suspend fun apply(activeGateway: StructuredInputGateway) =
-                activeGateway.insertEvent(entity)
+                activeGateway.insertTaskRecurrence(entity)
         }
 
         data class UpsertProject(val entity: ProjectEntity) : OperationPlan {
@@ -106,6 +132,8 @@ class StructuredInputProcessor(
         private val subtasks = linkedMapOf<String, SubtaskEntity>()
         private val appointments = linkedMapOf<String, AppointmentEntity>()
         private val events = linkedMapOf<String, EventEntity>()
+        private val taskRecurrences = linkedMapOf<String, TaskRecurrenceEntity>()
+        private val scheduleChecklistItems = linkedMapOf<String, ScheduleChecklistItemEntity>()
         private val projects = linkedMapOf<String, ProjectEntity>()
         private val personalGoals = linkedMapOf<String, PersonalGoalEntity>()
         private val transactions = linkedMapOf<String, TransactionEntity>()
@@ -137,7 +165,7 @@ class StructuredInputProcessor(
         override suspend fun subtaskExists(id: String): Boolean = subtasks.containsKey(id) || delegate.subtaskExists(id)
         override suspend fun appointmentExists(id: String): Boolean = appointments.containsKey(id) || delegate.appointmentExists(id)
         override suspend fun transactionExists(id: String): Boolean = transactions.containsKey(id) || delegate.transactionExists(id)
-        override suspend fun taskRecurrenceExists(id: String): Boolean = delegate.taskRecurrenceExists(id)
+        override suspend fun taskRecurrenceExists(id: String): Boolean = taskRecurrences.containsKey(id) || delegate.taskRecurrenceExists(id)
         override suspend fun creditCardExists(id: String): Boolean = delegate.creditCardExists(id)
         override suspend fun installmentPurchaseExists(id: String): Boolean = delegate.installmentPurchaseExists(id)
         override suspend fun recurringRuleExists(id: String): Boolean = delegate.recurringRuleExists(id)
@@ -155,6 +183,21 @@ class StructuredInputProcessor(
 
         override suspend fun getEventById(id: String): EventEntity? =
             events[id] ?: delegate.getEventById(id)
+
+        override suspend fun getTaskRecurrenceById(id: String): TaskRecurrenceEntity? =
+            taskRecurrences[id] ?: delegate.getTaskRecurrenceById(id)
+
+        override suspend fun getScheduleChecklistItemsByAppointmentId(appointmentId: String): List<ScheduleChecklistItemEntity> {
+            val base = delegate.getScheduleChecklistItemsByAppointmentId(appointmentId).associateBy { it.id }.toMutableMap()
+            scheduleChecklistItems.values.filter { it.appointmentId == appointmentId }.forEach { base[it.id] = it }
+            return base.values.sortedWith(compareBy<ScheduleChecklistItemEntity> { it.sortOrder }.thenBy { it.createdAt })
+        }
+
+        override suspend fun getScheduleChecklistItemsByEventId(eventId: String): List<ScheduleChecklistItemEntity> {
+            val base = delegate.getScheduleChecklistItemsByEventId(eventId).associateBy { it.id }.toMutableMap()
+            scheduleChecklistItems.values.filter { it.eventId == eventId }.forEach { base[it.id] = it }
+            return base.values.sortedWith(compareBy<ScheduleChecklistItemEntity> { it.sortOrder }.thenBy { it.createdAt })
+        }
 
         override suspend fun getProjectById(id: String): ProjectEntity? =
             projects[id] ?: delegate.getProjectById(id)
@@ -189,6 +232,10 @@ class StructuredInputProcessor(
         }
         override suspend fun insertAppointment(entity: AppointmentEntity) { appointments[entity.id] = entity }
         override suspend fun insertEvent(entity: EventEntity) { events[entity.id] = entity }
+        override suspend fun insertTaskRecurrence(entity: TaskRecurrenceEntity) { taskRecurrences[entity.id] = entity }
+        override suspend fun insertScheduleChecklistItems(entities: List<ScheduleChecklistItemEntity>) {
+            entities.forEach { scheduleChecklistItems[it.id] = it }
+        }
         override suspend fun insertProject(entity: ProjectEntity) { projects[entity.id] = entity }
         override suspend fun insertPersonalGoal(entity: PersonalGoalEntity) { personalGoals[entity.id] = entity }
         override suspend fun insertTransaction(entity: TransactionEntity) { transactions[entity.id] = entity }
@@ -668,6 +715,9 @@ class StructuredInputProcessor(
             StructuredEntityType.EVENT -> prepareAndApplyEvent(
                 activeGateway, opId, operation, opAction, dataObj, effectiveSource, effectiveCreatedAt, now
             )
+            StructuredEntityType.RECURRENCE -> prepareAndApplyRecurrence(
+                activeGateway, opId, operation, opAction, dataObj, effectiveSource, effectiveCreatedAt, now
+            )
             StructuredEntityType.PROJECT -> prepareAndApplyProject(
                 activeGateway, opId, operation, opAction, dataObj, effectiveSource, effectiveCreatedAt, now
             )
@@ -1012,6 +1062,17 @@ class StructuredInputProcessor(
             return rejectReceipt(opId, operation, StructuredEntityType.APPOINTMENT, effectiveSource, effectiveCreatedAt, "Evento vinculado '$eventId' não existe localmente.", title)
         }
 
+        val existingChecklist = activeGateway.getScheduleChecklistItemsByAppointmentId(entityId)
+        val builtChecklist = buildScheduleChecklistEntities(
+            appointmentId = entityId,
+            eventId = null,
+            items = dto.checklist,
+            existingItems = existingChecklist,
+            now = now
+        ).getOrElse { err ->
+            return rejectReceipt(opId, operation, StructuredEntityType.APPOINTMENT, effectiveSource, effectiveCreatedAt, err, title)
+        }
+
         val entity = AppointmentEntity(
             id = entityId,
             title = title,
@@ -1027,23 +1088,25 @@ class StructuredInputProcessor(
             updatedAt = now
         )
         val isUpdate = existing != null
+        val checklistSuffix = if (builtChecklist.isNotEmpty()) " (${builtChecklist.size} item(ns) no checklist)" else ""
         val detail = if (isUpdate) {
-            "Compromisso '$title' atualizado via entrada estruturada."
+            "Compromisso '$title' atualizado via entrada estruturada$checklistSuffix."
         } else {
-            "Compromisso '$title' criado via entrada estruturada."
+            "Compromisso '$title' criado via entrada estruturada$checklistSuffix."
         }
         return applyPlan(
             activeGateway = activeGateway,
             opId = opId,
             operation = operation,
             entityType = StructuredEntityType.APPOINTMENT,
-            plan = OperationPlan.UpsertAppointment(entity),
+            plan = OperationPlan.UpsertAppointment(entity, builtChecklist),
             effectiveSource = effectiveSource,
             effectiveCreatedAt = effectiveCreatedAt,
             now = now,
             detail = detail,
             isUpdate = isUpdate,
-            entityTitle = title
+            entityTitle = title,
+            checklistItemsCount = builtChecklist.size
         )
     }
 
@@ -1096,6 +1159,17 @@ class StructuredInputProcessor(
             return rejectReceipt(opId, operation, StructuredEntityType.EVENT, effectiveSource, effectiveCreatedAt, "Cartão vinculado '$creditCardId' não existe localmente.", name)
         }
 
+        val existingChecklist = activeGateway.getScheduleChecklistItemsByEventId(entityId)
+        val builtChecklist = buildScheduleChecklistEntities(
+            appointmentId = null,
+            eventId = entityId,
+            items = dto.checklist,
+            existingItems = existingChecklist,
+            now = now
+        ).getOrElse { err ->
+            return rejectReceipt(opId, operation, StructuredEntityType.EVENT, effectiveSource, effectiveCreatedAt, err, name)
+        }
+
         val entity = EventEntity(
             id = entityId,
             name = name,
@@ -1126,23 +1200,328 @@ class StructuredInputProcessor(
             updatedAt = now
         )
         val isUpdate = existing != null
+        val checklistSuffix = if (builtChecklist.isNotEmpty()) " (${builtChecklist.size} item(ns) no checklist)" else ""
         val detail = if (isUpdate) {
-            "Evento '$name' atualizado via entrada estruturada."
+            "Evento '$name' atualizado via entrada estruturada$checklistSuffix."
         } else {
-            "Evento '$name' criado via entrada estruturada."
+            "Evento '$name' criado via entrada estruturada$checklistSuffix."
         }
         return applyPlan(
             activeGateway = activeGateway,
             opId = opId,
             operation = operation,
             entityType = StructuredEntityType.EVENT,
-            plan = OperationPlan.UpsertEvent(entity),
+            plan = OperationPlan.UpsertEvent(entity, builtChecklist),
             effectiveSource = effectiveSource,
             effectiveCreatedAt = effectiveCreatedAt,
             now = now,
             detail = detail,
             isUpdate = isUpdate,
-            entityTitle = name
+            entityTitle = name,
+            checklistItemsCount = builtChecklist.size
+        )
+    }
+
+    private fun buildScheduleChecklistEntities(
+        appointmentId: String?,
+        eventId: String?,
+        items: List<StructuredSubtaskItem>,
+        existingItems: List<ScheduleChecklistItemEntity>,
+        now: Long
+    ): Result<List<ScheduleChecklistItemEntity>> {
+        if (items.isEmpty()) return Result.success(emptyList())
+        val existingById = existingItems.associateBy { it.id }
+        val existingByTitle = existingItems.associateBy { it.title.trim().lowercase() }
+        val nextSortBase = (existingItems.maxOfOrNull { it.sortOrder } ?: -1) + 1
+        val prefix = if (appointmentId != null) "ing-sch-appt-$appointmentId" else "ing-sch-evt-$eventId"
+
+        val entities = mutableListOf<ScheduleChecklistItemEntity>()
+        items.forEachIndexed { index, item ->
+            val cleanTitle = item.title.trim()
+            if (cleanTitle.isEmpty()) {
+                return Result.failure(IllegalArgumentException("Item #${index + 1} do checklist está sem título."))
+            }
+            val explicitId = item.id?.trim()?.takeIf { it.isNotEmpty() }
+            val existing = explicitId?.let { existingById[it] } ?: existingByTitle[cleanTitle.lowercase()]
+            val resolvedId = existing?.id ?: explicitId ?: "$prefix-$index"
+            entities.add(
+                ScheduleChecklistItemEntity(
+                    id = resolvedId,
+                    appointmentId = appointmentId,
+                    eventId = eventId,
+                    title = cleanTitle,
+                    isCompleted = item.isCompleted,
+                    sortOrder = item.sortOrder ?: existing?.sortOrder ?: (nextSortBase + index),
+                    templateVersion = existing?.templateVersion ?: 1,
+                    createdAt = existing?.createdAt ?: now,
+                    updatedAt = now
+                )
+            )
+        }
+        return Result.success(entities)
+    }
+
+    private suspend fun prepareAndApplyRecurrence(
+        activeGateway: StructuredInputGateway,
+        opId: String,
+        operation: StructuredInputOperation,
+        opAction: StructuredOperationAction,
+        dataObj: JsonElement,
+        effectiveSource: String,
+        effectiveCreatedAt: Long,
+        now: Long
+    ): StructuredOperationReceipt {
+        val dto = decodeData<StructuredRecurrenceData>(dataObj).getOrElse { err ->
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, err)
+        }
+        val title = dto.title.trim()
+        if (title.isEmpty()) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Título da série recorrente é obrigatório.")
+        }
+        val domain = parseEnumStrict<RecurrenceDomain>(dto.domain, "domain")
+            ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Domínio de recorrência inválido: '${dto.domain}'. Use TASK, APPOINTMENT ou EVENT.", title)
+        val frequency = parseEnumStrict<TaskRecurrenceFrequency>(dto.frequency, "frequency")
+            ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Frequência de recorrência inválida: '${dto.frequency}'.", title)
+        val priority = parseEnumStrict<TaskPriority>(dto.priority, "priority")
+            ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Prioridade inválida: '${dto.priority}'.", title)
+
+        val startDate = RecurrenceEngine.parseLocalDateOrNull(dto.startDateIso)
+            ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "startDateIso inválido (use YYYY-MM-DD): '${dto.startDateIso}'.", title)
+        val cleanEndDateIso = dto.endDateIso?.trim()?.takeIf { it.isNotEmpty() }
+        if (cleanEndDateIso != null) {
+            val endDate = RecurrenceEngine.parseLocalDateOrNull(cleanEndDateIso)
+                ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "endDateIso inválido (use YYYY-MM-DD): '$cleanEndDateIso'.", title)
+            if (endDate.isBefore(startDate)) {
+                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "endDateIso ($cleanEndDateIso) não pode ser anterior a startDateIso (${dto.startDateIso}).", title)
+            }
+        }
+        if (dto.maxOccurrences != null && dto.maxOccurrences <= 0) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "maxOccurrences deve ser maior que zero.", title)
+        }
+        if (dto.customIntervalDays < 1) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "customIntervalDays deve ser >= 1.", title)
+        }
+        val weekdaysMask = if (dto.weekdays.isNotEmpty()) {
+            try {
+                RecurrenceEngine.parseWeekdaysStrict(dto.weekdays)
+            } catch (ex: IllegalArgumentException) {
+                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, ex.message ?: "Dias da semana inválidos.", title)
+            }
+        } else {
+            val rawMask = dto.weekdaysMask ?: 0
+            if (rawMask < 0) {
+                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "weekdaysMask inválido ($rawMask).", title)
+            }
+            rawMask
+        }
+        if (frequency == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS && weekdaysMask == 0) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Para SPECIFIC_WEEKDAYS informe 'weekdays' ou 'weekdaysMask' válido.", title)
+        }
+
+        val parsedStartTime = dto.startTime?.trim()?.takeIf { it.isNotEmpty() }?.let { rawTime ->
+            RecurrenceEngine.parseTimeOfDayMinutesStrict(rawTime)
+                ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "startTime inválido (use HH:mm): '$rawTime'.", title)
+        }
+        if (dto.dueTimeMinutesOfDay != null && dto.dueTimeMinutesOfDay !in 0..1439) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "dueTimeMinutesOfDay deve estar entre 0 e 1439.", title)
+        }
+        val effectiveIsAllDay = if (domain == RecurrenceDomain.TASK) false else dto.isAllDay
+        val effectiveDueMinutes = if (effectiveIsAllDay) null else (parsedStartTime ?: dto.dueTimeMinutesOfDay)
+        val effectiveHasDueTime = if (effectiveIsAllDay) {
+            false
+        } else if (domain == RecurrenceDomain.TASK) {
+            dto.hasDueTime || effectiveDueMinutes != null
+        } else {
+            true
+        }
+        if (effectiveHasDueTime && effectiveDueMinutes == null) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Informe 'startTime' (HH:mm) ou 'dueTimeMinutesOfDay' para série com horário.", title)
+        }
+        if (domain != RecurrenceDomain.TASK && dto.durationMillis < 60_000L) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "durationMillis deve ser >= 60000 ms para compromissos e eventos.", title)
+        }
+        if (dto.reminderMinutesBefore != null && dto.reminderMinutesBefore < 0) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "reminderMinutesBefore não pode ser negativo.", title)
+        }
+
+        val eventStatus = parseEnumStrict<EventLifecycleStatus>(dto.eventStatus, "eventStatus")
+            ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "eventStatus inválido: '${dto.eventStatus}'.", title)
+        val ticketStatus = parseEnumStrict<TicketStatus>(dto.ticketStatus, "ticketStatus")
+            ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "ticketStatus inválido: '${dto.ticketStatus}'.", title)
+        val paymentMethod = parseEnumStrict<PaymentMethod>(dto.paymentMethod, "paymentMethod")
+            ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "paymentMethod inválido: '${dto.paymentMethod}'.", title)
+        if (dto.ticketPriceCents < 0L || dto.ticketFeesCents < 0L || dto.ticketQuantity < 1 || dto.installmentsCount !in 1..120) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Parâmetros financeiros de ingresso inválidos na recorrência.", title)
+        }
+
+        val projectId = dto.projectId?.trim()?.takeIf { it.isNotEmpty() }
+        if (projectId != null && !activeGateway.projectExists(projectId)) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Projeto vinculado '$projectId' não existe localmente.", title)
+        }
+        val categoryId = dto.categoryId?.trim()?.takeIf { it.isNotEmpty() }
+        if (categoryId != null && !activeGateway.categoryExists(categoryId)) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Categoria vinculada '$categoryId' não existe localmente.", title)
+        }
+        val eventId = dto.eventId?.trim()?.takeIf { it.isNotEmpty() }
+        if (eventId != null && !activeGateway.eventExists(eventId)) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Evento vinculado '$eventId' não existe localmente.", title)
+        }
+        val goalId = dto.goalId?.trim()?.takeIf { it.isNotEmpty() }
+        if (goalId != null && !activeGateway.personalGoalExists(goalId)) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Objetivo vinculado '$goalId' não existe localmente.", title)
+        }
+        val creditCardId = dto.creditCardId?.trim()?.takeIf { it.isNotEmpty() }
+        if (creditCardId != null && !activeGateway.creditCardExists(creditCardId)) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Cartão vinculado '$creditCardId' não existe localmente.", title)
+        }
+
+        val cleanTemplateChecklist = mutableListOf<String>()
+        dto.templateChecklist.forEachIndexed { idx, rawItem ->
+            val trimmedItem = rawItem.trim()
+            if (trimmedItem.isEmpty()) {
+                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Item #${idx + 1} de templateChecklist está vazio.", title)
+            }
+            cleanTemplateChecklist += trimmedItem
+        }
+
+        val effectiveFromIso = dto.effectiveFromDateIso?.trim()?.takeIf { it.isNotEmpty() }?.let { rawDate ->
+            RecurrenceEngine.parseLocalDateOrNull(rawDate)?.toString()
+                ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "effectiveFromDateIso inválido (use YYYY-MM-DD): '$rawDate'.", title)
+        } ?: DateTimeUtils.epochToLocalDate(now).toString()
+
+        val entityId = dto.id?.trim()?.takeIf { it.isNotEmpty() } ?: "ing-rec-$opId"
+        val existing = activeGateway.getTaskRecurrenceById(entityId)
+        when {
+            existing != null && opAction == StructuredOperationAction.CREATE ->
+                return recordLocalConflict(activeGateway, opId, operation, StructuredEntityType.RECURRENCE, entityId, effectiveSource, effectiveCreatedAt, now, "Série recorrente '$entityId' já existe localmente; versão local preservada.", existing.title)
+            existing == null && opAction == StructuredOperationAction.UPDATE ->
+                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Série recorrente '$entityId' não encontrada localmente para atualização.", title)
+            existing != null && existing.domain != domain ->
+                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Domínio da série '$entityId' (${existing.domain}) não pode ser alterado para $domain.", title)
+        }
+
+        val entity = if (existing == null) {
+            val initialHistory = RecurrenceEngine.serializeTemplateHistory(
+                listOf(
+                    ChecklistTemplateSnapshot(
+                        version = 1,
+                        effectiveFromDateIso = startDate.toString(),
+                        items = cleanTemplateChecklist
+                    )
+                )
+            )
+            TaskRecurrenceEntity(
+                id = entityId,
+                title = title,
+                description = dto.description.trim(),
+                projectId = if (domain == RecurrenceDomain.TASK) projectId else null,
+                categoryId = categoryId,
+                eventId = if (domain == RecurrenceDomain.EVENT) null else eventId,
+                goalId = if (domain == RecurrenceDomain.TASK) goalId else null,
+                priority = priority,
+                notes = dto.notes.trim(),
+                hasDueTime = effectiveHasDueTime,
+                dueTimeMinutesOfDay = effectiveDueMinutes,
+                reminderMinutesBefore = dto.reminderMinutesBefore,
+                frequency = frequency,
+                customIntervalDays = dto.customIntervalDays,
+                weekdaysMask = weekdaysMask,
+                startDateIso = startDate.toString(),
+                endDateIso = cleanEndDateIso,
+                maxOccurrences = dto.maxOccurrences,
+                isActive = dto.isActive,
+                domain = domain,
+                isAllDay = effectiveIsAllDay,
+                durationMillis = dto.durationMillis.coerceAtLeast(60_000L),
+                location = dto.location.trim(),
+                link = dto.link.trim(),
+                officialLink = dto.officialLink.trim(),
+                ticketLink = dto.ticketLink.trim(),
+                locationName = dto.locationName.trim(),
+                address = dto.address.trim(),
+                city = dto.city.trim(),
+                state = dto.state.trim(),
+                eventStatus = if (eventStatus == EventLifecycleStatus.ATTENDED) EventLifecycleStatus.PLANNED else eventStatus,
+                ticketStatus = if (ticketStatus == TicketStatus.PAID || ticketStatus == TicketStatus.BOUGHT || ticketStatus == TicketStatus.PARTIALLY_PAID) TicketStatus.NOT_BOUGHT else ticketStatus,
+                ticketPriceCents = if (ticketStatus == TicketStatus.FREE) 0L else dto.ticketPriceCents,
+                ticketQuantity = dto.ticketQuantity,
+                ticketFeesCents = if (ticketStatus == TicketStatus.FREE) 0L else dto.ticketFeesCents,
+                paymentMethod = paymentMethod,
+                creditCardId = creditCardId,
+                installmentsCount = dto.installmentsCount,
+                templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(cleanTemplateChecklist),
+                checklistTemplateVersion = 1,
+                templateHistoryJson = initialHistory,
+                createdAt = now,
+                updatedAt = now
+            )
+        } else {
+            val baseUpdated = existing.copy(
+                title = title,
+                description = dto.description.trim(),
+                projectId = if (domain == RecurrenceDomain.TASK) projectId else existing.projectId,
+                categoryId = categoryId,
+                eventId = if (domain == RecurrenceDomain.EVENT) null else eventId,
+                goalId = if (domain == RecurrenceDomain.TASK) goalId else existing.goalId,
+                priority = priority,
+                notes = dto.notes.trim(),
+                hasDueTime = effectiveHasDueTime,
+                dueTimeMinutesOfDay = effectiveDueMinutes,
+                reminderMinutesBefore = dto.reminderMinutesBefore,
+                frequency = frequency,
+                customIntervalDays = dto.customIntervalDays,
+                weekdaysMask = weekdaysMask,
+                startDateIso = startDate.toString(),
+                endDateIso = cleanEndDateIso,
+                maxOccurrences = dto.maxOccurrences,
+                isActive = dto.isActive,
+                isAllDay = effectiveIsAllDay,
+                durationMillis = dto.durationMillis.coerceAtLeast(60_000L),
+                location = dto.location.trim(),
+                link = dto.link.trim(),
+                officialLink = dto.officialLink.trim(),
+                ticketLink = dto.ticketLink.trim(),
+                locationName = dto.locationName.trim(),
+                address = dto.address.trim(),
+                city = dto.city.trim(),
+                state = dto.state.trim(),
+                eventStatus = if (eventStatus == EventLifecycleStatus.ATTENDED) existing.eventStatus else eventStatus,
+                ticketStatus = if (ticketStatus == TicketStatus.PAID || ticketStatus == TicketStatus.BOUGHT || ticketStatus == TicketStatus.PARTIALLY_PAID) TicketStatus.NOT_BOUGHT else ticketStatus,
+                ticketPriceCents = if (ticketStatus == TicketStatus.FREE) 0L else dto.ticketPriceCents,
+                ticketQuantity = dto.ticketQuantity,
+                ticketFeesCents = if (ticketStatus == TicketStatus.FREE) 0L else dto.ticketFeesCents,
+                paymentMethod = paymentMethod,
+                creditCardId = creditCardId,
+                installmentsCount = dto.installmentsCount,
+                updatedAt = now
+            )
+            RecurrenceEngine.buildUpdatedChecklistTemplate(
+                existing = baseUpdated,
+                newTemplateItems = cleanTemplateChecklist,
+                effectiveFromDateIso = effectiveFromIso
+            )
+        }
+
+        val isUpdate = existing != null
+        val checklistSuffix = if (cleanTemplateChecklist.isNotEmpty()) " (${cleanTemplateChecklist.size} item(ns) no template)" else ""
+        val detail = if (isUpdate) {
+            "Série recorrente '$title' (${domain.label}) atualizada via entrada estruturada$checklistSuffix."
+        } else {
+            "Série recorrente '$title' (${domain.label}) criada via entrada estruturada$checklistSuffix."
+        }
+        return applyPlan(
+            activeGateway = activeGateway,
+            opId = opId,
+            operation = operation,
+            entityType = StructuredEntityType.RECURRENCE,
+            plan = OperationPlan.UpsertTaskRecurrence(entity),
+            effectiveSource = effectiveSource,
+            effectiveCreatedAt = effectiveCreatedAt,
+            now = now,
+            detail = detail,
+            isUpdate = isUpdate,
+            entityTitle = title,
+            checklistItemsCount = cleanTemplateChecklist.size
         )
     }
 

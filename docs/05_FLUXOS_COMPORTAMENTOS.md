@@ -39,21 +39,23 @@
 
 ---
 
-## 4. Fluxo de Recorrência Multi-Domínio e Checklists (`RecurrenceEngine` + `AgendaEngine`)
+## 4. Fluxo de Recorrência Multi-Domínio, Checklists e Isolamento (`RecurrenceEngine` + `AgendaEngine`)
 
 ```mermaid
 flowchart TD
-    A["Usuário ativa 'Repetir' em Task/Appointment/EventEditorSheet"] --> B["Salva TaskRecurrenceEntity (recurrences, domain + templateSubtasksJson) + 1ª instância"]
+    A["Usuário ativa 'Repetir' em Task/Appointment/EventEditorSheet ou envia RECURRENCE via Inbox"] --> B["Salva TaskRecurrenceEntity (recurrences, domain + templateSubtasksJson + templateHistoryJson) + 1ª instância"]
     B --> C["AgendaEngine / EventsScreen (expand)"]
-    C --> D["RecurrenceEngine projeta ocorrências virtuais ('rec::...')<br/>omite datas materializadas e SKIPs, aplica OVERRIDEs"]
-    B --> E["Tarefa recorrente concluída (COMPLETED)"]
-    E --> F["RecurrenceEngine.nextOccurrenceDateAfter<br/>preserva cadência mesmo com atraso"]
-    F --> G["Insere próxima TaskEntity com UNIQUE(recurrenceId, occurrenceDateIso)<br/>e subtarefas zeradas a partir de templateSubtasksJson"]
+    C --> D["RecurrenceEngine projeta ocorrências virtuais ('rec::...')<br/>resolveChecklistTemplateVersionAndItems por occurrenceDateIso"]
+    B --> E["Tarefa concluída ou ocorrência materializada sob demanda"]
+    E --> F["RecurrenceEngine.nextOccurrenceDateAfter preserva cadência<br/>e cria instância com UNIQUE(recurrenceId, occurrenceDateIso)"]
+    F --> G["Checklists próprios em subtasks (TASK) ou schedule_checklist_items (APPOINTMENT/EVENT)<br/>sempre zerados a partir do snapshot da data"]
 ```
 
 - **Editar/Excluir ocorrência (`Só esta ocorrência` vs `Toda a série`):** diálogos de confirmação em Tarefas, Compromissos e Eventos permitem criar `RecurrenceExceptionEntity` (`OVERRIDE` ou `SKIP`) apenas para a data escolhida ou atualizar/desativar a série em `recurrences` (preservando e desvinculando ocorrências de Eventos com `ATTENDED` ou ingresso `PAID` / transação `SETTLED`).
-- **Materialização sob demanda na Agenda/Eventos:** tocar em uma ocorrência virtual (`"rec::<recurrenceId>::<occurrenceDateIso>"`) materializa/abre aquela ocorrência específica sem gerar obrigações financeiras automáticas (`TransactionEntity`) em Eventos.
-- **Independência de checklists (`GAP-003`):** alterações de marcação (`isCompleted`) afetam apenas a ocorrência aberta; edições estruturais na checklist de uma tarefa recorrente perguntam `"Só esta ocorrência"` vs `"Toda a série"` (`templateSubtasksJson`).
+- **Materialização sob demanda na Agenda/Eventos:** tocar em uma ocorrência virtual (`"rec::<recurrenceId>::<occurrenceDateIso>"`) materializa/abre aquela ocorrência específica no Room já populando o checklist próprio (`schedule_checklist_items`) segundo a versão de template vigente para aquela data, sem gerar obrigações financeiras automáticas (`TransactionEntity`) em Eventos.
+- **Checklists em Compromissos e Eventos (`REQ-029` / `GAP-004`):** `AppointmentEditorSheet`, `EventEditorSheet`, `EventSummaryCard` e `AgendaScreen` oferecem criação, renomeação inline, reordenação, remoção, contagem `concluídos/total` e barra de progresso em `schedule_checklist_items`. Nos editores, toda alteração de checklist fica em rascunho até `"Salvar"`.
+- **Isolamento por ocorrência e versionamento não retroativo (`GAP-003` + `GAP-004`):** alternar `isCompleted` ou editar itens em `"Só esta ocorrência"` afeta exclusivamente a ocorrência aberta (identificada por `(recurrenceId, occurrenceDateIso)`). Ao alterar a estrutura do checklist com `"Toda a série"`, `RecurrenceEngine.buildUpdatedChecklistTemplate` incrementa `checklistTemplateVersion` e acrescenta um `ChecklistTemplateSnapshot(version, effectiveFromDateIso, items)` em `templateHistoryJson` — mantendo intactas ocorrências passadas ou exceções já materializadas e aplicando a nova estrutura apenas às ocorrências futuras a partir de `effectiveFromDateIso`.
+- **Ingestão via `NEXUS-INBOX` (`GAP-002`):** `StructuredInputProcessor` aceita `RECURRENCE` (`TASK`/`APPOINTMENT`/`EVENT`, incluindo `templateChecklist` e `effectiveFromDateIso`) e `checklist` opcional em `APPOINTMENT`/`EVENT`, passando pelos mesmos fluxos e pela mesma validação de versionamento não retroativo.
 
 ---
 
@@ -130,6 +132,12 @@ sequenceDiagram
 - **Tratamento de Erros e Crash:**
   - Falhas assíncronas em repositórios/workers usam `safeDbCall` / `runCatching`, registram em `error_logs` e mostram feedback amigável (nunca stack trace cru na UI).
   - Exceções não tratadas passam pelo `GlobalErrorHandler`, que grava `ErrorLogEntity` no Room (com timeout curto de proteção) antes de delegar ao `UncaughtExceptionHandler` padrão do Android.
+- **Restauração de banco de fábrica (`Configurações → Dados e armazenamento`):**
+  1. Exibe aviso explicativo com opção direta de **exportar backup JSON via SAF antes** de restaurar.
+  2. Exige dupla confirmação explícita (2º diálogo com checkbox obrigatório + digitação exata de `"APAGAR E RESTAURAR"`).
+  3. Executa sob trava exclusiva (`InboxRepository.withExclusiveOperationLock` → `NexusRepository.databaseMutationMutex`) dentro de `database.withTransaction`: limpa todas as `28` tabelas do Room (`deleteAll()`), re-semeia padrões iniciais (perfil `"Enzo"`, `darkTheme = true`, `16` categorias padrão, rotina e personalização), limpa estados locais de Mercado (cotações/favoritos/alertas/histórico com rollback se o Room falhar) e limpa apenas o rastreamento local de importações da `NEXUS-INBOX` (`resetLocalTrackingStateUnlocked`).
+  4. **Preserva integralmente** instalação, repositório GitHub remoto, PAT criptografado no Android Keystore e coordenadas configuradas da `NEXUS-INBOX`.
+  5. Após commit bem-sucedido, cancela alarmes e notificações agendadas/exibidas e dispara atualização dos widgets Glance.
 
 ---
 

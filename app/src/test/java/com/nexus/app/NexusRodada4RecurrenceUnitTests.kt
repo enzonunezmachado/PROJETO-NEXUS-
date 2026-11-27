@@ -275,12 +275,15 @@ class NexusRodada4RecurrenceUnitTests {
     }
 
     @Test
-    fun `database version migration 6_7 and backup format version are consistent for Rodada 4`() {
-        assertEquals(7, NexusDatabase.DATABASE_VERSION)
-        assertEquals(8, NexusBackupPayload.CURRENT_FORMAT_VERSION)
+    fun `database version migration 6_7 7_8 and backup format version are consistent`() {
+        assertEquals(8, NexusDatabase.DATABASE_VERSION)
+        assertEquals(9, NexusBackupPayload.CURRENT_FORMAT_VERSION)
         assertEquals(6, NexusMigrations.MIGRATION_6_7.startVersion)
         assertEquals(7, NexusMigrations.MIGRATION_6_7.endVersion)
+        assertEquals(7, NexusMigrations.MIGRATION_7_8.startVersion)
+        assertEquals(8, NexusMigrations.MIGRATION_7_8.endVersion)
         assertTrue(NexusMigrations.ALL_MIGRATIONS.any { it.startVersion == 6 && it.endVersion == 7 })
+        assertTrue(NexusMigrations.ALL_MIGRATIONS.any { it.startVersion == 7 && it.endVersion == 8 })
         assertNotNull(RecurrenceDomain.fromStringOrDefault("APPOINTMENT"))
         assertEquals(RecurrenceDomain.EVENT, RecurrenceDomain.fromStringOrDefault("event"))
         assertEquals(RecurrenceDomain.TASK, RecurrenceDomain.fromStringOrDefault("UNKNOWN"))

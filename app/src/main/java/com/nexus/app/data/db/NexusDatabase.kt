@@ -29,6 +29,7 @@ import com.nexus.app.data.db.dao.RecurrenceExceptionDao
 import com.nexus.app.data.db.dao.RecurringRuleDao
 import com.nexus.app.data.db.dao.ReminderDao
 import com.nexus.app.data.db.dao.RoutineAssistantSettingsDao
+import com.nexus.app.data.db.dao.ScheduleChecklistItemDao
 import com.nexus.app.data.db.dao.SettingsDao
 import com.nexus.app.data.db.dao.SubtaskDao
 import com.nexus.app.data.db.dao.TaskDao
@@ -56,6 +57,7 @@ import com.nexus.app.data.db.entity.RecurrenceExceptionEntity
 import com.nexus.app.data.db.entity.RecurringRuleEntity
 import com.nexus.app.data.db.entity.ReminderEntity
 import com.nexus.app.data.db.entity.RoutineAssistantSettingsEntity
+import com.nexus.app.data.db.entity.ScheduleChecklistItemEntity
 import com.nexus.app.data.db.entity.SettingsEntity
 import com.nexus.app.data.db.entity.SubtaskEntity
 import com.nexus.app.data.db.entity.TaskEntity
@@ -91,7 +93,8 @@ import com.nexus.app.domain.model.CategoryScope
         GoalMilestoneEntity::class,
         GoalProgressLogEntity::class,
         TaskRecurrenceEntity::class,
-        RecurrenceExceptionEntity::class
+        RecurrenceExceptionEntity::class,
+        ScheduleChecklistItemEntity::class
     ],
     version = NexusDatabase.DATABASE_VERSION,
     exportSchema = true
@@ -125,10 +128,11 @@ abstract class NexusDatabase : RoomDatabase() {
     abstract fun goalProgressLogDao(): GoalProgressLogDao
     abstract fun taskRecurrenceDao(): TaskRecurrenceDao
     abstract fun recurrenceExceptionDao(): RecurrenceExceptionDao
+    abstract fun scheduleChecklistItemDao(): ScheduleChecklistItemDao
 
     companion object {
         const val DATABASE_NAME = "nexus_local.db"
-        const val DATABASE_VERSION = 7
+        const val DATABASE_VERSION = 8
 
         fun build(context: Context): NexusDatabase {
             return Room.databaseBuilder(
@@ -150,7 +154,7 @@ abstract class NexusDatabase : RoomDatabase() {
          * Insere apenas configuracoes iniciais (usuario "Enzo", tema escuro) e categorias
          * base editaveis. Nunca insere tarefas, eventos, transacoes ou compromissos ficticios.
          */
-        private fun seedInitialDefaults(db: SupportSQLiteDatabase) {
+        internal fun seedInitialDefaults(db: SupportSQLiteDatabase) {
             val now = DateTimeUtils.nowEpochMillis()
             db.execSQL(
                 """

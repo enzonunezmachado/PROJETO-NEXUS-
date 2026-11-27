@@ -8,6 +8,7 @@ enum class StructuredEntityType {
     CHECKLIST,
     APPOINTMENT,
     EVENT,
+    RECURRENCE,
     PROJECT,
     PERSONAL_GOAL,
     TRANSACTION;
@@ -126,7 +127,8 @@ data class StructuredAppointmentData(
     val endAt: Long = 0L,
     val isAllDay: Boolean = false,
     val location: String = "",
-    val link: String = ""
+    val link: String = "",
+    val checklist: List<StructuredSubtaskItem> = emptyList()
 )
 
 @Serializable
@@ -155,7 +157,54 @@ data class StructuredEventData(
     val ticketDueDate: Long? = null,
     val paymentMethod: String = "PIX",
     val creditCardId: String? = null,
-    val installmentsCount: Int = 1
+    val installmentsCount: Int = 1,
+    val checklist: List<StructuredSubtaskItem> = emptyList()
+)
+
+@Serializable
+data class StructuredRecurrenceData(
+    val id: String? = null,
+    val domain: String = "TASK",
+    val title: String = "",
+    val description: String = "",
+    val projectId: String? = null,
+    val categoryId: String? = null,
+    val eventId: String? = null,
+    val goalId: String? = null,
+    val priority: String = "NORMAL",
+    val notes: String = "",
+    val frequency: String = "WEEKLY",
+    val customIntervalDays: Int = 1,
+    val weekdays: List<String> = emptyList(),
+    val weekdaysMask: Int? = null,
+    val startDateIso: String = "",
+    val endDateIso: String? = null,
+    val maxOccurrences: Int? = null,
+    val hasDueTime: Boolean = false,
+    val dueTimeMinutesOfDay: Int? = null,
+    val startTime: String? = null,
+    val isAllDay: Boolean = false,
+    val durationMillis: Long = 3_600_000L,
+    val reminderMinutesBefore: Int? = null,
+    val location: String = "",
+    val link: String = "",
+    val officialLink: String = "",
+    val ticketLink: String = "",
+    val locationName: String = "",
+    val address: String = "",
+    val city: String = "",
+    val state: String = "",
+    val eventStatus: String = "PLANNED",
+    val ticketStatus: String = "FREE",
+    val ticketPriceCents: Long = 0L,
+    val ticketQuantity: Int = 1,
+    val ticketFeesCents: Long = 0L,
+    val paymentMethod: String = "PIX",
+    val creditCardId: String? = null,
+    val installmentsCount: Int = 1,
+    val templateChecklist: List<String> = emptyList(),
+    val effectiveFromDateIso: String? = null,
+    val isActive: Boolean = true
 )
 
 @Serializable

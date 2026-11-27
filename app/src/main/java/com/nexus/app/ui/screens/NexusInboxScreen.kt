@@ -625,8 +625,9 @@ private fun PreviewItemRow(item: StructuredPreviewItem) {
     val typeLabel = when (item.entityType) {
         StructuredEntityType.TASK -> if (item.checklistItemsCount > 0) "Tarefa + Checklist (${item.checklistItemsCount})" else "Tarefa"
         StructuredEntityType.CHECKLIST -> "Checklist (${item.checklistItemsCount})"
-        StructuredEntityType.APPOINTMENT -> "Compromisso"
-        StructuredEntityType.EVENT -> "Evento"
+        StructuredEntityType.APPOINTMENT -> if (item.checklistItemsCount > 0) "Compromisso + Checklist (${item.checklistItemsCount})" else "Compromisso"
+        StructuredEntityType.EVENT -> if (item.checklistItemsCount > 0) "Evento + Checklist (${item.checklistItemsCount})" else "Evento"
+        StructuredEntityType.RECURRENCE -> if (item.checklistItemsCount > 0) "Série recorrente + Checklist (${item.checklistItemsCount})" else "Série recorrente"
         StructuredEntityType.PROJECT -> "Projeto"
         StructuredEntityType.PERSONAL_GOAL -> "Objetivo"
         StructuredEntityType.TRANSACTION -> "Finanças"

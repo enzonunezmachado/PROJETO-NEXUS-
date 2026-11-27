@@ -99,7 +99,7 @@ class MarketBackupIntegrationUnitTests {
             )
         )
 
-        assertEquals(8, NexusBackupPayload.CURRENT_FORMAT_VERSION)
+        assertEquals(9, NexusBackupPayload.CURRENT_FORMAT_VERSION)
         val encoded = tolerantJson.encodeToString(payload)
         val decoded = tolerantJson.decodeFromString<NexusBackupPayload>(encoded)
 

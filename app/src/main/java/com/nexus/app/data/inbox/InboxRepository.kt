@@ -15,6 +15,8 @@ import com.nexus.app.notifications.NexusNotificationScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.security.MessageDigest
@@ -50,7 +52,12 @@ object InboxSummaryFormatter {
                     if (group != null) {
                         val label = receipt.displayLabel()
                         addedByGroup.getOrPut(group) { mutableListOf() }.add(label)
-                        if (receipt.entityType == StructuredEntityType.TASK && receipt.checklistItemsCount > 0) {
+                        if (
+                            (receipt.entityType == StructuredEntityType.TASK ||
+                                receipt.entityType == StructuredEntityType.APPOINTMENT ||
+                                receipt.entityType == StructuredEntityType.EVENT) &&
+                            receipt.checklistItemsCount > 0
+                        ) {
                             addedByGroup.getOrPut(InboxEntityGroup.CHECKLIST) { mutableListOf() }
                                 .add("${receipt.checklistItemsCount} item(ns) em $label")
                         }
@@ -62,7 +69,12 @@ object InboxSummaryFormatter {
                     if (group != null) {
                         val label = receipt.displayLabel()
                         updatedByGroup.getOrPut(group) { mutableListOf() }.add(label)
-                        if (receipt.entityType == StructuredEntityType.TASK && receipt.checklistItemsCount > 0) {
+                        if (
+                            (receipt.entityType == StructuredEntityType.TASK ||
+                                receipt.entityType == StructuredEntityType.APPOINTMENT ||
+                                receipt.entityType == StructuredEntityType.EVENT) &&
+                            receipt.checklistItemsCount > 0
+                        ) {
                             updatedByGroup.getOrPut(InboxEntityGroup.CHECKLIST) { mutableListOf() }
                                 .add("${receipt.checklistItemsCount} item(ns) em $label")
                         }
@@ -84,6 +96,7 @@ object InboxSummaryFormatter {
             InboxEntityGroup.TASK,
             InboxEntityGroup.CHECKLIST,
             InboxEntityGroup.APPOINTMENT,
+            InboxEntityGroup.RECURRENCE,
             InboxEntityGroup.TRANSACTION,
             InboxEntityGroup.PROJECT,
             InboxEntityGroup.PERSONAL_GOAL
@@ -156,6 +169,7 @@ object InboxSummaryFormatter {
         StructuredEntityType.TASK -> InboxEntityGroup.TASK
         StructuredEntityType.CHECKLIST -> InboxEntityGroup.CHECKLIST
         StructuredEntityType.APPOINTMENT -> InboxEntityGroup.APPOINTMENT
+        StructuredEntityType.RECURRENCE -> InboxEntityGroup.RECURRENCE
         StructuredEntityType.TRANSACTION -> InboxEntityGroup.TRANSACTION
         StructuredEntityType.PROJECT -> InboxEntityGroup.PROJECT
         StructuredEntityType.PERSONAL_GOAL -> InboxEntityGroup.PERSONAL_GOAL
@@ -170,20 +184,21 @@ object InboxSummaryFormatter {
         InboxEntityGroup.TASK -> if (count == 1) "tarefa" else "tarefas"
         InboxEntityGroup.CHECKLIST -> if (count == 1) "checklist" else "checklists"
         InboxEntityGroup.APPOINTMENT -> if (count == 1) "compromisso" else "compromissos"
+        InboxEntityGroup.RECURRENCE -> if (count == 1) "recorrência" else "recorrências"
         InboxEntityGroup.TRANSACTION -> if (count == 1) "despesa/lançamento" else "despesas/lançamentos"
         InboxEntityGroup.PROJECT -> if (count == 1) "projeto" else "projetos"
         InboxEntityGroup.PERSONAL_GOAL -> if (count == 1) "objetivo" else "objetivos"
     }
 
     private fun verbAdded(group: InboxEntityGroup, count: Int): String = when (group) {
-        InboxEntityGroup.TASK, InboxEntityGroup.TRANSACTION ->
+        InboxEntityGroup.TASK, InboxEntityGroup.TRANSACTION, InboxEntityGroup.RECURRENCE ->
             if (count == 1) "adicionada" else "adicionadas"
         else ->
             if (count == 1) "adicionado" else "adicionados"
     }
 
     private fun verbUpdated(group: InboxEntityGroup, count: Int): String = when (group) {
-        InboxEntityGroup.TASK, InboxEntityGroup.TRANSACTION ->
+        InboxEntityGroup.TASK, InboxEntityGroup.TRANSACTION, InboxEntityGroup.RECURRENCE ->
             if (count == 1) "atualizada" else "atualizadas"
         else ->
             if (count == 1) "atualizado" else "atualizados"
@@ -211,6 +226,8 @@ class InboxRepository(
         coerceInputValues = false
     }
 
+    private val operationMutex = Mutex()
+
     private val _config = MutableStateFlow(configStorage.loadConfig())
     val config: StateFlow<InboxConfig> = _config.asStateFlow()
 
@@ -228,6 +245,33 @@ class InboxRepository(
 
     private val _lastUpdateLog = MutableStateFlow<InboxUpdateLogEntry?>(null)
     val lastUpdateLog: StateFlow<InboxUpdateLogEntry?> = _lastUpdateLog.asStateFlow()
+
+    suspend fun <T> withExclusiveOperationLock(block: suspend () -> T): T =
+        operationMutex.withLock { block() }
+
+    /**
+     * Limpa rastreamento local da NEXUS-INBOX durante a restauração de fábrica,
+     * preservando integralmente credenciais (PAT) e endereço do repositório.
+     */
+    fun resetLocalTrackingStateUnlocked(): Boolean {
+        val current = _config.value
+        val cleared = current.copy(
+            lastCheckedAtEpochMs = null,
+            lastImportAtEpochMs = null,
+            lastError = null
+        )
+        configStorage.clearProcessedFileVersionKeys()
+        configStorage.setLastNotifiedFingerprint(null)
+        configStorage.saveConfig(cleared)
+        _config.value = cleared
+        _pendingCheck.value = null
+        _lastUpdateLog.value = null
+        _lastConnectionTest.value = null
+        return true
+    }
+
+    suspend fun resetLocalTrackingPreservingCredentials(): Boolean =
+        operationMutex.withLock { resetLocalTrackingStateUnlocked() }
 
     fun saveConfig(
         owner: String,
@@ -307,155 +351,157 @@ class InboxRepository(
         }
     }
 
-    suspend fun checkInboxNow(fromBackgroundWorker: Boolean = false): Result<InboxPendingCheckResult> {
-        val currentConfig = _config.value
-        if (!currentConfig.isConfigured) {
-            return Result.failure(IllegalStateException("Configure o repositório NEXUS-INBOX antes de verificar."))
-        }
-        val token = tokenStore.getToken()
-            ?: return Result.failure(IllegalStateException("Token da NEXUS-INBOX não configurado."))
-
-        _isBusy.value = true
-        return try {
-            val now = clockMillis()
-            val remoteFiles = remoteDataSource.listInboxJsonFiles(currentConfig, token).getOrElse { err ->
-                val msg = err.message ?: "Falha ao listar arquivos da NEXUS-INBOX."
-                updateCheckedStatus(now, msg)
-                return Result.failure(IllegalStateException(msg))
+    suspend fun checkInboxNow(fromBackgroundWorker: Boolean = false): Result<InboxPendingCheckResult> =
+        operationMutex.withLock {
+            val currentConfig = _config.value
+            if (!currentConfig.isConfigured) {
+                return@withLock Result.failure(IllegalStateException("Configure o repositório NEXUS-INBOX antes de verificar."))
             }
+            val token = tokenStore.getToken()
+                ?: return@withLock Result.failure(IllegalStateException("Token da NEXUS-INBOX não configurado."))
 
-            val processedKeys = configStorage.getProcessedFileVersionKeys()
-            val candidateFiles = remoteFiles.filterNot { processedKeys.contains(it.versionKey) }
-
-            val downloadedValid = mutableListOf<InboxDownloadedFile>()
-            val parseErrors = mutableListOf<String>()
-
-            for (file in candidateFiles) {
-                val rawResult = remoteDataSource.downloadFileRawContent(currentConfig, file, token)
-                val raw = rawResult.getOrNull()
-                if (raw == null) {
-                    val err = rawResult.exceptionOrNull()
-                    parseErrors.add("${file.name}: ${err?.message ?: "erro ao baixar"}")
-                    continue
+            _isBusy.value = true
+            try {
+                val now = clockMillis()
+                val remoteFiles = remoteDataSource.listInboxJsonFiles(currentConfig, token).getOrElse { err ->
+                    val msg = err.message ?: "Falha ao listar arquivos da NEXUS-INBOX."
+                    updateCheckedStatus(now, msg)
+                    return@withLock Result.failure(IllegalStateException(msg))
                 }
-                val parsedResult = parseEnvelopeStrictly(raw)
-                val parsed = parsedResult.getOrNull()
-                if (parsed == null) {
-                    val err = parsedResult.exceptionOrNull()
-                    parseErrors.add("${file.name}: ${err?.message ?: "JSON incompatível com o contrato"}")
-                    continue
-                }
-                downloadedValid.add(
-                    InboxDownloadedFile(
-                        file = file,
-                        rawJson = raw,
-                        envelope = parsed
+
+                val processedKeys = configStorage.getProcessedFileVersionKeys()
+                val candidateFiles = remoteFiles.filterNot { processedKeys.contains(it.versionKey) }
+
+                val downloadedValid = mutableListOf<InboxDownloadedFile>()
+                val parseErrors = mutableListOf<String>()
+
+                for (file in candidateFiles) {
+                    val rawResult = remoteDataSource.downloadFileRawContent(currentConfig, file, token)
+                    val raw = rawResult.getOrNull()
+                    if (raw == null) {
+                        val err = rawResult.exceptionOrNull()
+                        parseErrors.add("${file.name}: ${err?.message ?: "erro ao baixar"}")
+                        continue
+                    }
+                    val parsedResult = parseEnvelopeStrictly(raw)
+                    val parsed = parsedResult.getOrNull()
+                    if (parsed == null) {
+                        val err = parsedResult.exceptionOrNull()
+                        parseErrors.add("${file.name}: ${err?.message ?: "JSON incompatível com o contrato"}")
+                        continue
+                    }
+                    downloadedValid.add(
+                        InboxDownloadedFile(
+                            file = file,
+                            rawJson = raw,
+                            envelope = parsed
+                        )
                     )
+                }
+
+                val mergedEnvelope = mergeDownloadedEnvelopes(downloadedValid, now)
+                val preview = nexusRepository.previewInboxEnvelope(mergedEnvelope).getOrElse { err ->
+                    val msg = err.message ?: "Erro ao validar prévia da NEXUS-INBOX."
+                    updateCheckedStatus(now, msg)
+                    return@withLock Result.failure(IllegalStateException(msg))
+                }
+
+                val result = InboxPendingCheckResult(
+                    checkedAtEpochMs = now,
+                    filesScannedCount = remoteFiles.size,
+                    unseenFiles = downloadedValid,
+                    combinedPreview = preview,
+                    fileParseErrors = parseErrors
                 )
-            }
 
-            val mergedEnvelope = mergeDownloadedEnvelopes(downloadedValid, now)
-            val preview = nexusRepository.previewInboxEnvelope(mergedEnvelope).getOrElse { err ->
-                val msg = err.message ?: "Erro ao validar prévia da NEXUS-INBOX."
-                updateCheckedStatus(now, msg)
-                return Result.failure(IllegalStateException(msg))
-            }
+                _pendingCheck.value = result
+                updateCheckedStatus(now, if (parseErrors.isNotEmpty() && downloadedValid.isEmpty()) parseErrors.first() else null)
 
-            val result = InboxPendingCheckResult(
-                checkedAtEpochMs = now,
-                filesScannedCount = remoteFiles.size,
-                unseenFiles = downloadedValid,
-                combinedPreview = preview,
-                fileParseErrors = parseErrors
-            )
-
-            _pendingCheck.value = result
-            updateCheckedStatus(now, if (parseErrors.isNotEmpty() && downloadedValid.isEmpty()) parseErrors.first() else null)
-
-            if (fromBackgroundWorker && result.hasNewActionableItems) {
-                val fingerprint = computePendingFingerprint(result)
-                if (fingerprint != configStorage.getLastNotifiedFingerprint()) {
-                    val notified = notificationScheduler?.showInboxPendingNotification(
-                        pendingNewCount = preview.willCreateCount,
-                        pendingUpdateCount = preview.willUpdateCount,
-                        filesCount = downloadedValid.size
-                    ) ?: false
-                    if (notified) {
-                        configStorage.setLastNotifiedFingerprint(fingerprint)
+                if (fromBackgroundWorker && result.hasNewActionableItems) {
+                    val fingerprint = computePendingFingerprint(result)
+                    if (fingerprint != configStorage.getLastNotifiedFingerprint()) {
+                        val notified = notificationScheduler?.showInboxPendingNotification(
+                            pendingNewCount = preview.willCreateCount,
+                            pendingUpdateCount = preview.willUpdateCount,
+                            filesCount = downloadedValid.size
+                        ) ?: false
+                        if (notified) {
+                            configStorage.setLastNotifiedFingerprint(fingerprint)
+                        }
                     }
                 }
+
+                Result.success(result)
+            } finally {
+                _isBusy.value = false
             }
-
-            Result.success(result)
-        } finally {
-            _isBusy.value = false
-        }
-    }
-
-    suspend fun confirmAndImportPending(): Result<InboxUpdateLogEntry> {
-        val pending = _pendingCheck.value
-            ?: return Result.failure(IllegalStateException("Nenhuma prévia pendente para importar. Verifique a NEXUS-INBOX primeiro."))
-
-        if (pending.unseenFiles.isEmpty() && pending.fileParseErrors.isEmpty()) {
-            return Result.failure(IllegalStateException("Não há operações pendentes na NEXUS-INBOX."))
         }
 
-        _isBusy.value = true
-        return try {
-            val now = clockMillis()
-            val mergedEnvelope = mergeDownloadedEnvelopes(pending.unseenFiles, now)
-            val batchResult = nexusRepository.applyInboxEnvelope(
-                envelope = mergedEnvelope
-            ).getOrElse { err ->
-                return Result.failure(err)
+    suspend fun confirmAndImportPending(): Result<InboxUpdateLogEntry> =
+        operationMutex.withLock {
+            val pending = _pendingCheck.value
+                ?: return@withLock Result.failure(IllegalStateException("Nenhuma prévia pendente para importar. Verifique a NEXUS-INBOX primeiro."))
+
+            if (pending.unseenFiles.isEmpty() && pending.fileParseErrors.isEmpty()) {
+                return@withLock Result.failure(IllegalStateException("Não há operações pendentes na NEXUS-INBOX."))
             }
 
-            val batchId = "inbox-${UUID.randomUUID()}"
-            val sourceFiles = pending.unseenFiles.map { it.file.name }
-            val logEntry = InboxSummaryFormatter.buildUpdateLogEntry(
-                batchId = batchId,
-                occurredAtEpochMs = now,
-                sourceFiles = sourceFiles,
-                result = batchResult,
-                preParseErrors = pending.fileParseErrors
-            )
-
-            nexusRepository.recordInboxImportLog(
-                batchId = batchId,
-                serializedSummaryJson = InboxSummaryFormatter.encodeLogEntry(logEntry)
-            )
-
-            val receiptsByOpId = batchResult.receipts.associateBy { it.operationId.trim() }
-            val completedFileKeys = pending.unseenFiles.mapNotNull { downloaded ->
-                val allTerminalWithoutFailure = downloaded.envelope.operations.all { op ->
-                    val state = receiptsByOpId[op.operationId.trim()]?.processingState
-                    state == StructuredProcessingState.APPLIED ||
-                        state == StructuredProcessingState.UPDATED ||
-                        state == StructuredProcessingState.DUPLICATE_IGNORED ||
-                        state == StructuredProcessingState.CONFLICT_PRESERVED_LOCAL
+            _isBusy.value = true
+            try {
+                val now = clockMillis()
+                val mergedEnvelope = mergeDownloadedEnvelopes(pending.unseenFiles, now)
+                val batchResult = nexusRepository.applyInboxEnvelope(
+                    envelope = mergedEnvelope
+                ).getOrElse { err ->
+                    return@withLock Result.failure(err)
                 }
-                if (allTerminalWithoutFailure) downloaded.file.versionKey else null
-            }.toSet()
 
-            if (completedFileKeys.isNotEmpty()) {
-                configStorage.addProcessedFileVersionKeys(completedFileKeys)
+                val batchId = "inbox-${UUID.randomUUID()}"
+                val sourceFiles = pending.unseenFiles.map { it.file.name }
+                val logEntry = InboxSummaryFormatter.buildUpdateLogEntry(
+                    batchId = batchId,
+                    occurredAtEpochMs = now,
+                    sourceFiles = sourceFiles,
+                    result = batchResult,
+                    preParseErrors = pending.fileParseErrors
+                )
+
+                nexusRepository.recordInboxImportLog(
+                    batchId = batchId,
+                    serializedSummaryJson = InboxSummaryFormatter.encodeLogEntry(logEntry)
+                )
+
+                val receiptsByOpId = batchResult.receipts.associateBy { it.operationId.trim() }
+                val completedFileKeys = pending.unseenFiles.mapNotNull { downloaded ->
+                    val allTerminalWithoutFailure = downloaded.envelope.operations.all { op ->
+                        val state = receiptsByOpId[op.operationId.trim()]?.processingState
+                        state == StructuredProcessingState.APPLIED ||
+                            state == StructuredProcessingState.UPDATED ||
+                            state == StructuredProcessingState.DUPLICATE_IGNORED ||
+                            state == StructuredProcessingState.CONFLICT_PRESERVED_LOCAL
+                    }
+                    if (allTerminalWithoutFailure) downloaded.file.versionKey else null
+                }.toSet()
+
+                if (completedFileKeys.isNotEmpty()) {
+                    configStorage.addProcessedFileVersionKeys(completedFileKeys)
+                }
+                configStorage.setLastNotifiedFingerprint(null)
+
+                val updatedConfig = _config.value.copy(
+                    lastImportAtEpochMs = now,
+                    lastError = if (logEntry.errorsCount > 0) logEntry.errorDetails.firstOrNull() else null
+                )
+                configStorage.saveConfig(updatedConfig)
+                _config.value = updatedConfig
+                _lastUpdateLog.value = logEntry
+                _pendingCheck.value = null
+
+                Result.success(logEntry)
+            } finally {
+                _isBusy.value = false
             }
-            configStorage.setLastNotifiedFingerprint(null)
-
-            val updatedConfig = _config.value.copy(
-                lastImportAtEpochMs = now,
-                lastError = if (logEntry.errorsCount > 0) logEntry.errorDetails.firstOrNull() else null
-            )
-            configStorage.saveConfig(updatedConfig)
-            _config.value = updatedConfig
-            _lastUpdateLog.value = logEntry
-            _pendingCheck.value = null
-
-            Result.success(logEntry)
-        } finally {
-            _isBusy.value = false
         }
-    }
 
     fun discardPendingPreview() {
         _pendingCheck.value = null

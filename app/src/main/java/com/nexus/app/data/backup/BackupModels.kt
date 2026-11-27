@@ -35,10 +35,11 @@ data class NexusBackupPayload(
     val goalProgressLogs: List<GoalProgressLogBackupDto> = emptyList(),
     val recurrences: List<TaskRecurrenceBackupDto> = emptyList(),
     val recurrenceExceptions: List<RecurrenceExceptionBackupDto> = emptyList(),
+    val scheduleChecklistItems: List<ScheduleChecklistItemBackupDto> = emptyList(),
     val marketConfig: MarketBackupConfigDto? = null
 ) {
     companion object {
-        const val CURRENT_FORMAT_VERSION = 8
+        const val CURRENT_FORMAT_VERSION = 9
     }
 }
 
@@ -167,6 +168,19 @@ data class SubtaskBackupDto(
     val title: String = "",
     val isCompleted: Boolean = false,
     val sortOrder: Int = 0,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L
+)
+
+@Serializable
+data class ScheduleChecklistItemBackupDto(
+    val id: String = "",
+    val appointmentId: String? = null,
+    val eventId: String? = null,
+    val title: String = "",
+    val isCompleted: Boolean = false,
+    val sortOrder: Int = 0,
+    val templateVersion: Int = 1,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 )
@@ -520,6 +534,8 @@ data class TaskRecurrenceBackupDto(
     val creditCardId: String? = null,
     val installmentsCount: Int = 1,
     val templateSubtasksJson: String = "[]",
+    val checklistTemplateVersion: Int = 1,
+    val templateHistoryJson: String = "[]",
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 )
@@ -576,6 +592,7 @@ data class BackupPreview(
     val goalProgressLogsCount: Int = 0,
     val recurrencesCount: Int = 0,
     val recurrenceExceptionsCount: Int = 0,
+    val scheduleChecklistItemsCount: Int = 0,
     val marketFavoritesCount: Int = 0,
     val marketAlertsCount: Int = 0,
     val includesMarketConfig: Boolean = false,
@@ -590,7 +607,7 @@ data class BackupPreview(
             auditHistoryCount + errorLogsCount + remindersCount +
             routineSettingsCount + briefingHistoryCount + personalizationSettingsCount +
             quotesCount + personalGoalsCount + goalMilestonesCount + goalProgressLogsCount +
-            recurrencesCount + recurrenceExceptionsCount +
+            recurrencesCount + recurrenceExceptionsCount + scheduleChecklistItemsCount +
             marketFavoritesCount + marketAlertsCount
 }
 
@@ -684,6 +701,7 @@ data class RestoreSummary(
     val goalProgressLogsRestored: Int = 0,
     val recurrencesRestored: Int = 0,
     val recurrenceExceptionsRestored: Int = 0,
+    val scheduleChecklistItemsRestored: Int = 0,
     val marketFavoritesRestored: Int = 0,
     val marketAlertsRestored: Int = 0,
     val marketConfigApplied: Boolean = false
@@ -696,6 +714,6 @@ data class RestoreSummary(
             auditHistoryRestored + errorLogsRestored + remindersRestored +
             routineSettingsRestored + briefingHistoryRestored + personalizationSettingsRestored +
             quotesRestored + personalGoalsRestored + goalMilestonesRestored + goalProgressLogsRestored +
-            recurrencesRestored + recurrenceExceptionsRestored +
+            recurrencesRestored + recurrenceExceptionsRestored + scheduleChecklistItemsRestored +
             marketFavoritesRestored + marketAlertsRestored
 }
