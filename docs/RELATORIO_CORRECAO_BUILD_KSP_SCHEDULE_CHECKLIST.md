@@ -40,3 +40,30 @@ A correção deve ser considerada aplicada no código, mas ainda não validada p
 ## Integridade da branch principal
 
 A correção foi feita em uma branch criada diretamente a partir do SHA de `main` informado acima. A branch `main` não foi modificada por esta correção.
+
+
+## Segunda falha encontrada — compilação do processador de recorrência
+
+Após a correção do import, o KSP passou, mas o CI encontrou erros Kotlin em `StructuredInputProcessor.kt` nas linhas 1306, 1424, 1428, 1469, 1473 e 1500–1517.
+
+### Causas raiz
+
+1. `RecurrenceEngine.parseWeekdaysStrict` exige os argumentos `weekdays` e `rawMask`, e retorna `Result<Int>`. O processador chamava a função com apenas um argumento e tratava o resultado como `Int`.
+2. O tipo de `effectiveDueMinutes` não estava explicitado como `Int?`, causando inferência incompatível nos construtores e cópias da entidade.
+3. A chamada de `buildUpdatedChecklistTemplate` usava o nome inexistente `newTemplateItems`; a API recebe `newTitles`.
+4. `buildUpdatedChecklistTemplate` retorna um `Triple<String, Int, String>`, não uma entidade. O resultado precisava ser aplicado de volta a `baseUpdated` por meio de `copy`, preenchendo `templateSubtasksJson`, `checklistTemplateVersion` e `templateHistoryJson`.
+
+### Correções realizadas
+
+- A chamada de `parseWeekdaysStrict` agora passa os dois campos do DTO e trata falhas com `getOrElse`, retornando recibo de rejeição com a mensagem de validação.
+- `effectiveDueMinutes` agora tem tipo explícito `Int?`.
+- A chamada do atualizador de template usa `newTitles`.
+- O Triple retornado pelo engine é aplicado em `baseUpdated.copy(...)`, preservando os demais campos da série e o histórico de versões do checklist.
+
+**Arquivo de código alterado nesta segunda correção:** `app/src/main/java/com/nexus/app/data/ingestion/StructuredInputProcessor.kt`.
+
+**Commit:** `bb68f74787dcdb1c92e6d8cf435af85d54a5897b`.
+
+### Validação pendente
+
+A correção foi aplicada no branch, mas depende de nova execução do GitHub Actions para confirmar compilação, testes unitários e geração do APK Debug. Não considerar validada até o CI terminar com sucesso.
