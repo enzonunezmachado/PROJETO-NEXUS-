@@ -93,7 +93,7 @@ Os itens abaixo já constam dos documentos oficiais e permanecem no inventário 
 | GitHub Actions #49 — run `45747557869` | Tentativa intermediária na branch `fix/inbox-kotlin-compile`; voltou a falhar no mesmo teste `previewEnvelope performs zero DB writes while validating intra-batch links` (`StructuredInputUnitTests.kt:1023`) | Não validou a correção; manter como histórico. |
 | GitHub Actions #50 — run `45748189511` | Reexecução após correção final do checklist | **Build job SUCCESS**; testes unitários e APK Debug concluíram com sucesso. Release foi ignorado por ausência de secrets de assinatura Release. Isso valida o workflow dessa execução, não os testes em aparelho, migrações reais ou atualização in-place. |
 
-### 5.1 Branches de correção e decisão de integração (26/11/2026)
+### 6.1 Branches de correção e decisão de integração (26/11/2026)
 
 As branches abaixo foram criadas para isolar as tentativas de correção da ponte/Inbox e validar o pipeline. Elas não devem ser tratadas como código errado nem integradas integralmente sem revisão.
 
