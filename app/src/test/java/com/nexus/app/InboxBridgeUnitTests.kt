@@ -597,17 +597,17 @@ class InboxBridgeUnitTests {
             configStorage = configStorage,
             tokenStore = tokenStore,
             remoteDataSource = remote,
-            ingestionPort = ingestion,
+            nexusRepository = ingestion,
             clockMillis = { t0 }
         )
 
-        repo.saveConfiguration(
+        repo.saveConfig(
             owner = "enzo",
             repo = "NEXUS-INBOX",
             branch = "main",
             pathPrefix = "inbox",
             autoCheckEnabled = true,
-            newTokenOrBlank = "pat_read_only_valid"
+            newTokenInput = "pat_read_only_valid"
         ).getOrThrow()
 
         remote.files = listOf(
@@ -647,24 +647,22 @@ class InboxBridgeUnitTests {
         val preview = repo.checkInboxNow(fromBackgroundWorker = false).getOrThrow()
         assertEquals(1, preview.combinedPreview.willCreateCount)
         assertTrue(
-            preview.entityGroups.any {
+            preview.combinedPreview.items.any {
                 it.entityType == com.nexus.app.data.ingestion.StructuredEntityType.RECURRENCE
             }
         )
 
-        val log = repo.confirmAndApplyPendingCheck().getOrThrow()
-        assertEquals(1, log.totalApplied)
+        val log = repo.confirmAndImportPending().getOrThrow()
+        assertEquals(1, log.categories.sumOf { it.addedCount + it.updatedCount })
         assertEquals(1, gateway.taskRecurrences.size)
         assertTrue(configStorage.processedKeys.isNotEmpty())
 
         val preserved = repo.resetLocalTrackingPreservingCredentials()
-        assertTrue(preserved.first)
-        assertTrue(preserved.second)
+        assertTrue(preserved)
         assertTrue(configStorage.processedKeys.isEmpty())
         assertNull(configStorage.notifiedFingerprint)
         assertNull(repo.pendingCheck.value)
         assertNull(repo.lastUpdateLog.value)
-        assertTrue(repo.updateLogs.value.isEmpty())
         assertEquals("pat_read_only_valid", tokenStore.getToken())
         assertEquals("enzo", repo.config.value.owner)
         assertEquals("NEXUS-INBOX", repo.config.value.repo)
