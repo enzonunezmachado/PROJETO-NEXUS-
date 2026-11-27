@@ -277,7 +277,10 @@ class FactoryResetUnitTests {
                     rangeKey = MarketHistoryRange.M1.key,
                     granularity = MarketHistoryGranularity.DAILY,
                     currency = "BRL",
-                    points = listOf(MarketHistoryPoint(timestampEpochMs = t0, price = 5.50)),
+                    points = listOf(
+                        MarketHistoryPoint(timestampEpochMs = t0, price = 5.50),
+                        MarketHistoryPoint(timestampEpochMs = t0 + 86_400_000L, price = 5.55)
+                    ),
                     sourceName = "Test",
                     fetchedAtEpochMs = t0
                 )
