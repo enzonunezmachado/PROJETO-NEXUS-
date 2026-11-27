@@ -79,7 +79,7 @@ A Rodada 4 prioriza a completude funcional do domínio antes da reformulação a
 
 A expansão do contrato da ponte para recorrências (`GAP-002`) permanece adiada para a **Rodada 6**. Não ampliar silenciosamente o contrato Inbox v1 nem simular séries com registros únicos avulsos.
 
-O guia operacional do ChatGPT (`docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`) será completado depois da estabilização dos modelos e fluxos, a partir de DTOs, enums, validadores, relações, processador e testes reais. Até lá, permanece como estrutura inicial e não deve ser usado para gerar JSON de produção.
+O guia operacional do ChatGPT (`docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`, versão `1.0.0`) foi consolidado a partir dos DTOs, enums, processador, conector `data/inbox/` e testes reais do contrato `v1`, separando explicitamente o que a Inbox `v1` suporta hoje do que existe apenas no app após a Rodada 4 (aguardando CI/dispositivo) e do que permanece fora do contrato (`GAP-002`, `GAP-004`, `GAP-005`, `GAP-006`). Por regra permanente (`docs/09_GUIA_DESENVOLVIMENTO.md` Seção 5.C), o guia deverá ser atualizado no mesmo lote sempre que novas implementações alterarem entidades, campos, relações, regras ou contratos acessíveis ao ChatGPT.
 
 Cada item deve ter especificação, implementação, testes automatizados adequados e validação no aplicativo real quando depender de Android/Room/WorkManager/UI. O registro `15_REGISTRO_LACUNAS_E_FALHAS.md` mantém as evidências e o estado de cada pendência.
 

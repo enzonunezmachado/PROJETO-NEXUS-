@@ -1,7 +1,7 @@
 # NEXUS — Documentação Oficial de Produto e Engenharia
 
 > **Entrada principal da documentação do repositório ativo `PROJETO-NEXUS-`.**  
-> **Última revisão documental:** 2026-11-26 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 7`, Backup `CURRENT_FORMAT_VERSION = 8`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX`, Rodada 4 com `GAP-001`/`REQ-009` e `GAP-003` implementados no código — aguardando Gradle/CI e dispositivo, `19` suítes de teste / `145` anotações `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
+> **Última revisão documental:** 2026-11-27 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 7`, Backup `CURRENT_FORMAT_VERSION = 8`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX`, Rodada 4 com `GAP-001`/`REQ-009` e `GAP-003` implementados no código — aguardando Gradle/CI e dispositivo, `19` suítes de teste / `145` anotações `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
 
 ---
 
@@ -45,7 +45,7 @@ Antes de qualquer leitura técnica ou execução, leia [`00_ORIENTACAO_E_AUTORID
 | **13** | [`13_GOVERNANCA_DOCUMENTAL.md`](./13_GOVERNANCA_DOCUMENTAL.md) | Ciclo de vida de ideias, revisão de decisões, autorização e continuidade | Antes de classificar ou reavaliar ideias |
 | **14** | [`14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`](./14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md) | Contrato JSON `v1`, entidades suportadas, estados e guia de integração da Entrada Estruturada para Etapa 3 | Antes de implementar ou integrar a Etapa 3 |
 | **15** | [`15_REGISTRO_LACUNAS_E_FALHAS.md`](./15_REGISTRO_LACUNAS_E_FALHAS.md) | Lacunas funcionais, defeitos, inconsistências e validações pendentes | Acompanhar o que falta e as evidências |
-| **16** | [`16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`](./16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md) | Estrutura inicial do guia para converter pedidos em operações JSON válidas; ainda não usar em produção | Consultar somente após validação do contrato real |
+| **16** | [`16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`](./16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md) | Guia operacional `v1` consolidado a partir do código real para converter linguagem natural em JSON válido do contrato `v1` (sujeito a manutenção contínua) | Sempre ao preparar entradas para `NEXUS-INBOX` ou ao evoluir entidades/regras acessíveis ao ChatGPT |
 | **17** | [`HISTORICO_DOCUMENTACAO.md`](./HISTORICO_DOCUMENTACAO.md) | Registro das mudanças no próprio modelo documental | Entender a evolução das regras documentais |
 
 ### Documentos Históricos e Arquivados (`/docs/archive/`)

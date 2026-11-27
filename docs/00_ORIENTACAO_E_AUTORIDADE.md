@@ -65,11 +65,13 @@ Open Finance, sincronização, serviços externos, IA local/remota e outras inte
 - `11_DECISOES_ADRS.md`: decisões arquiteturais e seus estados.
 - `13_GOVERNANCA_DOCUMENTAL.md`: processo normativo.
 - `HISTORICO_DOCUMENTACAO.md`: alterações documentais relevantes.
+- `14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`: contrato técnico `v1` da entrada estruturada e ponte `NEXUS-INBOX`.
 - `15_REGISTRO_LACUNAS_E_FALHAS.md`: inventário consolidado de lacunas, defeitos, inconsistências documentais e validações pendentes.
+- `16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`: guia operacional vigente do ChatGPT para a ponte `NEXUS-INBOX` (baseado exclusivamente no contrato e código reais); sua atualização é obrigatória sempre que uma implementação afetar entidades, campos, relações, regras ou capacidades acessíveis.
 - `NEXUS-DOCUMENTACAO/CHATGPT/`: visão, decisões, ideias, pesquisas e propostas; não substitui especificação técnica nem autoriza implementação.
 - `NEXUS-DOCUMENTACAO/GOOGLE_IA/`: espelho técnico; a origem é `PROJETO-NEXUS-/docs/`.
 
 ## Instrução final aos agentes
-Antes de planejar ou editar: leia este arquivo e o README; consulte os documentos vigentes do assunto; verifique ADRs e estados; use propostas e histórico apenas como contexto; não trate prompts antigos, protótipos ou relatórios de IA como decisões; não altere código sem autorização explícita.
+Antes de planejar ou editar: leia este arquivo e o README; consulte os documentos vigentes do assunto; verifique ADRs e estados; use propostas e histórico apenas como contexto; não trate prompts antigos, protótipos ou relatórios de IA como decisões; não altere código sem autorização explícita. Ao concluir qualquer implementação que altere funcionalidades, entidades, campos, relações, regras ou contratos acessíveis ao ChatGPT, atualize obrigatoriamente `16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` seguindo o checklist de `09_GUIA_DESENVOLVIMENTO.md`.
 
 **Preservar ideias não significa deixá-las competir com as regras vigentes. Preservar decisões não significa torná-las eternas.**

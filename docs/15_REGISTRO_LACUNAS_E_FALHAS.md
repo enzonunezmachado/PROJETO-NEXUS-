@@ -178,17 +178,13 @@ A conclusão da Rodada 3 não encerra a manutenção da ponte. Segurança do tok
 | Privacidade | Não publicar automaticamente backup completo ou dados pessoais/financeiros em excesso. Snapshot deve ser minimizado, escopado, privado e com controles de exclusão/retenção. |
 | Critério inicial | Após as Rodadas 4 e 5, o usuário pode solicitar sincronização de entrada e saída, ver prévia/resultado e manter o aplicativo funcional offline sem depender da integração. |
 
-### Guia operacional do ChatGPT — artefato planejado
+### Guia operacional do ChatGPT — artefato `v1` consolidado
 
-Arquivo previsto: `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`.
+Arquivo: `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` (versão `1.0.0`, consolidada em `2026-11-27`).
 
-O arquivo foi criado como estrutura inicial e **não deve ser tratado ainda como contrato operacional**. Depois de estabilizar o domínio, o Google AI Studio deverá completá-lo a partir dos DTOs, validadores, enums, relações e testes reais do código. Deve conter exemplos JSON executáveis e validados, incluindo:
-- tarefa simples e tarefa com checklist;
-- rotina semanal de academia com atividades em dias diferentes, horários, recorrência e checklists;
-- compromisso único e recorrente;
-- evento único e recorrente com checklist e compromissos vinculados;
-- projeto, objetivo e relações entre registros;
-- transações e despesas vinculadas, respeitando as regras financeiras;
-- criação, atualização, exceção de ocorrência, prévia, confirmação, conflitos e idempotência.
-
-O guia deverá separar claramente o que é suportado agora, o que só será suportado após Rodada 4 e o que dependerá da integração final da Rodada 6. Cada exemplo deve ser validado pelos mesmos parsers/DTOs do aplicativo. Não inferir nomes de campos, IDs de enum, ícones ou formatos.
+O guia foi preenchido integralmente pelo Google AI Studio a partir dos DTOs (`StructuredInputModels.kt`), enums (`NexusEnums.kt`), processador (`StructuredInputProcessor.kt`), conector (`data/inbox/*`), entidades/seeds (`NexusDatabase.kt`/`NexusMigrations.kt`) e testes reais (`StructuredInputUnitTests.kt`, `InboxBridgeUnitTests.kt`) do contrato `v1`:
+- Documenta o modelo mental do NEXUS, árvore de decisão entre entidades, todas as 7 entidades suportadas, limites reais de atualização (`UPDATE`/`UPSERT` vs `CHECKLIST`), categorias padrão garantidas e regras financeiras (`ADR-006`, faturas e `EVENT`).
+- Inclui exemplos JSON completos verificados estaticamente contra o parser estrito `ignoreUnknownKeys = false` (criação simples, checklist inline, `CHECKLIST` standalone, compromisso, evento pago + despesa vinculada, objetivo + projeto + tarefa, lote completo multi-entidade e atualizações).
+- Separa explicitamente o que funciona hoje na Inbox `v1` do que existe apenas na UI do app pós-Rodada 4 (`GAP-001` e `GAP-003`, aguardando CI/dispositivo) e do que permanece fora do contrato `v1` (`GAP-002`, `GAP-004`, `GAP-005`, `GAP-006`), instruindo o ChatGPT a não simular recorrência nem inventar campos/ícones.
+- **Regra permanente de manutenção:** sempre que futuras rodadas implementarem novos recursos acessíveis ao ChatGPT (como `GAP-002`, `GAP-004`, `GAP-005` ou `GAP-006`) ou alterarem entidades/regras existentes, o guia deve ser atualizado no mesmo lote conforme `docs/09_GUIA_DESENVOLVIMENTO.md` Seção 5.C.
+- **Nota de verificação:** por ausência de JDK/Gradle neste container, a execução automatizada dos novos blocos de exemplo no `:app:testDebugUnitTest` ocorre após sincronização manual com o GitHub/CI.

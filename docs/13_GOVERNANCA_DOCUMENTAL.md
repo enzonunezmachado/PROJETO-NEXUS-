@@ -86,6 +86,8 @@ Documentos podem mudar quando código, comportamento, requisitos, visão, decis�
 
 Procedimento: identificar a regra problemática; consultar fontes e evidências; separar conteúdo vigente de histórico; atualizar somente os arquivos impactados; verificar links, referências e coerência; registrar mudanças metodológicas relevantes em HISTORICO_DOCUMENTACAO.md; atualizar README quando necessário.
 
+**Regra permanente do guia operacional (`16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`):** qualquer entrega que crie, modifique, remova ou altere o comportamento de funcionalidades, entidades, campos, relações, enums, validações ou contratos acessíveis ao ChatGPT deve atualizar `16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` no mesmo lote (conforme o checklist de 7 passos em `09_GUIA_DESENVOLVIMENTO.md`). Recursos apenas planejados nunca devem ser documentados como ativos no guia, e ajustes exclusivamente visuais/internos sem impacto operacional ficam dispensados de alterá-lo.
+
 Não preservar uma contradição apenas porque aparece em documento mestre. Hierarquia resolve conflitos factuais provisoriamente; contradições recorrentes entre documentos vigentes são defeitos a corrigir.
 
 ## 9. Continuidade entre conversas
@@ -98,7 +100,7 @@ No Google AI Studio, manter artefatos operacionais existentes coerentes com /doc
 
 A orientação obrigatória de leitura e autoridade está em `00_ORIENTACAO_E_AUTORIDADE.md`; agentes e colaboradores devem consultá-la antes de qualquer outro material.
 
-README: índice e hierarquia. 01: visão e princípios. 02: requisitos aprovados. 03: arquitetura. 07: estado real. 09: fluxo operacional. 10: roadmap. 11: ADRs. 12: rastreabilidade. HISTORICO_DOCUMENTACAO.md: mudanças no método documental.
+README: índice e hierarquia. 01: visão e princípios. 02: requisitos aprovados. 03: arquitetura. 07: estado real. 09: fluxo operacional e manutenção obrigatória do guia ChatGPT. 10: roadmap. 11: ADRs. 12: rastreabilidade. 14: contrato técnico v1. 15: lacunas e falhas. 16: guia operacional vigente do ChatGPT. HISTORICO_DOCUMENTACAO.md: mudanças no método e nos documentos.
 
 ## Regra final
 

@@ -101,11 +101,23 @@ Sempre atualizar **no mesmo fechamento do lote**, sem criar cópias paralelas ne
    - `docs/02_ESPECIFICACAO_PRODUTO.md`, `docs/04_MODELO_DADOS.md`, `docs/05_FLUXOS_COMPORTAMENTOS.md`, `docs/06_DESIGN_SYSTEM.md`, `docs/03_ARQUITETURA_ENGENHARIA.md` e `docs/08_QUALIDADE_SEGURANCA.md`: atualizar apenas as seções impactadas pelo lote.
    - `docs/11_DECISOES_ADRS.md`: registrar novo `ADR-0XX` caso o lote tome ou altere uma decisão arquitetural relevante.
    - `docs/12_RASTREABILIDADE.md`: atualizar vínculos de `REQ-*`, componentes, stores e suítes de teste.
+   - `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`: **obrigatório** sempre que o lote criar, alterar, remover ou mudar o comportamento de funcionalidades, entidades, campos, relações, regras de negócio ou contratos acessíveis ao ChatGPT (ver Seção 5.C).
    - `docs/README.md`: atualizar cabeçalho de baseline e data da última revisão se houver mudança de versão/schema.
 2. **Sincronização com os Artefatos do Google AI Studio (quando operando no AI Studio):**
    - Atualizar **os mesmos artefatos existentes** (`NEXUS_CONTINUIDADE.md`, `NEXUS_CURRENT_STATE.md`, `NEXUS_PRODUCT_SPEC.md`, `NEXUS_DESIGN_SYSTEM.md`, `NEXUS_INTEGRATION_MAP.md`, `NEXUS_IMPLEMENTATION_ROADMAP.md`) preservando o histórico em `NEXUS_CONTINUIDADE.md` e garantindo zero contradição com `/docs/`.
    - **Nunca** criar arquivos duplicados ou cópias temporárias dentro ou fora de `/docs/`.
 
+### C. Regra Permanente de Manutenção do Guia Operacional do ChatGPT (`docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md`)
+Toda implementação futura que crie, altere, remova ou mude o comportamento de funcionalidades, entidades, campos, relações, enums, validações financeiras/de agenda ou contratos acessíveis ao ChatGPT deve atualizar `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` no mesmo fechamento do lote, cumprindo estes **7 passos obrigatórios**:
+1. Conferir DTOs, enums, processador, DAOs/repositório e regras reais alteradas no código.
+2. Atualizar a matriz de capacidades reais e a tabela de compatibilidade de versões (`App`, `Room`, `Backup`, `contractVersion`).
+3. Atualizar tabelas de campos, tipos, valores padrão, FKs, regras de negócio, orientações de linguagem natural e limitações.
+4. Atualizar ou acrescentar exemplos JSON completos que reflitam as novas operações ou comportamentos e remover/corrigir exemplos incompatíveis.
+5. Validar todos os exemplos JSON contra os mesmos DTOs, validadores e testes reais do aplicativo (`:app:testDebugUnitTest` ou inspeção estática declarando explicitamente o limite se não houver JDK/Gradle no container).
+6. Registrar a atualização em `docs/HISTORICO_DOCUMENTACAO.md` e manter coerência com `07_ESTADO_ATUAL.md`, `10_ROADMAP.md`, `14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md` e `15_REGISTRO_LACUNAS_E_FALHAS.md`.
+7. Sincronizar os artefatos acessíveis do Google AI Studio (e o espelho `NEXUS-DOCUMENTACAO/GOOGLE_IA/docs/` quando montado no ambiente, ou registrar pendência honesta quando ausente).
+
+**Exclusões explícitas:** não antecipar no guia funcionalidades apenas planejadas (`GAP-002`, `GAP-004`, `GAP-005`, `GAP-006`) antes de existirem no código/contrato real; alterações puramente visuais, de espaçamento/cores ou refatorações internas sem efeito em entidades, campos, relações, validações ou comportamento acessível ao ChatGPT não exigem edição funcional do guia.
 
 ---
 

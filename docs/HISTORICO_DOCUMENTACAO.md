@@ -467,3 +467,33 @@ Nenhum código Android, schema Room, token ou contrato Inbox foi alterado. A est
 ### Complemento — responsabilidade operacional do guia (2026-11-26)
 
 Foi explicitado no guia, roadmap e Plano Mestre que o Google AI Studio gera/atualiza o manual apenas no workspace local. Ele não acessa GitHub, não faz Pull/Push e não executa Actions. O usuário sincroniza manualmente; o ChatGPT verifica o conteúdo no GitHub e a CI. Nenhuma implementação ou sincronização automática foi presumida.
+
+---
+
+## 2026-11-27 — Consolidação do Guia Operacional do ChatGPT (`v1.0.0`) e Regra Permanente de Manutenção
+
+**Tipo:** consolidação de guia operacional e regra metodológica permanente (somente documentação e artefatos internos).
+
+### Motivação e evidência
+O arquivo `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` existia apenas como estrutura inicial de 107 linhas marcada como não utilizável em produção. Para permitir que o ChatGPT opere o NEXUS corretamente pela ponte `NEXUS-INBOX` (`contractVersion = 1`) sem inventar campos ou simular recursos ausentes, era necessário preenchê-lo a partir dos arquivos reais de contrato, ingestão, inbox, enums, entidades Room, regras de negócio e suítes JUnit, além de instituir regra permanente para manter esse guia atualizado em futuras evoluções.
+
+### Fontes reais inspecionadas no código
+- `StructuredInputModels.kt`, `StructuredInputGateway.kt`, `StructuredInputProcessor.kt` (`1.703` linhas).
+- `data/inbox/*` (`InboxModels.kt`, `InboxRepository.kt`, `GitHubInboxRemoteDataSource.kt`, `InboxStores.kt`, `InboxSyncWorker.kt`) e `NexusInboxScreen.kt`.
+- `NexusEnums.kt`, `NexusEntities.kt`, `NexusDatabase.kt`, `NexusMigrations.kt`, `NexusRepository.kt`, `AgendaEngine.kt`, `FinanceRules.kt`, `TaskRules.kt`, `RecurrenceEngine.kt`, `DateTimeUtils.kt`.
+- `StructuredInputUnitTests.kt` e `InboxBridgeUnitTests.kt`.
+
+### Mudanças introduzidas
+1. **`docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` (`v1.0.0`):**
+   - Documentados modelo mental local-first, matriz "registrar uma vez, ver em vários lugares", árvore de decisão entre os 7 `StructuredEntityType`, tabela integral de campos/tipos/padrões/enums/FKs, categorias padrão semeadas (`cat-default-*` e `cat-fin-*`), peculiaridades reais do processador (`UPDATE`/`UPSERT` substituem campos omitidos pelos padrões do DTO, `CHECKLIST` preserva itens não listados e reporta `WILL_UPDATE`/`UPDATED`, `EVENT` na Inbox não gera `TRANSACTION` automática, `TRANSACTION` na Inbox não aloca `statementId` automaticamente), regras financeiras anti-dupla contagem (`ADR-006`), operação da `NEXUS-INBOX` (`path::sha`, ordenação por `path`, `atomicBatch = false`, prévia dry-run e `InboxSyncWorker` somente leitura), catálogo de erros reais e 9 exemplos práticos em JSON válido.
+   - Separadas com rigor as capacidades reais da Inbox `v1` das funcionalidades exclusivas da UI do app pós-Rodada 4 (`GAP-001` e `GAP-003`, aguardando CI/dispositivo) e das lacunas planejadas (`GAP-002`, `GAP-004`, `GAP-005`, `GAP-006`), com protocolo explícito para não simular recorrência ou checklists em compromissos/eventos.
+2. **Regra permanente de manutenção documental:**
+   - Atualizados `docs/00_ORIENTACAO_E_AUTORIDADE.md`, `docs/09_GUIA_DESENVOLVIMENTO.md` (inclusão na Seção 5.B e criação da Seção 5.C com checklist em 7 passos e exclusões), `docs/13_GOVERNANCA_DOCUMENTAL.md`, `docs/README.md`, `docs/10_ROADMAP.md`, `docs/15_REGISTRO_LACUNAS_E_FALHAS.md` e `docs/HISTORICO_DOCUMENTACAO.md`.
+3. **Artefatos internos do Google AI Studio sincronizados:**
+   - Atualizados `NEXUS_CONTINUIDADE.md`, `NEXUS_CURRENT_STATE.md`, `NEXUS_INTEGRATION_MAP.md` e `NEXUS_IMPLEMENTATION_ROADMAP.md`.
+
+### Limites e itens não alterados
+- **Zero alterações funcionais ou de código:** nenhum arquivo `.kt`, `.kts`, `.xml`, `.toml`, `.yml`, schema Room, contrato JSON ou pasta `docs/backup_pre_rodada4_google_ai_studio/` foi alterado. Nenhuma lacuna futura (`GAP-002`, `GAP-004`, `GAP-005`, `GAP-006`) foi antecipada.
+- **`NEXUS-DOCUMENTACAO` externo ausente no workspace:** não existe neste container diretório montado do repositório externo `NEXUS-DOCUMENTACAO`; portanto, seu espelho não foi sincronizado diretamente aqui e permanece dependente de sincronização externa pelo usuário.
+- **Execução Gradle/JUnit não disponível neste ambiente:** exemplos JSON verificados estaticamente contra os DTOs e validadores estritos de `StructuredInputProcessor` e `InboxRepository`, aguardando eventual execução em CI/Gradle pelo usuário.
+
