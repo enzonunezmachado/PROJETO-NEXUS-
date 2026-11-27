@@ -67,3 +67,26 @@ Após a correção do import, o KSP passou, mas o CI encontrou erros Kotlin em `
 ### Validação pendente
 
 A correção foi aplicada no branch, mas depende de nova execução do GitHub Actions para confirmar compilação, testes unitários e geração do APK Debug. Não considerar validada até o CI terminar com sucesso.
+
+
+## Terceira falha encontrada — retorno Result<Int?> no horário da recorrência
+
+Na execução do CI do commit `bb68f74787dcdb1c92e6d8cf435af85d54a5897b`, o KSP passou e a compilação Kotlin avançou até `StructuredInputProcessor.kt:1330`, onde falhou com:
+
+`Initializer type mismatch: expected 'kotlin.Int?', actual 'java.io.Serializable?'`
+
+### Causa raiz
+
+`RecurrenceEngine.parseTimeOfDayMinutesStrict` retorna `Result<Int?>`, mas o processador tratava o retorno como se fosse diretamente `Int?`. O operador Elvis não desempacota um `Result`, e por isso o valor inferido era incompatível com `effectiveDueMinutes`.
+
+### Correção realizada
+
+O processamento de `startTime` agora desempacota o resultado com `getOrElse`. Em caso de horário inválido, o processador retorna um recibo de rejeição com a mensagem da validação; em caso válido ou ausente, mantém o valor `Int?` esperado.
+
+**Arquivo:** `app/src/main/java/com/nexus/app/data/ingestion/StructuredInputProcessor.kt`.
+
+**Commit:** `f469b1295528f2ea384220e0a49084a5eda5deff`.
+
+### Validação pendente
+
+A nova execução do GitHub Actions para esse commit ainda precisa concluir `:app:testDebugUnitTest :app:assembleDebug`. A correção do erro de tipo foi aplicada, mas ainda não está validada por build/testes nem por dispositivo físico.
