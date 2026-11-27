@@ -1,7 +1,7 @@
 # NEXUS — Documentação Oficial de Produto e Engenharia
 
 > **Entrada principal da documentação do repositório ativo `PROJETO-NEXUS-`.**  
-> **Última revisão documental:** 2026-11-26 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 7`, Backup `CURRENT_FORMAT_VERSION = 8`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX`, Rodada 4 com `GAP-001`/`REQ-009` e `GAP-003` implementados no código — aguardando Gradle/CI e dispositivo, `19` arquivos de teste / `145` anotações `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
+> **Última revisão documental:** 2026-11-26 · **Baseline de código auditada:** `com.nexus.app` (`versionCode = 8`, `versionName = "5.3.0"`, Room `DATABASE_VERSION = 7`, Backup `CURRENT_FORMAT_VERSION = 8`, entrada estruturada `contractVersion = 1` + ponte `NEXUS-INBOX`, Rodada 4 com `GAP-001`/`REQ-009` e `GAP-003` implementados no código — aguardando Gradle/CI e dispositivo, `19` suítes de teste / `145` anotações `@Test`, Módulo Mercado Lotes `01–09` + Evolução Visual/Adaptativa).
 
 ---
 
