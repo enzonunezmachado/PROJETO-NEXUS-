@@ -21,7 +21,7 @@ import com.nexus.app.data.market.FailureReason
 import com.nexus.app.data.market.FileMarketHistoryStore
 import com.nexus.app.data.market.MarketAlertRepository
 import com.nexus.app.data.market.MarketAlertStore
-import com.nexus.app.data.market.MarketAssetCatalog
+import com.nexus.app.domain.model.MarketAssetCatalog
 import com.nexus.app.data.market.MarketHistoryRepository
 import com.nexus.app.data.market.MarketHistoryRemoteDataSource
 import com.nexus.app.data.market.MarketQuoteRemoteDataSource
@@ -274,9 +274,10 @@ class FactoryResetUnitTests {
             store.saveValidSeries(
                 MarketHistorySeries(
                     assetCode = MarketAssetCatalog.USD_BRL_CODE,
-                    range = MarketHistoryRange.MONTH_1,
+                    rangeKey = MarketHistoryRange.M1.key,
                     granularity = MarketHistoryGranularity.DAILY,
-                    points = listOf(MarketHistoryPoint(t0, 5.50)),
+                    currency = "BRL",
+                    points = listOf(MarketHistoryPoint(timestampEpochMs = t0, price = 5.50)),
                     sourceName = "Test",
                     fetchedAtEpochMs = t0
                 )
@@ -286,7 +287,7 @@ class FactoryResetUnitTests {
             val repo = MarketHistoryRepository(NoopHistoryRemote(), store, isNetworkAvailable = { false })
             repo.clearAllLocalData()
 
-            assertNull(store.loadRecord(MarketAssetCatalog.USD_BRL_CODE, MarketHistoryRange.MONTH_1))
+            assertNull(store.loadRecord(MarketAssetCatalog.USD_BRL_CODE, MarketHistoryRange.M1))
             assertTrue(tempDir.listFiles().orEmpty().isEmpty())
             assertTrue(repo.historyStates.value.isEmpty())
         } finally {
@@ -312,13 +313,12 @@ class FactoryResetUnitTests {
             configStorage = cfgStore,
             tokenStore = tokenStore,
             remoteDataSource = NoopInboxRemote(),
-            ingestionPort = NoopInboxPort(),
+            nexusRepository = NoopInboxPort(),
             clockMillis = { t0 }
         )
 
-        val (hasCreds, hasCfg) = repo.resetLocalTrackingPreservingCredentials()
-        assertTrue(hasCreds)
-        assertTrue(hasCfg)
+        val reset = repo.resetLocalTrackingPreservingCredentials()
+        assertTrue(reset)
         assertTrue(cfgStore.keys.isEmpty())
         assertNull(cfgStore.fingerprint)
         assertEquals("pat_secret_123", tokenStore.getToken())
