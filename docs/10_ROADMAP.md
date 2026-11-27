@@ -56,7 +56,7 @@ A ponte foi implementada no código Android, corrigida e integrada à `main`. O 
 
 ## 2. Sequência revisada de desenvolvimento
 
-> **Reorganização de 26/11/2026.** As Rodadas 1 e 2 permanecem concluídas; a Rodada 3 continua sendo a etapa atual. A antiga Rodada 4 (aplicar a proposta Claude) deixa de ser a próxima execução: primeiro será concluída a base funcional e as lacunas de domínio. A evolução da experiência passa a ser a Rodada 5, baseada na documentação conceitual atualizada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/`, não na adoção automática da proposta original do Claude.
+> **Reorganização de 26/11/2026.** As Rodadas 1, 2 e 3 estão concluídas; o fluxo principal da ponte foi validado por CI e importação real no aparelho. A Rodada 4 é a etapa atual para completar a base funcional e as lacunas de domínio. A evolução da experiência passa a ser a Rodada 5, baseada na documentação conceitual atualizada em `NEXUS-DOCUMENTACAO/CHATGPT/ATUALIZACAO/`, não na adoção automática da proposta original do Claude.
 
 | Etapa | Estado | Objetivo e entregas |
 |---|---|---|
