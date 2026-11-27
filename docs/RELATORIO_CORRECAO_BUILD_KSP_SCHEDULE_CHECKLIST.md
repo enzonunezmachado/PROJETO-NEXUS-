@@ -115,3 +115,34 @@ Esses ajustes mantêm os cenários de teste e os alinham às interfaces efetivam
 ### Validação atual
 
 O GitHub Actions foi disparado para o commit final `37adecd31ed8391edd8bb93f356feaa54b7bdb85` (execução `46065813592`). Na última consulta, a etapa `:app:testDebugUnitTest :app:assembleDebug` ainda estava em execução. Portanto, a compatibilidade dos testes foi corrigida no código, mas a validação integral do CI continua pendente.
+
+
+## Quinta validação — correção da fixture e CI aprovado
+
+Na execução #124 (`46067250178`), KSP, compilação Kotlin principal e geração do APK Debug passaram. O único teste que falhou foi a asserção de criação de arquivo em `FactoryResetUnitTests.kt:285`.
+
+### Causa raiz
+
+A fixture de `FileMarketHistoryStore` fornecia apenas um `MarketHistoryPoint`. A implementação real de `saveValidSeries` normaliza os pontos e descarta séries com menos de dois pontos; por isso, nenhum arquivo era persistido e a asserção falhava. A regra de produção estava correta; a massa de teste era inválida.
+
+### Correção realizada
+
+A fixture passou a fornecer dois pontos válidos, separados por um dia, preservando a regra de produção.
+
+**Arquivo:** `app/src/test/java/com/nexus/app/data/market/FactoryResetUnitTests.kt`.
+
+**Commit:** `9156aba40dfbd9ae3754fb8d883e33c40ea6f422`.
+
+### Resultado comprovado no GitHub Actions
+
+- **Execução:** #125 — `46067672812`.
+- **Commit testado:** `9156aba40dfbd9ae3754fb8d883e33c40ea6f422`.
+- **Job `build`:** `success`.
+- **Run Unit Tests and Build NEXUS Debug APK:** `success`.
+- **Verificação de assinatura e certificado:** `success`.
+- **Upload do APK Debug:** `success`.
+- **Build Release:** `skipped`, pois os secrets de assinatura Release não estão configurados.
+
+Link: https://github.com/enzonunezmachado/PROJETO-NEXUS-/actions/runs/46067672812
+
+A validação CI de testes unitários e APK Debug está aprovada para esse commit. Isso não equivale a validação em dispositivo físico. A branch permanece isolada; não houve merge para `main`.
