@@ -1320,8 +1320,17 @@ class StructuredInputProcessor(
         }
 
         val parsedStartTime = dto.startTime?.trim()?.takeIf { it.isNotEmpty() }?.let { rawTime ->
-            RecurrenceEngine.parseTimeOfDayMinutesStrict(rawTime)
-                ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "startTime inválido (use HH:mm): '$rawTime'.", title)
+            RecurrenceEngine.parseTimeOfDayMinutesStrict(rawTime).getOrElse { ex ->
+                return rejectReceipt(
+                    opId,
+                    operation,
+                    StructuredEntityType.RECURRENCE,
+                    effectiveSource,
+                    effectiveCreatedAt,
+                    ex.message ?: "startTime inválido (use HH:mm): '$rawTime'.",
+                    title
+                )
+            }
         }
         if (dto.dueTimeMinutesOfDay != null && dto.dueTimeMinutesOfDay !in 0..1439) {
             return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "dueTimeMinutesOfDay deve estar entre 0 e 1439.", title)
