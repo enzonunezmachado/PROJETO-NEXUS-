@@ -519,6 +519,6 @@ class OccurrenceChecklistIsolationUnitTests {
         assertEquals("appt-bkp-1", decoded.scheduleChecklistItems[0].appointmentId)
         assertEquals("ev-bkp-1", decoded.scheduleChecklistItems[1].eventId)
         assertEquals(2, decoded.recurrences.single().checklistTemplateVersion)
-        assertTrue(decoded.taskRecurrences.single().templateHistoryJson.contains("\"version\":1"))
+        assertTrue(decoded.recurrences.single().templateHistoryJson.contains("\"version\":1"))
     }
 }
