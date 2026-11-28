@@ -74,7 +74,7 @@ Os itens abaixo já constam dos documentos oficiais e permanecem no inventário 
 
 | ID | Item | Estado registrado | Fonte principal |
 |---|---|---|---|
-| `BUG-001` | Perda de rota/rascunho ao girar aparelho ou recriar Activity | EM ABERTO; exige validação em dispositivo | `07_ESTADO_ATUAL.md`, `12_RASTREABILIDADE.md` |
+| `BUG-001` | Perda de rota/rascunho ao girar aparelho ou recriar Activity | **CORRIGIDO E VALIDADO NO DISPOSITIVO (28/11/2026, commit 772e0d1)**: adicionado `android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"` na `MainActivity` do `AndroidManifest.xml` e `rememberSaveable` em `currentTab` | `07_ESTADO_ATUAL.md`, `12_RASTREABILIDADE.md` |
 | `INT-01` | Motor legado `observeUnifiedAgenda()` ainda alimenta Dashboard/Briefings | EM ABERTO | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
 | `INT-03` | Toggle de subtarefa persiste antes de tocar em “Salvar” | PARCIALMENTE EM ABERTO | `07_ESTADO_ATUAL.md`, `10_ROADMAP.md` |
 | `REQ-012` | Listagem/criação direta de compromissos na ficha de Evento | PARCIALMENTE IMPLEMENTADA | `02_ESPECIFICACAO_PRODUTO.md`, `12_RASTREABILIDADE.md` |

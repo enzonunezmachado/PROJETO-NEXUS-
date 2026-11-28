@@ -6,6 +6,21 @@ Cada entrada deve explicar motivação, contexto/evidência, documentos afetados
 
 ---
 
+## 2026-11-28 — Correção e Validação em Dispositivo do BUG-001
+
+**Tipo:** correção de defeito e atualização de estado factual.
+
+### Motivação e Evidência
+O `BUG-001` (retorno à tela inicial ao girar celular/tablet ou redimensionar janela durante edição) persistia devido ao ciclo de destruição da `Activity` no Android e ao uso de `remember` comum em estados de navegação raiz.
+
+### Mudanças realizadas
+1. **`app/src/main/AndroidManifest.xml`**: adicionado `android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"` à `MainActivity`, prevenindo a destruição desnecessária da Activity no Jetpack Compose em eventos de rotação e redimensionamento.
+2. **`app/src/main/java/com/nexus/app/MainActivity.kt`**: `currentTab` migrado para `rememberSaveable { mutableStateOf(MainTab.HOME) }`, garantindo retenção de aba mesmo sob recriação de processo.
+3. **Validação**: commit `772e0d1`, build #46111947793 concluído com sucesso no GitHub Actions (170 testes unitários passaram) e validado em dispositivo/emulador MEmu com instalação limpa pelo usuário, confirmando retenção da tarefa aberta durante rotação.
+4. **Documentos atualizados**: `07_ESTADO_ATUAL.md`, `15_REGISTRO_LACUNAS_E_FALHAS.md` e este histórico.
+
+---
+
 ## 2026-11-21 — Governança Documental e Ciclo de Vida de Ideias
 
 **Tipo:** atualização metodológica.

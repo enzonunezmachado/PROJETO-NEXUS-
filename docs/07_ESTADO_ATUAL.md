@@ -60,7 +60,7 @@
 
 | ID | Descrição | Situação Real Hoje no Código |
 | --- | --- | --- |
-| `BUG-001` | Perda de estado de navegação/formulário na rotação/recriação da `Activity` | **EM ABERTO — persistiu no teste pós-lote visual/adaptativo**. Novo relato: rotação em diferentes abas, inclusive editando tarefa existente, retorna à tela inicial. Causa e abrangência por tela ainda exigem auditoria atual do código. |
+| `BUG-001` | Perda de estado de navegação/formulário na rotação/recriação da `Activity` | **RESOLVIDO E VALIDADO EM DISPOSITIVO (28/11/2026, commit 772e0d1)**. Adicionado `configChanges` adaptativo na `MainActivity` (`AndroidManifest.xml`) e `rememberSaveable` para `currentTab` em `MainActivity.kt`. Validado no emulador MEmu: rotação preserva formulário ativo, abas e navegação sem resetar. |
 | `INT-01` | `observeUnifiedAgenda` paralelo ao `AgendaEngine` | **EM ABERTO** (`NexusRepository.kt:494` ainda alimenta Dashboard, Briefing e NightReview) |
 | `INT-02` | `TransactionWithDetails` sem `task` e card sem `"Tarefa: ..."` | **RESOLVIDO** (`DomainModels.kt:78` + `FinanceScreen.kt`) |
 | `INT-03` | Subtarefa salva no Room antes de clicar "Salvar" / gasto força save | **PARCIALMENTE EM ABERTO** (`onToggleSubtask` persiste direto; `"Registrar gasto"` pede confirmação explícita `showSaveForExpenseConfirm`) |
