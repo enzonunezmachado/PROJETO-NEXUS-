@@ -21,7 +21,6 @@ import com.nexus.app.data.market.FailureReason
 import com.nexus.app.data.market.FileMarketHistoryStore
 import com.nexus.app.data.market.MarketAlertRepository
 import com.nexus.app.data.market.MarketAlertStore
-import com.nexus.app.data.market.MarketAssetCatalog
 import com.nexus.app.data.market.MarketHistoryRepository
 import com.nexus.app.data.market.MarketHistoryRemoteDataSource
 import com.nexus.app.data.market.MarketQuoteRemoteDataSource
@@ -39,6 +38,7 @@ import com.nexus.app.domain.model.FactoryResetExternalState
 import com.nexus.app.domain.model.FactoryResetSummary
 import com.nexus.app.domain.model.MarketAlertCondition
 import com.nexus.app.domain.model.MarketAlertStatus
+import com.nexus.app.domain.model.MarketAssetCatalog
 import com.nexus.app.domain.model.MarketHistoryGranularity
 import com.nexus.app.domain.model.MarketHistoryPoint
 import com.nexus.app.domain.model.MarketHistoryRange
@@ -251,7 +251,7 @@ class FactoryResetUnitTests {
                 quoteCurrency = "BRL",
                 modality = QuoteModality.COMMERCIAL,
                 price = 5.65,
-                trend = QuoteTrend.STABLE,
+                trend = QuoteTrend.FLAT,
                 sourceName = "Test",
                 sourceTimestampEpochMs = t0,
                 fetchedAtEpochMs = t0
@@ -274,21 +274,27 @@ class FactoryResetUnitTests {
             store.saveValidSeries(
                 MarketHistorySeries(
                     assetCode = MarketAssetCatalog.USD_BRL_CODE,
-                    range = MarketHistoryRange.MONTH_1,
+                    rangeKey = MarketHistoryRange.M1.key,
                     granularity = MarketHistoryGranularity.DAILY,
-                    points = listOf(MarketHistoryPoint(t0, 5.50)),
+                    currency = "BRL",
                     sourceName = "Test",
-                    fetchedAtEpochMs = t0
+                    fetchedAtEpochMs = t0,
+                    points = listOf(
+                        MarketHistoryPoint(t0 - 86_400_000L, 5.45),
+                        MarketHistoryPoint(t0, 5.50)
+                    )
                 )
             )
             assertTrue(tempDir.listFiles()?.isNotEmpty() == true)
 
             val repo = MarketHistoryRepository(NoopHistoryRemote(), store, isNetworkAvailable = { false })
+            assertNotNull(repo.historyStates.value[MarketAssetCatalog.USD_BRL_CODE]?.get(MarketHistoryRange.M1)?.series)
             repo.clearAllLocalData()
 
-            assertNull(store.loadRecord(MarketAssetCatalog.USD_BRL_CODE, MarketHistoryRange.MONTH_1))
+            assertNull(store.loadRecord(MarketAssetCatalog.USD_BRL_CODE, MarketHistoryRange.M1))
             assertTrue(tempDir.listFiles().orEmpty().isEmpty())
-            assertTrue(repo.historyStates.value.isEmpty())
+            assertNull(repo.historyStates.value[MarketAssetCatalog.USD_BRL_CODE]?.get(MarketHistoryRange.M1)?.series)
+            assertTrue(repo.historyStates.value.values.all { rangeMap -> rangeMap.values.all { it.series == null } })
         } finally {
             tempDir.deleteRecursively()
         }
@@ -312,13 +318,14 @@ class FactoryResetUnitTests {
             configStorage = cfgStore,
             tokenStore = tokenStore,
             remoteDataSource = NoopInboxRemote(),
-            ingestionPort = NoopInboxPort(),
+            nexusRepository = NoopInboxPort(),
             clockMillis = { t0 }
         )
 
-        val (hasCreds, hasCfg) = repo.resetLocalTrackingPreservingCredentials()
-        assertTrue(hasCreds)
-        assertTrue(hasCfg)
+        val cleared = repo.resetLocalTrackingPreservingCredentials()
+        assertTrue(cleared)
+        assertTrue(repo.hasSavedToken.value)
+        assertTrue(repo.config.value.isConfigured)
         assertTrue(cfgStore.keys.isEmpty())
         assertNull(cfgStore.fingerprint)
         assertEquals("pat_secret_123", tokenStore.getToken())
@@ -336,7 +343,7 @@ class FactoryResetUnitTests {
             configStorage = InMemoryInboxConfigStorage(),
             tokenStore = InMemoryInboxTokenStore(),
             remoteDataSource = NoopInboxRemote(),
-            ingestionPort = NoopInboxPort(),
+            nexusRepository = NoopInboxPort(),
             clockMillis = { t0 }
         )
         val activeCount = AtomicInteger(0)

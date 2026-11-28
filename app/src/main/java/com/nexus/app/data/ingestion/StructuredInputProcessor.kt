@@ -25,7 +25,6 @@ import com.nexus.app.domain.model.TaskRecurrenceFrequency
 import com.nexus.app.domain.model.TaskStatus
 import com.nexus.app.domain.model.TicketStatus
 import com.nexus.app.domain.model.TransactionType
-import com.nexus.app.domain.rules.ChecklistTemplateSnapshot
 import com.nexus.app.domain.rules.RecurrenceEngine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -1301,26 +1300,26 @@ class StructuredInputProcessor(
         if (dto.customIntervalDays < 1) {
             return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "customIntervalDays deve ser >= 1.", title)
         }
+        if (dto.weekdaysMask != null && dto.weekdaysMask !in 0..0b1111111) {
+            return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "weekdaysMask inválido (${dto.weekdaysMask}).", title)
+        }
         val weekdaysMask = if (dto.weekdays.isNotEmpty()) {
-            try {
-                RecurrenceEngine.parseWeekdaysStrict(dto.weekdays)
-            } catch (ex: IllegalArgumentException) {
+            RecurrenceEngine.parseWeekdaysStrict(dto.weekdays, null).getOrElse { ex ->
                 return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, ex.message ?: "Dias da semana inválidos.", title)
             }
         } else {
-            val rawMask = dto.weekdaysMask ?: 0
-            if (rawMask < 0) {
-                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "weekdaysMask inválido ($rawMask).", title)
+            RecurrenceEngine.parseWeekdaysStrict(null, dto.weekdaysMask).getOrElse { ex ->
+                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, ex.message ?: "weekdaysMask inválido (${dto.weekdaysMask}).", title)
             }
-            rawMask
         }
         if (frequency == TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS && weekdaysMask == 0) {
             return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "Para SPECIFIC_WEEKDAYS informe 'weekdays' ou 'weekdaysMask' válido.", title)
         }
 
-        val parsedStartTime = dto.startTime?.trim()?.takeIf { it.isNotEmpty() }?.let { rawTime ->
-            RecurrenceEngine.parseTimeOfDayMinutesStrict(rawTime)
-                ?: return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "startTime inválido (use HH:mm): '$rawTime'.", title)
+        val parsedStartTime: Int? = dto.startTime?.trim()?.takeIf { it.isNotEmpty() }?.let { rawTime ->
+            RecurrenceEngine.parseTimeOfDayMinutesStrict(rawTime).getOrElse { ex ->
+                return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, ex.message ?: "startTime inválido (use HH:mm): '$rawTime'.", title)
+            }
         }
         if (dto.dueTimeMinutesOfDay != null && dto.dueTimeMinutesOfDay !in 0..1439) {
             return rejectReceipt(opId, operation, StructuredEntityType.RECURRENCE, effectiveSource, effectiveCreatedAt, "dueTimeMinutesOfDay deve estar entre 0 e 1439.", title)
@@ -1401,15 +1400,12 @@ class StructuredInputProcessor(
         }
 
         val entity = if (existing == null) {
-            val initialHistory = RecurrenceEngine.serializeTemplateHistory(
-                listOf(
-                    ChecklistTemplateSnapshot(
-                        version = 1,
-                        effectiveFromDateIso = startDate.toString(),
-                        items = cleanTemplateChecklist
-                    )
+            val (initialTemplateJson, initialTemplateVersion, initialHistory) =
+                RecurrenceEngine.buildUpdatedChecklistTemplate(
+                    existing = null,
+                    newTitles = cleanTemplateChecklist,
+                    effectiveFromDateIso = startDate.toString()
                 )
-            )
             TaskRecurrenceEntity(
                 id = entityId,
                 title = title,
@@ -1449,8 +1445,8 @@ class StructuredInputProcessor(
                 paymentMethod = paymentMethod,
                 creditCardId = creditCardId,
                 installmentsCount = dto.installmentsCount,
-                templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(cleanTemplateChecklist),
-                checklistTemplateVersion = 1,
+                templateSubtasksJson = initialTemplateJson,
+                checklistTemplateVersion = initialTemplateVersion,
                 templateHistoryJson = initialHistory,
                 createdAt = now,
                 updatedAt = now
@@ -1495,10 +1491,16 @@ class StructuredInputProcessor(
                 installmentsCount = dto.installmentsCount,
                 updatedAt = now
             )
-            RecurrenceEngine.buildUpdatedChecklistTemplate(
-                existing = baseUpdated,
-                newTemplateItems = cleanTemplateChecklist,
-                effectiveFromDateIso = effectiveFromIso
+            val (updatedTemplateJson, updatedVersion, updatedHistoryJson) =
+                RecurrenceEngine.buildUpdatedChecklistTemplate(
+                    existing = baseUpdated,
+                    newTitles = cleanTemplateChecklist,
+                    effectiveFromDateIso = effectiveFromIso
+                )
+            baseUpdated.copy(
+                templateSubtasksJson = updatedTemplateJson,
+                checklistTemplateVersion = updatedVersion,
+                templateHistoryJson = updatedHistoryJson
             )
         }
 

@@ -497,3 +497,36 @@ O arquivo `docs/16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` existia apenas como estrut
 - **`NEXUS-DOCUMENTACAO` externo ausente no workspace:** não existe neste container diretório montado do repositório externo `NEXUS-DOCUMENTACAO`; portanto, seu espelho não foi sincronizado diretamente aqui e permanece dependente de sincronização externa pelo usuário.
 - **Execução Gradle/JUnit não disponível neste ambiente:** exemplos JSON verificados estaticamente contra os DTOs e validadores estritos de `StructuredInputProcessor` e `InboxRepository`, aguardando eventual execução em CI/Gradle pelo usuário.
 
+---
+
+## 2026-11-27 — Implementação de Checklists Independentes em Compromissos/Eventos (`GAP-004`/`REQ-029`), Recorrência e Checklists na Inbox (`GAP-002`) e Restauração de Fábrica (`Room v8` / `Backup v9` / `ADR-020`)
+
+**Tipo:** evolução funcional implementada no código Android + novos testes unitários + atualização sincronizada de `/docs/` e artefatos internos do Google AI Studio.
+
+### Motivação e evidência
+Concluir as três frentes prioritárias de completude funcional sobre a base da Rodada 4:
+1. Checklists opcionais próprios em `APPOINTMENT` e `EVENT` com isolamento absoluto por ocorrência `(recurrenceId, occurrenceDateIso)` e versionamento não retroativo de templates (`GAP-004` / `REQ-029`).
+2. Suporte nativo a criação/atualização de séries recorrentes (`RECURRENCE`) e checklists de Compromissos/Eventos via ponte `NEXUS-INBOX` preservando `contractVersion = 1` (`GAP-002`).
+3. Opção segura de **Restaurar banco de dados de fábrica** em Configurações, limpando dados locais e re-semeando o banco sem desinstalar o app e sem apagar credenciais/configurações da ponte GitHub.
+
+### Mudanças implementadas e documentadas
+1. **Schema Room `v8` (`MIGRATION_7_8`) e Backup `v9` (`ADR-020`):**
+   - Criada a 28ª entidade/tabela `schedule_checklist_items` (`ScheduleChecklistItemEntity` + `ScheduleChecklistItemDao`) e adicionadas colunas `checklistTemplateVersion` e `templateHistoryJson` em `recurrences` (`TaskRecurrenceEntity`), sem `fallbackToDestructiveMigration()`.
+   - `RecurrenceEngine` expandido com `ChecklistTemplateSnapshot(version, effectiveFromDateIso, items)`, `resolveChecklistTemplateVersionAndItems` e `buildUpdatedChecklistTemplate`.
+   - `BackupModels.kt`, `BackupStorageGateway.kt`, `BackupMergeEngine.kt` e `BackupManager.kt` evoluídos para `CURRENT_FORMAT_VERSION = 9` (retrocompatível `v1..v9`), e `DiagnosticsScreen` atualizada para `28` tabelas.
+2. **UI de Checklists e Isolamento por Ocorrência:**
+   - `ScheduleChecklistSectionCard` em `EntityEditors.kt` (criação, edição inline, exclusão, reordenação, contagem e progresso em rascunho até `"Salvar"`), progresso exibido em `EventSummaryCard` (`EventsScreen.kt`) e `AgendaScreen.kt`, com escopos `"Só esta ocorrência"` vs `"Toda a série"` não retroativos em `NexusRepository.kt`.
+3. **Extensão da Ponte `NEXUS-INBOX` (`contractVersion = 1`):**
+   - Adicionado `StructuredEntityType.RECURRENCE` (`StructuredRecurrenceData` para `TASK`/`APPOINTMENT`/`EVENT`, com `templateChecklist` e `effectiveFromDateIso`) e `checklist` opcional em `StructuredAppointmentData` e `StructuredEventData`, preservando `ignoreUnknownKeys = false`, dry-run e idempotência.
+4. **Restauração de Banco de Fábrica:**
+   - Entrada em **Configurações → Dados e armazenamento → Restaurar banco de dados de fábrica** (`MoreSettingsBackupDiagnosticsScreens.kt`, `MainActivity.kt`, `NexusViewModel.kt`, `InboxRepository.kt`, `NexusRepository.kt`): atalho para exportar backup JSON via SAF antes, dupla confirmação (checkbox + `"APAGAR E RESTAURAR"`), travas coordenadas (`InboxRepository.withExclusiveOperationLock` → `NexusRepository.databaseMutationMutex`), transação única limpando as `28` tabelas + re-seed padrão + limpeza de Mercado e histórico local da Inbox com rollback coordenado, preservando PAT Keystore e coordenadas GitHub da `NEXUS-INBOX`.
+5. **Testes Unitários (`21` arquivos / `170` `@Test`):**
+   - Criados `OccurrenceChecklistIsolationUnitTests.kt` (`12` `@Test`) e `FactoryResetUnitTests.kt` (`10` `@Test`); ampliados `StructuredInputUnitTests.kt` (`12`), `InboxBridgeUnitTests.kt` (`5`), `NexusRodada4RecurrenceUnitTests.kt` (`5`), `BackupIncrementalMergeUnitTests.kt` (`15`) e `MarketBackupIntegrationUnitTests.kt` (`5`).
+6. **Documentação e Artefatos Sincronizados:**
+   - Atualizados `docs/README.md`, `01_DOCUMENTO_MESTRE.md`, `02_ESPECIFICACAO_PRODUTO.md`, `03_ARQUITETURA_ENGENHARIA.md`, `04_MODELO_DADOS.md`, `05_FLUXOS_COMPORTAMENTOS.md`, `07_ESTADO_ATUAL.md`, `08_QUALIDADE_SEGURANCA.md`, `09_GUIA_DESENVOLVIMENTO.md`, `10_ROADMAP.md`, `11_DECISOES_ADRS.md` (`ADR-020`), `12_RASTREABILIDADE.md` (`REQ-029`), `14_CONTRATO_ENTRADA_ESTRUTURADA_ETAPA3.md`, `15_REGISTRO_LACUNAS_E_FALHAS.md`, `16_GUIA_OPERACIONAL_CHATGPT_NEXUS.md` (`v1.1.0`), `HISTORICO_DOCUMENTACAO.md` e os artefatos internos `NEXUS_CONTINUIDADE.md`, `NEXUS_CURRENT_STATE.md`, `NEXUS_IMPLEMENTATION_ROADMAP.md` e `NEXUS_INTEGRATION_MAP.md`.
+
+### Limites e itens não alterados
+- **Compilação Gradle/Kotlin e `:app:testDebugUnitTest` NÃO EXECUTADOS localmente:** este container não possui JDK, Gradle ou Android SDK; toda validação local foi estática (Python) e a aprovação de compilação/runtime depende do GitHub Actions ou Android Studio + teste em dispositivo.
+- **Preservados intactos:** `docs/backup_pre_rodada4_google_ai_studio/`, `applicationId = "com.nexus.app"`, `versionCode = 8`, `versionName = "5.3.0"`. `GAP-005`, `GAP-006`, `BUG-001`, `INT-01`, `INT-03`, `REQ-012`, `REQ-014` e `REQ-026` permanecem em aberto fora deste lote.
+
+

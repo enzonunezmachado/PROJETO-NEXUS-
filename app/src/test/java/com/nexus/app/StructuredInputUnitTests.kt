@@ -1233,7 +1233,7 @@ class StructuredInputUnitTests {
             }
         """.trimIndent()
 
-        val preview = processor.previewEnvelopeJson(createJson)
+        val preview = processor.previewJson(createJson)
         assertEquals(5, preview.willCreateCount)
         assertEquals(0, preview.rejectedCount)
         assertTrue(gateway.taskRecurrences.isEmpty())
@@ -1248,7 +1248,7 @@ class StructuredInputUnitTests {
         assertEquals(TaskRecurrenceFrequency.SPECIFIC_WEEKDAYS, apptRec.frequency)
         assertEquals(840, apptRec.dueTimeMinutesOfDay)
         assertEquals(1, apptRec.checklistTemplateVersion)
-        assertEquals(listOf("Levar exame", "Água"), RecurrenceEngine.deserializeChecklistTemplate(apptRec.checklistTemplateJson))
+        assertEquals(listOf("Levar exame", "Água"), RecurrenceEngine.deserializeChecklistTemplate(apptRec.templateSubtasksJson))
 
         assertEquals(2, gateway.getScheduleChecklistItemsByAppointmentId("appt-with-chk").size)
         assertEquals(1, gateway.getScheduleChecklistItemsByEventId("ev-with-chk").size)

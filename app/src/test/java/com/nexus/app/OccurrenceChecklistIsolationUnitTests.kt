@@ -21,6 +21,7 @@ import com.nexus.app.domain.rules.AgendaEngine
 import com.nexus.app.domain.rules.AgendaFilters
 import com.nexus.app.domain.rules.AgendaOccurrenceKind
 import com.nexus.app.domain.rules.AgendaSources
+import com.nexus.app.domain.rules.ChecklistTemplateSnapshot
 import com.nexus.app.domain.rules.DateRange
 import com.nexus.app.domain.rules.RecurrenceEngine
 import kotlinx.serialization.encodeToString
@@ -128,11 +129,11 @@ class OccurrenceChecklistIsolationUnitTests {
             title = "Rotina matinal",
             frequency = TaskRecurrenceFrequency.DAILY,
             startDateIso = "2026-11-01",
-            checklistTemplateJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Água", "Alongamento")),
+            templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Água", "Alongamento")),
             checklistTemplateVersion = 1,
             templateHistoryJson = RecurrenceEngine.serializeTemplateHistory(
                 listOf(
-                    RecurrenceEngine.ChecklistTemplateSnapshot(
+                    ChecklistTemplateSnapshot(
                         version = 1,
                         effectiveFromDateIso = "2026-11-01",
                         items = listOf("Água", "Alongamento")
@@ -190,10 +191,10 @@ class OccurrenceChecklistIsolationUnitTests {
             title = "Reunião semanal",
             frequency = TaskRecurrenceFrequency.WEEKLY,
             startDateIso = "2026-11-02",
-            checklistTemplateJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Pauta", "Notas")),
+            templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Pauta", "Notas")),
             checklistTemplateVersion = 1,
             templateHistoryJson = RecurrenceEngine.serializeTemplateHistory(
-                listOf(RecurrenceEngine.ChecklistTemplateSnapshot(1, "2026-11-02", listOf("Pauta", "Notas")))
+                listOf(ChecklistTemplateSnapshot(1, "2026-11-02", listOf("Pauta", "Notas")))
             ),
             createdAt = t0,
             updatedAt = t0
@@ -276,22 +277,22 @@ class OccurrenceChecklistIsolationUnitTests {
             title = "Checklist diário",
             frequency = TaskRecurrenceFrequency.DAILY,
             startDateIso = "2026-11-01",
-            checklistTemplateJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Item A")),
+            templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Item A")),
             checklistTemplateVersion = 1,
             templateHistoryJson = RecurrenceEngine.serializeTemplateHistory(
-                listOf(RecurrenceEngine.ChecklistTemplateSnapshot(1, "2026-11-01", listOf("Item A")))
+                listOf(ChecklistTemplateSnapshot(1, "2026-11-01", listOf("Item A")))
             ),
             createdAt = t0,
             updatedAt = t0
         )
-        val (v2, json2, hist2) = RecurrenceEngine.buildUpdatedChecklistTemplate(
+        val (json2, v2, hist2) = RecurrenceEngine.buildUpdatedChecklistTemplate(
             existing = base,
-            newItems = listOf("Item A", "Item B"),
+            newTitles = listOf("Item A", "Item B"),
             effectiveFromDateIso = "2026-11-10"
         )
         val updated = base.copy(
             checklistTemplateVersion = v2,
-            checklistTemplateJson = json2,
+            templateSubtasksJson = json2,
             templateHistoryJson = hist2
         )
 
@@ -313,20 +314,20 @@ class OccurrenceChecklistIsolationUnitTests {
             title = "Sessão semanal",
             frequency = TaskRecurrenceFrequency.WEEKLY,
             startDateIso = "2026-11-02",
-            checklistTemplateJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Check-in")),
+            templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Check-in")),
             checklistTemplateVersion = 1,
             templateHistoryJson = "[]",
             createdAt = t0,
             updatedAt = t0
         )
-        val (v2, json2, hist2) = RecurrenceEngine.buildUpdatedChecklistTemplate(
+        val (json2, v2, hist2) = RecurrenceEngine.buildUpdatedChecklistTemplate(
             existing = base,
-            newItems = listOf("Check-in", "Resumo"),
+            newTitles = listOf("Check-in", "Resumo"),
             effectiveFromDateIso = "2026-11-16"
         )
         val updated = base.copy(
             checklistTemplateVersion = v2,
-            checklistTemplateJson = json2,
+            templateSubtasksJson = json2,
             templateHistoryJson = hist2
         )
 
@@ -344,18 +345,18 @@ class OccurrenceChecklistIsolationUnitTests {
             title = "Encontro mensal",
             frequency = TaskRecurrenceFrequency.MONTHLY,
             startDateIso = "2026-10-01",
-            checklistTemplateJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Banner")),
+            templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Banner")),
             checklistTemplateVersion = 1,
             templateHistoryJson = RecurrenceEngine.serializeTemplateHistory(
-                listOf(RecurrenceEngine.ChecklistTemplateSnapshot(1, "2026-10-01", listOf("Banner")))
+                listOf(ChecklistTemplateSnapshot(1, "2026-10-01", listOf("Banner")))
             ),
             createdAt = t0,
             updatedAt = t0
         )
-        val (v2, json2, hist2) = RecurrenceEngine.buildUpdatedChecklistTemplate(v1Rec, listOf("Banner", "Som"), "2026-11-01")
-        val v2Rec = v1Rec.copy(checklistTemplateVersion = v2, checklistTemplateJson = json2, templateHistoryJson = hist2)
-        val (v3, json3, hist3) = RecurrenceEngine.buildUpdatedChecklistTemplate(v2Rec, listOf("Banner", "Som", "Café"), "2026-12-01")
-        val v3Rec = v2Rec.copy(checklistTemplateVersion = v3, checklistTemplateJson = json3, templateHistoryJson = hist3)
+        val (json2, v2, hist2) = RecurrenceEngine.buildUpdatedChecklistTemplate(v1Rec, listOf("Banner", "Som"), "2026-11-01")
+        val v2Rec = v1Rec.copy(checklistTemplateVersion = v2, templateSubtasksJson = json2, templateHistoryJson = hist2)
+        val (json3, v3, hist3) = RecurrenceEngine.buildUpdatedChecklistTemplate(v2Rec, listOf("Banner", "Som", "Café"), "2026-12-01")
+        val v3Rec = v2Rec.copy(checklistTemplateVersion = v3, templateSubtasksJson = json3, templateHistoryJson = hist3)
 
         assertEquals(1 to listOf("Banner"), RecurrenceEngine.resolveChecklistTemplateVersionAndItems(v3Rec, "2026-10-15"))
         assertEquals(2 to listOf("Banner", "Som"), RecurrenceEngine.resolveChecklistTemplateVersionAndItems(v3Rec, "2026-11-15"))
@@ -403,10 +404,10 @@ class OccurrenceChecklistIsolationUnitTests {
             hasDueTime = true,
             dueTimeMinutesOfDay = 9 * 60,
             durationMillis = 1_800_000L,
-            checklistTemplateJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Atualizar status", "Reportar bloqueios")),
+            templateSubtasksJson = RecurrenceEngine.serializeChecklistTemplate(listOf("Atualizar status", "Reportar bloqueios")),
             checklistTemplateVersion = 1,
             templateHistoryJson = RecurrenceEngine.serializeTemplateHistory(
-                listOf(RecurrenceEngine.ChecklistTemplateSnapshot(1, "2026-11-02", listOf("Atualizar status", "Reportar bloqueios")))
+                listOf(ChecklistTemplateSnapshot(1, "2026-11-02", listOf("Atualizar status", "Reportar bloqueios")))
             ),
             createdAt = t0,
             updatedAt = t0
@@ -453,7 +454,7 @@ class OccurrenceChecklistIsolationUnitTests {
             frequency = TaskRecurrenceFrequency.WEEKLY.name,
             startDateIso = "2026-11-01",
             domain = RecurrenceDomain.APPOINTMENT.name,
-            checklistTemplateJson = "[\"Item 1\",\"Item 2\"]",
+            templateSubtasksJson = "[\"Item 1\",\"Item 2\"]",
             checklistTemplateVersion = 2,
             templateHistoryJson = "[{\"version\":1,\"effectiveFromDateIso\":\"2026-11-01\",\"items\":[\"Item 1\"]}]",
             createdAt = t0,
@@ -507,7 +508,7 @@ class OccurrenceChecklistIsolationUnitTests {
             databaseVersion = 8,
             appointments = listOf(apptDto),
             events = listOf(evDto),
-            taskRecurrences = listOf(recDto),
+            recurrences = listOf(recDto),
             scheduleChecklistItems = chkDtos
         )
 
@@ -517,7 +518,7 @@ class OccurrenceChecklistIsolationUnitTests {
         assertEquals(2, decoded.scheduleChecklistItems.size)
         assertEquals("appt-bkp-1", decoded.scheduleChecklistItems[0].appointmentId)
         assertEquals("ev-bkp-1", decoded.scheduleChecklistItems[1].eventId)
-        assertEquals(2, decoded.taskRecurrences.single().checklistTemplateVersion)
-        assertTrue(decoded.taskRecurrences.single().templateHistoryJson.contains("\"version\":1"))
+        assertEquals(2, decoded.recurrences.single().checklistTemplateVersion)
+        assertTrue(decoded.recurrences.single().templateHistoryJson.contains("\"version\":1"))
     }
 }

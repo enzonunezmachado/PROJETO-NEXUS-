@@ -1,9 +1,9 @@
 # 16 — Guia Operacional do ChatGPT para Integração com o NEXUS (`contractVersion = 1`)
 
-> **Versão deste guia:** `1.0.0` (2026-11-27) · **Estado:** **GUIA OPERACIONAL V1 CONSOLIDADO A PARTIR DO CÓDIGO REAL**  
-> **Compatibilidade verificada no código:** App `com.nexus.app` `v5.3.0` (`versionCode = 8`), Room `DATABASE_VERSION = 7`, Backup `CURRENT_FORMAT_VERSION = 8`, Entrada Estruturada `StructuredInputEnvelope.CURRENT_CONTRACT_VERSION = 1`.  
-> **Escopo de validação:** todo o conteúdo técnico, nomes de campos, valores de enum, regras de validação, limitações e exemplos JSON deste guia foram extraídos diretamente de `StructuredInputModels.kt`, `StructuredInputProcessor.kt`, `StructuredInputGateway.kt`, `NexusEnums.kt`, `NexusEntities.kt`, `NexusDatabase.kt`, `NexusMigrations.kt`, `data/inbox/*`, `NexusInboxScreen.kt`, `StructuredInputUnitTests.kt` e `InboxBridgeUnitTests.kt`.  
-> **Nota de ambiente:** este workspace não possui JDK, Gradle ou Android SDK; portanto, os exemplos JSON deste documento foram conferidos por inspeção estática e parser JSON estrito contra os DTOs reais do código, mas a execução de `:app:testDebugUnitTest` sobre os novos exemplos ocorre após sincronização com o GitHub/CI.
+> **Versão deste guia:** `1.1.0` (2026-11-27) · **Estado:** **GUIA OPERACIONAL V1.1 ATUALIZADO A PARTIR DO CÓDIGO REAL (`Room v8` / `Backup v9` / `RECURRENCE` + Checklists de Agenda)**  
+> **Compatibilidade verificada no código:** App `com.nexus.app` `v5.3.0` (`versionCode = 8`), Room `DATABASE_VERSION = 8`, Backup `CURRENT_FORMAT_VERSION = 9`, Entrada Estruturada `StructuredInputEnvelope.CURRENT_CONTRACT_VERSION = 1` (`8` tipos).  
+> **Escopo de validação:** todo o conteúdo técnico, nomes de campos, valores de enum, regras de validação, limitações e exemplos JSON deste guia foram extraídos diretamente de `StructuredInputModels.kt`, `StructuredInputProcessor.kt`, `StructuredInputGateway.kt`, `RecurrenceEngine.kt`, `NexusEnums.kt`, `NexusEntities.kt`, `NexusDatabase.kt`, `NexusMigrations.kt`, `data/inbox/*`, `NexusInboxScreen.kt`, `StructuredInputUnitTests.kt`, `OccurrenceChecklistIsolationUnitTests.kt` e `InboxBridgeUnitTests.kt`.  
+> **Nota de ambiente:** este workspace não possui JDK, Gradle ou Android SDK; portanto, os exemplos JSON deste documento foram conferidos por inspeção estática e parser JSON estrito contra os DTOs reais do código, mas a execução de `:app:testDebugUnitTest` (`21` suítes / `170` `@Test`) ocorre após sincronização com o GitHub/CI.
 
 ---
 
@@ -13,9 +13,9 @@ Quando o usuário conversar com você e pedir algo como *"Registra tudo isso no 
 
 1. **Como o NEXUS funciona conceitualmente** e onde cada dado aparece dentro do app;
 2. **Qual entidade escolher** para cada necessidade do usuário (sem duplicar registros);
-3. **Exatamente quais campos e enums existem** no contrato `v1` real (`ignoreUnknownKeys = false`);
-4. **Como criar (`CREATE`) e atualizar (`UPDATE` / `UPSERT`)** sem apagar campos locais por acidente;
-5. **O que o contrato `v1` NÃO suporta hoje** (como criação de recorrências via JSON, checklists em compromissos/eventos e catálogo de ícones) — e como responder com honestidade sem simular recursos ausentes;
+3. **Exatamente quais campos e enums existem** no contrato `v1` real (`ignoreUnknownKeys = false`), incluindo **`RECURRENCE`** e **`checklist`** em `APPOINTMENT` e `EVENT`;
+4. **Como criar (`CREATE`) e atualizar (`UPDATE` / `UPSERT`)** sem apagar campos locais por acidente — incluindo versionamento não retroativo de checklists recorrentes (`effectiveFromDateIso`);
+5. **O que o contrato `v1` ainda NÃO suporta** (exceções `SKIP`/`OVERRIDE` isoladas por ocorrência via JSON, catálogo de ícones `GAP-005` e leitura bidirecional `GAP-006`) — e como responder com honestidade sem inventar campos;
 6. **Como preparar, nomear e enviar arquivos JSON** para o repositório privado `NEXUS-INBOX` com segurança e previsibilidade.
 
 **Regra de autoridade:** nunca invente nomes de campos, valores de enum, IDs de categorias/cartões/faturas ou capacidades não listadas neste documento. Na dúvida sobre intenção ou dado essencial ausente, pergunte ao usuário antes de gerar o JSON.
@@ -41,8 +41,9 @@ O NEXUS **não duplica registros** entre módulos. Uma entidade salva uma única
 | --- | --- | --- | --- | --- | --- | --- |
 | **`TASK`** | Sempre (lista e Kanban) | Aparece **somente se `dueAt != null`** | Se `eventId != null` | Mostra `"Gasto: R$ X"` quando houver `TRANSACTION` ligada (`taskId`) | Anel de tarefas, hoje e atrasadas | Agenda lembrete se `dueAt != null` e ativa; atualiza widgets |
 | **`CHECKLIST`** | Subtarefas da `TASK` pai (`subtasks`) | Contagem/progresso na tarefa quando aplicável | Via tarefa ligada ao evento | — | Contadores da tarefa | Atualiza widgets |
-| **`APPOINTMENT`** | — | Sempre (na faixa `startAt..endAt`, inclusive multi-dia e detecção de conflitos) | Se `eventId != null` | — | Bloco "Agenda do dia" | Agenda lembrete antes de `startAt`; atualiza widgets |
-| **`EVENT`** | Exibe tarefas ligadas (`eventId`) | Faixa multi-dia (`startAt..endAt`) | Sempre | **Atenção:** via Inbox `v1`, `EVENT` **não** gera `TRANSACTION` automática (ver §3.5) | Bloco "Próximos eventos" | Agenda lembretes de evento/ingresso; atualiza widgets |
+| **`APPOINTMENT`** | — | Sempre (faixa `startAt..endAt`, conflitos e progresso do `checklist` próprio) | Se `eventId != null` | — | Bloco "Agenda do dia" | Agenda lembrete antes de `startAt`; atualiza widgets |
+| **`EVENT`** | Exibe tarefas ligadas (`eventId`) | Faixa multi-dia (`startAt..endAt`) + progresso do `checklist` próprio | Sempre (com `checklist` em `schedule_checklist_items`) | **Atenção:** via Inbox `v1`, `EVENT` **não** gera `TRANSACTION` automática (ver §3.7) | Bloco "Próximos eventos" | Agenda lembretes de evento/ingresso; atualiza widgets |
+| **`RECURRENCE`** | Se `domain == "TASK"`, gera/projeta tarefas recorrentes | Projeta ocorrências virtuais para `TASK`, `APPOINTMENT` e `EVENT` (sem duplicar linhas no SQLite) | Se `domain == "EVENT"`, projeta na tela de Eventos sem criar transações fantasma | Nunca cria `TRANSACTION` automática | Próximas ocorrências projetadas | Agenda lembretes virtuais (`rec::...`); checklists por ocorrência com versionamento não retroativo |
 | **`PROJECT`** | Aba Projetos (calcula progresso pelas `TASK` ligadas e custo pelas `TRANSACTION` ligadas) | — | — | Custos agregados via `projectId` | Bloco de projetos/metas | Atualiza widgets |
 | **`PERSONAL_GOAL`** | Aba Objetivos (`AUTO` calcula progresso de projetos/tarefas/marcos; `MANUAL` usa `manualProgressPercent`) | — | — | — | Bloco de metas | Atualiza widgets |
 | **`TRANSACTION`** | Exibe vínculo se `taskId != null` | Se despesa direta (`EXPENSE`, `statementId == null`, não liquidada/cancelada) com vencimento/ocorrência | Soma nos custos do evento (`eventId` + `eventCostType`) | Sempre (mês de `occurredAt`, gráficos, previsão) | Resumo financeiro e próximos pagamentos | Agenda lembrete se pendente/prevista com vencimento futuro; atualiza widgets |
@@ -51,9 +52,9 @@ O NEXUS **não duplica registros** entre módulos. Uma entidade salva uma única
 
 | Camada | Situação factual no código atual (`v5.3.0`) | Impacto direto para o ChatGPT |
 | --- | --- | --- |
-| **Camada 1 — Ponte `NEXUS-INBOX` (`contractVersion = 1`)** | **IMPLEMENTADA E VALIDADA NO FLUXO PRINCIPAL** (Rodada 3: GitHub Actions #70 + importação real confirmada no aparelho). Suporta exatamente `TASK`, `CHECKLIST`, `APPOINTMENT`, `EVENT`, `PROJECT`, `PERSONAL_GOAL` e `TRANSACTION` com ações `CREATE`, `UPDATE` e `UPSERT`. | **É tudo o que você pode emitir em JSON hoje.** |
-| **Camada 2 — Evoluções locais do app Android (Rodada 4)** | **IMPLEMENTADA NO CÓDIGO DO APP, AGUARDANDO CI E VALIDAÇÃO EM DISPOSITIVO** (`Room v7` / `Backup v8`): recorrência nativa de `APPOINTMENT` e `EVENT` (`GAP-001`/`REQ-009`), frequência `ANNUAL` e checklist independente por ocorrência de tarefa recorrente (`GAP-003`). | Essas funções existem no app em edição manual, mas **AINDA NÃO EXISTEM no contrato JSON da Inbox (`GAP-002` aberto)**. |
-| **Camada 3 — Recursos planejados e não implementados** | `GAP-002` (séries/regras recorrentes via Inbox), `GAP-004` (checklists próprios em Compromissos/Eventos), `GAP-005` (catálogo de ícones/identidade contextual) e `GAP-006` (catálogo exportável e snapshot bidirecional). | **Proibido** gerar campos para isso ou simular recorrência/checklist/ícone no JSON. |
+| **Camada 1 — Ponte `NEXUS-INBOX` (`contractVersion = 1` — Base Rodada 3)** | **IMPLEMENTADA E VALIDADA NO FLUXO PRINCIPAL** (Rodada 3: GitHub Actions #70 + importação real confirmada no aparelho): `TASK`, `CHECKLIST`, `APPOINTMENT`, `EVENT`, `PROJECT`, `PERSONAL_GOAL` e `TRANSACTION` com `CREATE`, `UPDATE` e `UPSERT`. | Totalmente operacional em produção. |
+| **Camada 2 — Evoluções Rodada 4 no código (`Room v8` / `Backup v9` / `contractVersion = 1` expandido)** | **IMPLEMENTADA NO CÓDIGO, AGUARDANDO CI E VALIDAÇÃO EM DISPOSITIVO:** recorrência multi-domínio (`GAP-001`), independência de checklists (`GAP-003`), checklists próprios em `APPOINTMENT`/`EVENT` com versionamento não retroativo (`GAP-004`/`REQ-029`), extensão `RECURRENCE` + `APPOINTMENT.checklist`/`EVENT.checklist` na Inbox (`GAP-002`) e Restauração de Fábrica. | **Disponível no contrato `v1` atualizado** (`8` tipos) assim que o usuário compilar/instalar o APK da Rodada 4 (`Room v8`). |
+| **Camada 3 — Recursos planejados e não implementados** | Exceções `RecurrenceExceptionEntity` (`SKIP`/`OVERRIDE`) isoladas via JSON, `GAP-005` (catálogo de ícones/identidade contextual) e `GAP-006` (catálogo exportável e snapshot bidirecional). | **Proibido** inventar campos de ícone/exceção ou presumir leitura automática do banco do aparelho. |
 
 ---
 
@@ -67,15 +68,17 @@ Antes de montar qualquer JSON, classifique cada intenção do usuário usando a 
 O usuário quer registrar algo no NEXUS:
 ├── É dinheiro entrando ou saindo (receita, despesa, conta, ingresso pago, gasto de tarefa/projeto/evento)?
 │   └── Use TRANSACTION (INCOME ou EXPENSE). Nunca crie TASK para representar boleto ou conta a pagar.
-├── É um bloco de horário reservado / reunião / consulta / compromisso com hora de início e fim?
-│   └── Use APPOINTMENT (obrigatório startAt > 0 e endAt >= startAt).
-├── É um acontecimento maior (show, conferência, viagem, festa, feira, curso presencial) que pode ter local completo, ingressos, custos e tarefas/compromissos vinculados?
-│   └── Use EVENT (obrigatório startAt > 0 e endAt >= startAt).
+├── É uma rotina ou compromisso/evento/tarefa que se REPETE (diário, semanal, dias específicos, quinzenal, mensal, anual ou a cada N dias), com ou sem checklist-modelo reutilizável?
+│   └── Use RECURRENCE (domain: "TASK", "APPOINTMENT" ou "EVENT", com templateChecklist opcional). Nunca simule série com múltiplos registros avulsos!
+├── É um bloco de horário reservado / reunião / consulta / compromisso único (com ou sem checklist próprio)?
+│   └── Use APPOINTMENT (obrigatório startAt > 0 e endAt >= startAt; checklist opcional).
+├── É um acontecimento maior único (show, conferência, viagem, festa, feira, curso presencial) com local, ingressos, custos e/ou checklist próprio?
+│   └── Use EVENT (obrigatório startAt > 0 e endAt >= startAt; checklist opcional).
 ├── É um conjunto de entregas ou iniciativa temporária com várias tarefas e possível orçamento/prazo?
 │   └── Use PROJECT (e conecte TASKs via projectId).
 ├── É uma meta pessoal contínua ou objetivo de médio/longo prazo que acompanha projetos/tarefas?
 │   └── Use PERSONAL_GOAL (e conecte PROJECTs e TASKs via goalId).
-├── É uma ação executável (com ou sem prazo `dueAt`, com ou sem subtarefas)?
+├── É uma ação executável única (com ou sem prazo `dueAt`, com ou sem subtarefas)?
 │   └── Use TASK (com `subtasks` inline na criação, ou sem subtarefas se simples).
 └── São passos/itens de preparo para adicionar/atualizar em uma TASK que já existe (ou criada antes no mesmo lote)?
     └── Use CHECKLIST (apontando obrigatoriamente para `taskId`).
@@ -86,12 +89,13 @@ O usuário quer registrar algo no NEXUS:
 | Entidade | Quando USAR (Exemplo positivo) | Quando NÃO USAR (Exemplo negativo e o que usar no lugar) |
 | --- | --- | --- |
 | **`TASK`** | *"Preciso revisar os slides até sexta às 18h"* → `TASK` com `dueAt`, `hasDueTime: true`. | *"Pagar conta de luz dia 10"* → **NÃO** use `TASK`; use `TRANSACTION` (`EXPENSE`, `status: "PENDING"`). |
-| **`CHECKLIST`** | *"Adiciona 'levar passaporte' e 'imprimir voucher' naquela tarefa da viagem"* → `CHECKLIST` com `taskId` da tarefa existente. | *"Adiciona um checklist no compromisso do dentista"* → **NÃO** force `CHECKLIST` sem `taskId` nem crie tarefa falsa para simular checklist de compromisso (`GAP-004` não existe em `v1`; veja §6.3). |
-| **`APPOINTMENT`** | *"Consulta com Dr. Silva terça de 14h às 15h na Av. Paulista"* → `APPOINTMENT`. | *"Comprar remédio na farmácia"* (sem horário fixo bloqueado) → Use `TASK`, não `APPOINTMENT`. |
-| **`EVENT`** | *"Vou ao Summit Tech nos dias 10 e 11 de dezembro no Expo Center; paguei R$ 350 no ingresso"* → `EVENT` (e `TRANSACTION` se quiser refletir o gasto no Financeiro). | *"Reunião de 1h com o cliente"* → Use `APPOINTMENT`, não `EVENT`. |
+| **`CHECKLIST`** | *"Adiciona 'levar passaporte' e 'imprimir voucher' naquela tarefa da viagem"* → `CHECKLIST` com `taskId` da tarefa existente. | *"Adiciona checklist no compromisso do dentista"* → Use `APPOINTMENT` com o campo `checklist`, não `CHECKLIST` (pois `CHECKLIST` exige `taskId`). |
+| **`APPOINTMENT`** | *"Consulta com Dr. Silva terça de 14h às 15h na Av. Paulista, levar exames e RG"* → `APPOINTMENT` com `checklist`. | *"Toda quinta às 20h corro com o grupo"* → Use `RECURRENCE` (`domain: "APPOINTMENT"`), não `APPOINTMENT` único. |
+| **`EVENT`** | *"Vou ao Summit Tech nos dias 10 e 11 de dezembro; paguei R$ 350 no ingresso; levar crachá e carregador"* → `EVENT` com `checklist` (+ `TRANSACTION` para o gasto). | *"Reunião de 1h com o cliente"* → Use `APPOINTMENT`, não `EVENT`. |
+| **`RECURRENCE`** | *"Toda terça e quinta às 07:00 tenho treino de academia com checklist: garrafa, luva, fone"* → `RECURRENCE` (`domain: "APPOINTMENT"`, `frequency: "SPECIFIC_WEEKDAYS"`, `weekdays: ["TUESDAY", "THURSDAY"]`, `startTime: "07:00"`, `templateChecklist`). | *"Alterar apenas o treino de quinta que vem para 08:00"* → Exceções pontuais (`SKIP`/`OVERRIDE`) continuam sendo editadas no app (`"Só esta ocorrência"`). |
 | **`PROJECT`** | *"Quero organizar a mudança de apartamento com várias tarefas e orçamento"* → `PROJECT` + `TASK`s (`projectId`) + `TRANSACTION`s (`projectId`). | *"Trocar lâmpada da sala"* → Ação única é `TASK`, não `PROJECT`. |
 | **`PERSONAL_GOAL`** | *"Objetivo: passar na certificação AWS até março de 2027"* → `PERSONAL_GOAL` (`AUTO`) + `PROJECT`/`TASK` vinculados via `goalId`. | *"Fazer simulado 1 amanhã"* → Ação executável é `TASK`, ligada ao objetivo via `goalId`. |
-| **`TRANSACTION`** | *"Gastei R$ 89,90 no Uber para o evento no Pix"* → `TRANSACTION` (`EXPENSE`, `paymentMethod: "PIX"`, `eventId`, `eventCostType: "TRANSPORT"`, `status: "SETTLED"`). | *"Paguei a fatura de R$ 1.200 do cartão"* quando as compras já estão no cartão → **Bloqueado pelo app** se caracterizar dupla contagem (veja §3.8). |
+| **`TRANSACTION`** | *"Gastei R$ 89,90 no Uber para o evento no Pix"* → `TRANSACTION` (`EXPENSE`, `paymentMethod: "PIX"`, `eventId`, `eventCostType: "TRANSPORT"`, `status: "SETTLED"`). | *"Paguei a fatura de R$ 1.200 do cartão"* quando as compras já estão no cartão → **Bloqueado pelo app** se caracterizar dupla contagem (veja §3.11). |
 
 ---
 
@@ -124,7 +128,7 @@ O NEXUS decodifica o JSON usando `kotlinx.serialization.json.Json` com a configu
 | Campo | Tipo Kotlin | Obrigatório? | Padrão | Regra real em `StructuredInputProcessor` |
 | --- | --- | --- | --- | --- |
 | `operationId` | `String` | **Sim** | `""` | Não pode ser vazio. É a **chave de idempotência** salva em `audit_history`. Nunca reutilize o mesmo `operationId` para operações diferentes. |
-| `entityType` | `String` | **Sim** | `""` | Case-insensitive, exatamente um dos 7: `"TASK"`, `"CHECKLIST"`, `"APPOINTMENT"`, `"EVENT"`, `"PROJECT"`, `"PERSONAL_GOAL"`, `"TRANSACTION"`. |
+| `entityType` | `String` | **Sim** | `""` | Case-insensitive, exatamente um dos 8: `"TASK"`, `"CHECKLIST"`, `"APPOINTMENT"`, `"EVENT"`, `"RECURRENCE"`, `"PROJECT"`, `"PERSONAL_GOAL"`, `"TRANSACTION"`. |
 | `action` | `String` | Opcional | `"CREATE"` | `"CREATE"`, `"UPDATE"` ou `"UPSERT"` (string vazia assume `"CREATE"`). |
 | `data` | `JsonObject?` | **Sim** | `null` | Objeto JSON exato do DTO correspondente. Se `null`/ausente, rejeita a operação. |
 | `contractVersion` | `Int` | Opcional | `1` | Deve ser igual a `1` e igual ao `contractVersion` do envelope. |
@@ -233,9 +237,10 @@ Grava na tabela `subtasks` vinculada a uma **`TASK` existente** (no SQLite ou cr
 | `isAllDay` | `Boolean` | Opcional | `false` | `true` para compromisso de dia inteiro. Compromissos sem `isAllDay` sobrepostos geram aviso de conflito na Agenda. |
 | `location` | `String` | Opcional | `""` | Endereço/local textual. |
 | `link` | `String` | Opcional | `""` | URL de reunião online/chamada/mapa. |
+| `checklist` | `List<StructuredSubtaskItem>` | Opcional | `emptyList()` | Itens próprios do compromisso gravados em `schedule_checklist_items` (`id`, `title`, `isCompleted`, `sortOrder`). Mesclagem aditiva/upsert por `id` ou `title` (lista vazia não apaga itens existentes). |
 
-**Limitações conhecidas de `APPOINTMENT` no contrato `v1`:**
-- O DTO `StructuredAppointmentData` **não possui** `recurrenceId`, `occurrenceDateIso`, `checklist`/`subtasks` nem `icon`. Compromissos criados via Inbox são sempre **registros únicos**.
+**Observação sobre `APPOINTMENT`:**
+- Compromissos pontuais usam `APPOINTMENT`; para compromissos que se repetem, use **`RECURRENCE`** com `"domain": "APPOINTMENT"` (ver §3.8). O DTO não possui campo `icon` (`GAP-005`).
 
 ---
 
@@ -268,14 +273,55 @@ Grava na tabela `subtasks` vinculada a uma **`TASK` existente** (no SQLite ou cr
 | `paymentMethod` | `String` | Opcional | `"PIX"` | Enum `PaymentMethod`: `"PIX"`, `"DEBIT"`, `"CREDIT_CARD"`, `"CASH"`, `"BANK_TRANSFER"`, `"BOLETO"`, `"OTHER"`. |
 | `creditCardId` | `String?` | Opcional | `null` | FK verificada em `credit_cards` (só envie se conhecer o ID local do cartão). |
 | `installmentsCount` | `Int` | Opcional | `1` | Deve ser `>= 1`. |
+| `checklist` | `List<StructuredSubtaskItem>` | Opcional | `emptyList()` | Itens próprios do evento gravados em `schedule_checklist_items` (`id`, `title`, `isCompleted`, `sortOrder`). Mesclagem aditiva/upsert por `id` ou `title`. |
 
 > **ATENÇÃO — Efeito colateral importante de `EVENT` na Inbox `v1`:**  
-> Diferente do editor manual da tela de Eventos (`NexusRepository.saveEvent`), o processador da Inbox grava apenas a entidade `EventEntity` via `insertEvent` e **NÃO cria automaticamente** nenhuma `TransactionEntity` nem `InstallmentPurchaseEntity` para o ingresso.  
+> Diferente do editor manual da tela de Eventos (`NexusRepository.saveEvent`), o processador da Inbox grava apenas `EventEntity` (+ `schedule_checklist_items` quando `checklist` é enviado) e **NÃO cria automaticamente** nenhuma `TransactionEntity` nem `InstallmentPurchaseEntity` para o ingresso.  
 > **Como agir:** se o usuário disser *"Comprei o ingresso do evento X por R$ 250 no Pix"* e quiser ver o gasto no módulo Financeiro e nos custos do evento, emita **duas operações no mesmo lote**: o `EVENT` e uma `TRANSACTION` ligada com `"eventId"`, `"eventCostType": "TICKET"` e `"isTicketObligation": true`.
 
 ---
 
-### 3.8 DTO 5: `PROJECT` (`StructuredProjectData`)
+### 3.8 DTO 5: `RECURRENCE` (`StructuredRecurrenceData`) — Séries Recorrentes Multi-Domínio (`GAP-002`)
+
+Cria ou atualiza uma série recorrente real em `recurrences` (`TaskRecurrenceEntity`) para `TASK`, `APPOINTMENT` ou `EVENT`, com projeção virtual na Agenda/Eventos e versionamento **não retroativo** do checklist-modelo (`templateHistoryJson`).
+
+| Campo (`StructuredRecurrenceData`) | Tipo | Obrigatório? | Padrão | Validação / Regra real em `StructuredInputProcessor` |
+| --- | --- | --- | --- | --- |
+| `id` | `String?` | Opcional | `null` | Padrão se omitido: `"ing-rec-$operationId"`. Use ID determinístico para poder atualizar a série no futuro (`UPDATE`/`UPSERT`). |
+| `domain` | `String` | Opcional | `"TASK"` | Enum `RecurrenceDomain`: **`"TASK"`**, **`"APPOINTMENT"`** ou **`"EVENT"`**. **Imutável** em `UPDATE`/`UPSERT` (tentar trocar o domínio de uma série existente retorna `REJECTED`). |
+| `title` | `String` | **Sim** | `""` | Não pode ser vazio após `.trim()`. |
+| `description` | `String` | Opcional | `""` | Descrição da série. |
+| `projectId` | `String?` | Opcional | `null` | FK verificada em `projects` (aplicada quando `domain == "TASK"`). |
+| `categoryId` | `String?` | Opcional | `null` | FK verificada em `categories`. |
+| `eventId` | `String?` | Opcional | `null` | FK verificada em `events` (ignorada quando `domain == "EVENT"`). |
+| `goalId` | `String?` | Opcional | `null` | FK verificada em `personal_goals` (aplicada quando `domain == "TASK"`). |
+| `priority` | `String` | Opcional | `"NORMAL"` | Enum `TaskPriority`: `"LOW"`, `"NORMAL"`, `"HIGH"`, `"URGENT"`. |
+| `notes` | `String` | Opcional | `""` | Anotações da série. |
+| `frequency` | `String` | Opcional | `"WEEKLY"` | Enum `TaskRecurrenceFrequency`: `"DAILY"`, `"SPECIFIC_WEEKDAYS"`, `"WEEKLY"`, `"BIWEEKLY"`, `"MONTHLY"`, `"ANNUAL"`, `"CUSTOM_DAYS"`. |
+| `customIntervalDays` | `Int` | Opcional | `1` | Deve ser `>= 1` (usado em `CUSTOM_DAYS`). |
+| `weekdays` | `List<String>` | Condicional | `emptyList()` | Aceita nomes em inglês (`"MONDAY"`..`"SUNDAY"`) ou pt-BR (`"SEG"`, `"TER"`, `"QUA"`, `"QUI"`, `"SEX"`, `"SAB"`, `"DOM"`). Obrigatório (ou `weekdaysMask > 0`) quando `frequency == "SPECIFIC_WEEKDAYS"`. |
+| `weekdaysMask` | `Int?` | Condicional | `null` | Alternativa bitmask (Seg=`1`..Dom=`64`) quando `weekdays` estiver vazio. |
+| `startDateIso` | `String` | **Sim** | `""` | Data inicial no formato estrito **`"YYYY-MM-DD"`** (ex.: `"2026-12-03"`). |
+| `endDateIso` | `String?` | Opcional | `null` | Data final opcional `"YYYY-MM-DD"` (`>= startDateIso`). |
+| `maxOccurrences` | `Int?` | Opcional | `null` | Se informado, deve ser `> 0`. |
+| `hasDueTime` | `Boolean` | Opcional | `false` | Para `TASK`, define se há horário; para `APPOINTMENT`/`EVENT` com `isAllDay == false`, o processador exige horário (`startTime` ou `dueTimeMinutesOfDay`). |
+| `dueTimeMinutesOfDay` | `Int?` | Condicional | `null` | Minutos desde `00:00` (`0..1439`). Alternativa numérica a `startTime`. |
+| `startTime` | `String?` | Condicional | `null` | Horário **`"HH:mm"`** (ex.: `"20:00"`). Preferido sobre `dueTimeMinutesOfDay` quando ambos existem. |
+| `isAllDay` | `Boolean` | Opcional | `false` | Ignorado (`false`) para `TASK`. Para `APPOINTMENT`/`EVENT`, se `true`, dispensa `startTime`. |
+| `durationMillis` | `Long` | Opcional | `3600000L` | Duração em ms (padrão 1h). Para `APPOINTMENT`/`EVENT`, deve ser **`>= 60000`** (1 minuto). |
+| `reminderMinutesBefore` | `Int?` | Opcional | `null` | Se informado, deve ser `>= 0`. |
+| `location`, `link` | `String` | Opcional | `""` | Local e link para `APPOINTMENT`. |
+| `officialLink`, `ticketLink`, `locationName`, `address`, `city`, `state` | `String` | Opcional | `""` | Metadados de local/links para `EVENT`. |
+| `eventStatus` | `String` | Opcional | `"PLANNED"` | Enum `EventLifecycleStatus`. `"ATTENDED"` é sanitizado automaticamente (séries futuras nunca nascem como já comparecidas). |
+| `ticketStatus` | `String` | Opcional | `"FREE"` | Enum `TicketStatus`. Valores pagos (`PAID`, `BOUGHT`, `PARTIALLY_PAID`) são sanitizados para `"NOT_BOUGHT"` na série (proteção anti-obrigação fantasma). |
+| `ticketPriceCents`, `ticketQuantity`, `ticketFeesCents`, `paymentMethod`, `creditCardId`, `installmentsCount` | Vários | Opcional | `0 / 1 / 0 / "PIX" / null / 1` | Parâmetros de ingresso para `EVENT` recorrente (`installmentsCount in 1..120`; `creditCardId` verificado por FK). Nunca criam `TransactionEntity` automaticamente. |
+| `templateChecklist` | `List<String>` | Opcional | `emptyList()` | Lista ordenada de títulos do checklist-modelo da série (itens vazios causam `REJECTED`). Cada ocorrência nasce com seus itens **desmarcados e independentes**. |
+| `effectiveFromDateIso` | `String?` | Opcional | `null` | Formato `"YYYY-MM-DD"`. Em `UPDATE`/`UPSERT`, define a partir de qual data o novo `templateChecklist` passa a vigorar (**versionamento não retroativo**: ocorrências anteriores ou já materializadas permanecem intactas). Se omitido, usa a data atual em `America/Sao_Paulo`. |
+| `isActive` | `Boolean` | Opcional | `true` | `false` pausa a projeção de novas ocorrências sem apagar o histórico. |
+
+---
+
+### 3.9 DTO 6: `PROJECT` (`StructuredProjectData`)
 
 | Campo | Tipo | Obrigatório? | Padrão | Validação / Regra real |
 | --- | --- | --- | --- | --- |
@@ -289,7 +335,7 @@ Grava na tabela `subtasks` vinculada a uma **`TASK` existente** (no SQLite ou cr
 
 ---
 
-### 3.9 DTO 6: `PERSONAL_GOAL` (`StructuredPersonalGoalData`)
+### 3.10 DTO 7: `PERSONAL_GOAL` (`StructuredPersonalGoalData`)
 
 | Campo | Tipo | Obrigatório? | Padrão | Validação / Regra real |
 | --- | --- | --- | --- | --- |
@@ -308,7 +354,7 @@ Grava na tabela `subtasks` vinculada a uma **`TASK` existente** (no SQLite ou cr
 
 ---
 
-### 3.10 DTO 7: `TRANSACTION` (`StructuredTransactionData`)
+### 3.11 DTO 8: `TRANSACTION` (`StructuredTransactionData`)
 
 | Campo | Tipo | Obrigatório? | Padrão | Validação / Regra real |
 | --- | --- | --- | --- | --- |
@@ -342,13 +388,13 @@ Grava na tabela `subtasks` vinculada a uma **`TASK` existente** (no SQLite ou cr
 
 ---
 
-### 3.11 O que NÃO existe ou NÃO pode ser enviado via `NEXUS-INBOX` (`v1`)
+### 3.12 O que NÃO existe ou NÃO pode ser enviado via `NEXUS-INBOX` (`v1`)
 
 | Recurso existente no app ou planejado | Pode enviar no JSON `v1`? | Como lidar corretamente |
 | --- | --- | --- |
-| Criar regra nova de recorrência de `TASK`, `APPOINTMENT` ou `EVENT` (`TaskRecurrenceEntity`, `RecurrenceExceptionEntity`) | **NÃO (`GAP-002`)** | Não existe `entityType: "RECURRENCE"` nem campos `recurrenceId`/`occurrenceDateIso` em `APPOINTMENT`/`EVENT`. Informe a limitação ao usuário (ver §6.2). |
-| Checklist próprio em `APPOINTMENT` ou `EVENT` | **NÃO (`GAP-004`)** | `CHECKLIST` exige `taskId` de uma `TASK`. Não invente campo `subtasks`/`checklist` em `APPOINTMENT`/`EVENT`. |
-| Ícone / identidade contextual (`icon`, `contextType`, etc.) | **NÃO (`GAP-005`)** | Nenhum DTO aceita campo de ícone/contexto. Nunca invente identificadores de ícones. |
+| Exceções pontuais (`RecurrenceExceptionEntity`: `SKIP` / `OVERRIDE` de 1 única data da série) | **NÃO** | A série é criada/atualizada via `RECURRENCE` (inclusive mudanças futuras não retroativas de `templateChecklist` com `effectiveFromDateIso`). Pular ou mover apenas 1 ocorrência específica continua sendo feito na UI do app (`"Só esta ocorrência"`). |
+| Ícone / identidade contextual (`icon`, `contextType`, etc.) | **NÃO (`GAP-005`)** | Nenhum DTO aceita campo de ícone/contexto. Nunca invente identificadores de ícones (`ignoreUnknownKeys = false` rejeita o lote). |
+| Leitura automática / snapshot do estado atual do aparelho | **NÃO (`GAP-006`)** | A ponte atual é unidirecional (ChatGPT → GitHub → Android). Peça confirmação ao usuário antes de assumir IDs ou campos locais. |
 | Criar cartões (`credit_cards`), faturas (`credit_card_statements`), parcelamentos (`installment_purchases`), regras recorrentes financeiras (`recurring_rules`), orçamentos (`budgets`), empréstimos (`loans`), metas financeiras (`financial_goals`) ou categorias customizadas (`categories`) | **NÃO** | Esses cadastros não têm `entityType` na Inbox `v1`; devem ser criados diretamente no app. |
 | Marcos de objetivo (`goal_milestones`), logs de progresso (`goal_progress_logs`), frases (`quotes`), preferências, lembretes customizados diretos ou alertas do Mercado | **NÃO** | Gerenciados apenas dentro do aplicativo (e lembretes padrão são recalculados automaticamente pelo app a partir das entidades importadas). |
 
@@ -358,7 +404,7 @@ Grava na tabela `subtasks` vinculada a uma **`TASK` existente** (no SQLite ou cr
 
 ### 4.1 Passo a passo para gerar um arquivo `CREATE` válido
 
-1. **Verifique o escopo:** todas as intenções cabem nos 7 tipos da Inbox `v1`? Se envolver recorrência nova, checklist em compromisso/evento ou ícone específico, pare e aplique a Seção 6.
+1. **Verifique o escopo:** todas as intenções cabem nos `8` tipos da Inbox `v1` (`TASK`, `CHECKLIST`, `APPOINTMENT`, `EVENT`, `RECURRENCE`, `PROJECT`, `PERSONAL_GOAL`, `TRANSACTION`)? Se envolver exceção pontual de 1 data, ícone (`GAP-005`) ou cadastro financeiro de cartão/fatura, aplique a Seção 6.
 2. **Converta datas/horas em epoch ms (`America/Sao_Paulo`):** garanta `startAt > 0`, `endAt >= startAt`, `occurredAt > 0`.
 3. **Escolha IDs consistentes e legíveis:** se uma entidade será referenciada por outra no mesmo JSON (ex.: `EVENT` → `TASK` → `CHECKLIST` / `TRANSACTION`), defina IDs explícitos e únicos em slug (ex.: `"evt-workshop-2026"`, `"task-prep-workshop"`) e ordene as operações **de pai para filho** (`PERSONAL_GOAL` → `PROJECT` → `EVENT` → `TASK` → `CHECKLIST` / `APPOINTMENT` → `TRANSACTION`).
 4. **Gere `operationId` único por operação:** ex.: `"op-2026-12-01-task-01"`.
@@ -796,38 +842,138 @@ Grava na tabela `subtasks` vinculada a uma **`TASK` existente** (no SQLite ou cr
 - **Conflito local:** se você enviar um **novo `operationId`** com `action: "CREATE"` apontando para um `id` já existente no banco (ex.: `"id": "task-relatorio-trimestral-2026"`), o app **não sobrescreve** o dado do usuário; o resultado é `CONFLICT_PRESERVED_LOCAL`.
 - **Idempotência:** se um arquivo contendo o mesmo `operationId` (`"op-2026-11-28-task-relatorio-upd"`) for processado novamente no futuro (porque você reescreveu ou enviou outro lote com o mesmo ID de operação), o processador consulta `audit_history` (`STRUCTURED_INPUT_OP`) e retorna **`DUPLICATE_IGNORED`**, sem aplicar escrita duplicada.
 
+#### Exemplo 10 — Compromisso único com checklist próprio + Série recorrente com `templateChecklist` (`RECURRENCE`)
+*Pedido do usuário:* *"Registra no NEXUS: consulta no dentista dia 01/12/2026 das 14:00 às 15:00 com checklist (levar carteira do plano, levar radiografia) e a minha corrida recorrente 'A Vida é um Corre' toda quinta-feira às 20:00 (1h30) a partir de 03/12/2026 no Parque Ibirapuera com checklist-modelo: tênis de corrida, garrafa de água, relógio GPS."*
+
+```json
+{
+  "contractVersion": 1,
+  "source": "chatgpt-nexus-inbox",
+  "createdAt": 1795784400000,
+  "operations": [
+    {
+      "operationId": "op-2026-11-27-appt-dentista-chk",
+      "entityType": "APPOINTMENT",
+      "action": "CREATE",
+      "contractVersion": 1,
+      "createdAt": 1795784400000,
+      "data": {
+        "id": "appt-dentista-2026-12-01",
+        "title": "Consulta no dentista",
+        "categoryId": "cat-default-saude",
+        "startAt": 1796144400000,
+        "endAt": 1796148000000,
+        "isAllDay": false,
+        "location": "Consultório Odonto Centro",
+        "checklist": [
+          { "id": "chk-dent-1", "title": "Levar carteira do plano", "isCompleted": false, "sortOrder": 0 },
+          { "id": "chk-dent-2", "title": "Levar radiografia", "isCompleted": false, "sortOrder": 1 }
+        ]
+      }
+    },
+    {
+      "operationId": "op-2026-11-27-rec-corrida-01",
+      "entityType": "RECURRENCE",
+      "action": "CREATE",
+      "contractVersion": 1,
+      "createdAt": 1795784400000,
+      "data": {
+        "id": "rec-a-vida-e-um-corre",
+        "domain": "APPOINTMENT",
+        "title": "A Vida é um Corre",
+        "description": "Treino semanal em grupo",
+        "categoryId": "cat-default-saude",
+        "frequency": "SPECIFIC_WEEKDAYS",
+        "weekdays": ["THURSDAY"],
+        "startDateIso": "2026-12-03",
+        "startTime": "20:00",
+        "isAllDay": false,
+        "durationMillis": 5400000,
+        "reminderMinutesBefore": 30,
+        "location": "Parque Ibirapuera — Portão 3",
+        "templateChecklist": [
+          "Tênis de corrida",
+          "Garrafa de água",
+          "Relógio GPS"
+        ],
+        "isActive": true
+      }
+    }
+  ]
+}
+```
+- **Resultado esperado:** cria o compromisso com seus 2 itens em `schedule_checklist_items` e cria a série recorrente `rec-a-vida-e-um-corre` (`checklistTemplateVersion = 1`). Cada quinta-feira projetada/materializada nasce com os 3 itens **independentes e desmarcados**.
+
+#### Exemplo 11 — Atualização não retroativa de checklist-modelo em série recorrente (`RECURRENCE` / `UPSERT`)
+*Cenário:* A partir de `2026-12-17`, o usuário quer incluir *"Gel de carboidrato"* no checklist da corrida `"rec-a-vida-e-um-corre"` sem alterar as corridas anteriores de `03/12` e `10/12`.
+
+```json
+{
+  "contractVersion": 1,
+  "source": "chatgpt-nexus-inbox",
+  "createdAt": 1797000000000,
+  "operations": [
+    {
+      "operationId": "op-2026-12-11-rec-corrida-v2",
+      "entityType": "RECURRENCE",
+      "action": "UPSERT",
+      "contractVersion": 1,
+      "createdAt": 1797000000000,
+      "data": {
+        "id": "rec-a-vida-e-um-corre",
+        "domain": "APPOINTMENT",
+        "title": "A Vida é um Corre",
+        "description": "Treino semanal em grupo",
+        "categoryId": "cat-default-saude",
+        "frequency": "SPECIFIC_WEEKDAYS",
+        "weekdays": ["THURSDAY"],
+        "startDateIso": "2026-12-03",
+        "startTime": "20:00",
+        "isAllDay": false,
+        "durationMillis": 5400000,
+        "reminderMinutesBefore": 30,
+        "location": "Parque Ibirapuera — Portão 3",
+        "templateChecklist": [
+          "Tênis de corrida",
+          "Garrafa de água",
+          "Relógio GPS",
+          "Gel de carboidrato"
+        ],
+        "effectiveFromDateIso": "2026-12-17",
+        "isActive": true
+      }
+    }
+  ]
+}
+```
+- **Resultado esperado:** incrementa `checklistTemplateVersion` para `2`, adiciona `ChecklistTemplateSnapshot(version = 2, effectiveFromDateIso = "2026-12-17", ...)` em `templateHistoryJson`, preserva intactas as ocorrências de `03/12` e `10/12` e aplica o 4º item somente de `17/12/2026` em diante.
+
 ---
 
-## 6. Interpretação de Linguagem Natural, Regras Obrigatórias e Limitações (`GAP-002`, `GAP-004`, `GAP-005`)
+## 6. Interpretação de Linguagem Natural, Regras Obrigatórias e Limitações (`GAP-005`, `GAP-006`)
 
 ### 6.1 As 7 regras obrigatórias de comportamento do ChatGPT
 
 1. **Verifique compatibilidade com `v1` antes de emitir JSON:** nunca invente campos, enums ou entidades fora da Seção 3.
-2. **Nunca simule recorrência com registros únicos avulsos (`GAP-002`):** se o usuário pedir uma série recorrente (ex.: *"toda quinta às 20h"*, *"rotina semanal de academia segunda, quarta e sexta"*), não gere 4, 12 ou 52 objetos `APPOINTMENT`/`TASK` avulsos para fingir uma série recorrente.
-3. **Nunca simule checklist de Compromisso ou Evento com tarefa falsa (`GAP-004`):** não crie uma `TASK` fantasma nem coloque texto solto em `description`/`notes` fingindo ser checklist estruturado de `APPOINTMENT` ou `EVENT` sem explicar ao usuário a diferença.
-4. **Nunca invente identificadores locais ou de ícones (`GAP-005`):** sem `creditCardId`, `statementId`, `recurrenceId` ou `categoryId` real, não chute hashes. Só use as categorias `cat-default-*` / `cat-fin-*` documentadas ou IDs fornecidos pelo usuário/criados no mesmo lote.
+2. **Use `RECURRENCE` nativa — nunca simule recorrência com registros únicos avulsos:** se o usuário pedir uma série recorrente (ex.: *"toda quinta às 20h"*, *"academia segunda, quarta e sexta com checklist"*), emita uma única operação **`RECURRENCE`** (`domain`: `"TASK"`, `"APPOINTMENT"` ou `"EVENT"`) com `templateChecklist`, jamais 4, 12 ou 52 objetos soltos.
+3. **Use `checklist` nativo em `APPOINTMENT` e `EVENT`:** quando o usuário pedir itens de preparação próprios de um compromisso ou evento único, envie-os no campo `checklist` do próprio `APPOINTMENT`/`EVENT` (ou `templateChecklist` quando for uma série `RECURRENCE`), sem criar tarefas falsas.
+4. **Nunca invente identificadores locais ou de ícones (`GAP-005`):** sem `creditCardId`, `statementId`, `recurrenceId` ou `categoryId` real, não chute hashes. Só use as categorias `cat-default-*` / `cat-fin-*` documentadas ou IDs fornecidos pelo usuário/criados no mesmo lote. Nunca emita `"icon"` ou `"context"`.
 5. **Não confunda obrigação financeira com tarefa:** conta, boleto, fatura, parcela e compra são `TRANSACTION`, nunca `TASK`.
 6. **Não duplique despesas de cartão de crédito:** nunca emita despesa avulsa de *"pagamento de fatura"* ligada a cartão/fatura existente.
 7. **Pergunte antes quando faltar dado essencial:**
-   - Compromisso ou Evento sem data ou sem intervalo mínimo (`startAt`/`endAt`) → pergunte data/horário antes de gerar JSON (ou pergunte se é dia inteiro).
+   - Compromisso ou Evento sem data ou sem intervalo mínimo (`startAt`/`endAt`) ou `RECURRENCE` sem `startDateIso`/horário (quando não é dia inteiro) → pergunte antes de gerar JSON.
    - Compra parcelada ou compra em cartão específico sem `creditCardId`/`statementId` conhecidos → alerte que a Inbox `v1` não aloca automaticamente em fatura nem gera `InstallmentPurchaseEntity`.
    - Pedido de atualização (`UPDATE`) quando não se conhece o `id` local nem os campos atuais → alerte sobre a substituição completa dos campos omitidos (§5.2) e peça confirmação antes.
 
-### 6.2 Como responder a pedidos de recorrência (ex.: *"corrida toda quinta 20h"* ou *"rotina semanal de academia com checklists"*)
+### 6.2 Como lidar com pedidos de recorrência e exceções pontuais
 
-Embora a **Rodada 4** do aplicativo Android (`v5.3.0`, Room `v7`) já possua recorrência nativa para Tarefas, Compromissos e Eventos dentro da UI do app, a ponte **`NEXUS-INBOX` (`contractVersion = 1`) ainda não possui suporte para criar regras de recorrência (`GAP-002` aberto)**.
+- **Criar ou atualizar regra/série recorrente (incluindo checklist-modelo):** emita `entityType: "RECURRENCE"` com `domain`, `frequency`, `weekdays` (quando `SPECIFIC_WEEKDAYS`), `startDateIso`, `startTime` (ou `isAllDay: true`) e `templateChecklist`. Ao evoluir o `templateChecklist` de uma série existente, informe `effectiveFromDateIso` para garantir atualização **não retroativa**.
+- **Pular ou mover apenas 1 ocorrência isolada (`SKIP` / `OVERRIDE`):** o contrato `v1` ainda não tem operação dedicada para `RecurrenceExceptionEntity`; oriente o usuário a tocar na ocorrência na Agenda do app e escolher `"Só esta ocorrência"`.
 
-**Protocolo obrigatório quando o usuário pedir algo recorrente:**
-1. **Explique com transparência** que o contrato atual da `NEXUS-INBOX` (`v1`) cria apenas registros únicos e ainda não cria séries recorrentes de Tarefas, Compromissos ou Eventos (nem importa checklists-modelo de série via JSON).
-2. **Não gere vários JSONs avulsos** simulando semanas seguintes.
-3. **Ofereça alternativas honestas ao usuário:**
-   - *Opção A (recomendada quando a rotina precisa de série real no NEXUS):* orientar o usuário a criar a recorrência diretamente no app (que já possui criação de série semanal/dias específicos para Tarefas, Compromissos e Eventos), fornecendo em texto organizado os dados prontos para ele copiar/preencher (dias, horários, checklists por atividade); **ou**
-   - *Opção B (se o usuário pedir explicitamente apenas o próximo encontro único ou tarefas pontuais desta semana):* gerar no JSON somente esse compromisso único ou as tarefas pontuais explicitamente autorizadas, deixando claro no texto que são avulsas e não uma regra recorrente.
+### 6.3 Como responder a pedidos de ícones (`GAP-005`) ou leitura do banco (`GAP-006`)
 
-### 6.3 Como responder a pedidos de checklist em Compromisso/Evento (`GAP-004`) ou ícones (`GAP-005`)
-
-- **Checklist em `APPOINTMENT` ou `EVENT` (`GAP-004`):** explique que o contrato `v1` (e o app atual) ainda suporta checklist estruturado apenas em `TASK` (ou via `CHECKLIST` ligado a `taskId`). Se o usuário concordar, você pode criar uma **`TASK` preparatória vinculada ao `EVENT`** (via `eventId`, como *"Preparar viagem..."* com `subtasks`), deixando claro que é uma tarefa vinculada ao evento, e não um checklist interno do compromisso/evento.
 - **Ícones/identidade contextual (`GAP-005`):** explique que ainda não existe campo de ícone/contexto no modelo nem no contrato `v1`, e nunca adicione campo `"icon"` ou `"context"` no JSON (pois `ignoreUnknownKeys = false` causaria rejeição).
+- **Leitura automática do estado atual (`GAP-006`):** explique que a ponte `NEXUS-INBOX` atual é unidirecional (entrada) e confirme com o usuário os campos/IDs antes de emitir `UPDATE`/`UPSERT` em registros criados fora da conversa.
 
 ---
 
@@ -885,6 +1031,10 @@ Tabela extraída diretamente de `StructuredInputProcessor.kt`, `StructuredInputU
 | `CHECKLIST` aparece como `WILL_UPDATE` / `UPDATED` mesmo adicionando novos itens | Comportamento explícito de `prepareAndApplyChecklist` (`isUpdate = true`), pois altera uma `TASK` existente. | Comportamento normal e esperado no contrato `v1`. |
 | Arquivo no GitHub ignorado ou não listado na Inbox | Arquivo dentro de subpasta diferente de `pathPrefix`, extensão diferente de `.json`, tamanho `> 2 MB` ou mesmo `path::sha` já importado anteriormente. | Salvar `.json` diretamente dentro da pasta configurada, `<= 2 MB`, com nome ordenado e novo commit. |
 
+| `REJECTED: Domínio da série '...' (...) não pode ser alterado...` | Tentativa de `UPDATE`/`UPSERT` em `RECURRENCE` mudando `domain` (ex.: `TASK` → `APPOINTMENT`). | Manter o `domain` original da série ou criar uma nova série com novo `id`. |
+| `REJECTED: Para SPECIFIC_WEEKDAYS informe 'weekdays' ou 'weekdaysMask' válido` | `RECURRENCE` com `frequency: "SPECIFIC_WEEKDAYS"` sem dias válidos. | Informar `"weekdays": ["MONDAY", "WEDNESDAY"]` (ou equivalente `SEG`/`QUA`). |
+| `REJECTED: Informe 'startTime' (HH:mm) ou 'dueTimeMinutesOfDay' para série com horário` | `RECURRENCE` (`APPOINTMENT`/`EVENT` com `isAllDay: false` ou `TASK` com `hasDueTime: true`) sem horário. | Preencher `"startTime": "20:00"` ou `"isAllDay": true`. |
+
 ---
 
 ## 9. Compatibilidade, Versionamento e Checklist Obrigatório de Manutenção
@@ -893,8 +1043,9 @@ Tabela extraída diretamente de `StructuredInputProcessor.kt`, `StructuredInputU
 
 | Versão do guia | App mínimo compatível | Room / Backup | Contrato Inbox | Observação |
 | --- | --- | --- | --- | --- |
-| `0.1` (2026-11-26) | — | — | — | Estrutura inicial não operacional (substituída por esta versão). |
-| **`1.0.0` (2026-11-27)** | **`5.3.0` (`versionCode = 8`)** | **`Room v7` / `Backup v8`** | **`contractVersion = 1`** | Primeira versão operacional completa baseada no código real (`data/ingestion/`, `data/inbox/`, `NexusEnums.kt`, `NexusDatabase.kt`, testes JUnit). Recorrência multi-domínio (`GAP-001`) e checklist independente (`GAP-003`) existem no app (aguardando CI/dispositivo), mas não no JSON `v1` (`GAP-002`). |
+| `0.1` (2026-11-26) | — | — | — | Estrutura inicial não operacional (substituída por `1.0.0`). |
+| `1.0.0` (2026-11-27) | `5.3.0` (`versionCode = 8`) | `Room v7` / `Backup v8` | `contractVersion = 1` (`7` tipos) | Primeira versão operacional completa sem `RECURRENCE` nem `checklist` em `APPOINTMENT`/`EVENT`. |
+| **`1.1.0` (2026-11-27)** | **`5.3.0` (`versionCode = 8`)** | **`Room v8` / `Backup v9`** | **`contractVersion = 1` (`8` tipos)** | Adiciona `RECURRENCE` (`TASK`/`APPOINTMENT`/`EVENT`, `templateChecklist`, `effectiveFromDateIso` não retroativo — `GAP-002`) e `checklist` opcional em `APPOINTMENT`/`EVENT` (`GAP-004`/`REQ-029`), preservando 100% de retrocompatibilidade do contrato `v1`. Aguardando execução CI/dispositivo. |
 
 **Se a versão instalada do app ou do contrato divergir:**
 - Se o `contractVersion` futuro subir (ex.: `v2`), não envie campos da versão nova para um app configurado para `v1` sem antes confirmar que o usuário atualizou o APK e este guia foi atualizado.
