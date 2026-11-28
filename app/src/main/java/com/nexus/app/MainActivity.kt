@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.nexus.app.ui.components.ConfirmDiscardChangesDialog
 import androidx.compose.ui.Alignment
@@ -291,7 +292,7 @@ private fun NexusAppRoot(
         val snackbarHostState = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
 
-        var currentTab by remember { mutableStateOf(MainTab.HOME) }
+        var currentTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
         var subRoute by remember { mutableStateOf<SubRoute>(SubRoute.None) }
         val subRouteStack = remember { mutableStateListOf<SubRoute>() }
         var activeEditor by remember { mutableStateOf<ActiveEditor>(ActiveEditor.None) }
